@@ -1,0 +1,63 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# API keys / credentials
+*.pem
+*.key
+*.secret
+*secret*
+*credential*
+
+# Local databases / runtime data
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Build/package artifacts
+build/
+dist/
+*.egg-info/
+
+# Test/cache/coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+
+# Local backup copies
+*.backup-*
+*.bak
+*.bak*
+*.backup
+
+# Runtime audit data
+*.jsonl
+
+# Unusual temporary Python file
+*.pym
