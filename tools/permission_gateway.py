@@ -89,12 +89,15 @@ class ToolPermissionGateway:
 
         tool = self.registry.get(tool_name)
 
-        if not tool.read_only:
-            raise PermissionError(
-                f"Tool is not read-only: {tool_name}"
-            )
+        if tool.read_only:
+            return self.DEFAULT_READ_ACTION
 
-        return self.DEFAULT_READ_ACTION
+        if tool.protected_action is not None:
+            return tool.protected_action
+
+        raise PermissionError(
+            f"Tool has no protected action classification: {tool_name}"
+        )
 
     def check(
         self,

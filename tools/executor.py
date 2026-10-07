@@ -89,17 +89,19 @@ class SafeToolExecutor:
             )
 
         if not tool.read_only:
-            return ToolExecutionResult(
-                success=False,
-                tool=tool_name,
-                result=None,
-                error=(
-                    "Execution blocked: "
-                    "tool is not read-only."
-                ),
-            )
+            permission_granted = kwargs.get("_permission_granted", False)
+            if not permission_granted:
+                return ToolExecutionResult(
+                    success=False,
+                    tool=tool_name,
+                    result=None,
+                    error=(
+                        "Execution blocked: protected tool requires "
+                        "permission gateway authorization."
+                    ),
+                )
 
-        if tool.requires_confirmation:
+        if tool.read_only and tool.requires_confirmation:
             return ToolExecutionResult(
                 success=False,
                 tool=tool_name,

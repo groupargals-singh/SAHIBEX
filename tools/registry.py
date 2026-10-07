@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from core.policies.approval import ActionType
+
 
 @dataclass(frozen=True)
 class ToolDefinition:
@@ -12,6 +14,7 @@ class ToolDefinition:
     handler: Callable[..., Any]
     read_only: bool
     requires_confirmation: bool
+    protected_action: ActionType | None = None
 
 
 class ToolRegistry:
@@ -35,6 +38,7 @@ class ToolRegistry:
         handler: Callable[..., Any],
         read_only: bool,
         requires_confirmation: bool,
+        protected_action: ActionType | None = None,
     ) -> None:
 
         if not name.strip():
@@ -51,6 +55,7 @@ class ToolRegistry:
             handler=handler,
             read_only=read_only,
             requires_confirmation=requires_confirmation,
+            protected_action=protected_action,
         )
 
     def get(self, name: str) -> ToolDefinition:
@@ -275,6 +280,8 @@ class ReadOnlyTools:
 
 def build_default_registry(
     project_root: Path,
+    *,
+    include_protected: bool = False,
 ) -> ToolRegistry:
 
     registry = ToolRegistry()
@@ -312,4 +319,26 @@ def build_default_registry(
         requires_confirmation=False,
     )
 
+    if include_protected:
+        # Protected computer/UI control is opt-in. Permission remains the
+        # responsibility of ToolPermissionGateway.
+        from tools.computer_control_tool import ComputerControlTool
+        computer_tool = ComputerControlTool()
+        registry.register(
+            name="computer_control",
+            description="Control Android UI: click, swipe, type text, press keys, screenshot.",
+            handler=computer_tool.execute,
+            read_only=False,
+            requires_confirmation=True,
+            protected_action=ActionType.RUN_COMMAND,
+        )
+
     return registry
+
+
+def build_runtime_registry(project_root: Path) -> ToolRegistry:
+    """Build the full runtime registry, including protected UI control."""
+    return build_default_registry(
+        project_root,
+        include_protected=True,
+    )

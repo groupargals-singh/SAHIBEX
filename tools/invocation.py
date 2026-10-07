@@ -136,10 +136,17 @@ class ToolInvoker:
                 reason=permission.reason,
             )
 
+        execution_kwargs = dict(kwargs)
+        # Only protected tools receive the private marker after the
+        # PermissionGateway returns allowed=True.
+        if not candidate.read_only:
+            execution_kwargs["_permission_granted"] = True
+            execution_kwargs["_confirmation_provided"] = user_confirmation
+
         execution: ToolExecutionResult = (
             self.executor.execute(
                 candidate.name,
-                **kwargs,
+                **execution_kwargs,
             )
         )
 
