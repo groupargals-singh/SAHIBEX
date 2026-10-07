@@ -16,7 +16,10 @@ from core.research.extractor import ExtractedFinding
 
 
 class FakeResearchProvider(ResearchAcquisitionProvider):
-    provider_name = "learning-test-provider"
+    # The research plan routes generic learning queries through the
+    # direct_web source type. This deterministic test provider replaces
+    # that provider without enabling real network access.
+    provider_name = "direct_web"
     requires_network = False
 
     def acquire(
@@ -50,7 +53,6 @@ class HighConfidenceTestExtractor:
                     "SAHIBEX is a controlled personal AI "
                     "architecture."
                 ),
-                source_id=document.source_id,
                 confidence=0.95,
                 evidence_text=document.content,
             )
