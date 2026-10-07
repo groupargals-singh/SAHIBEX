@@ -110,6 +110,26 @@ class ResearchIngestionPipeline:
 
         self.storage = ResearchStorage(database_path)
 
+    def _ensure_engine_registration(
+        self,
+        *,
+        source: ResearchSource,
+        document: ResearchDocument,
+    ) -> None:
+        """
+        Rehydrate persisted research objects into the runtime engine.
+
+        Persistent storage is authoritative across pipeline restarts,
+        while ResearchEngine owns the current in-memory execution state.
+        Duplicate ingestion must therefore restore the matching source
+        and document into the engine before downstream extraction.
+        """
+        if source.source_id not in self.engine.sources:
+            self.engine.register_source(source)
+
+        if document.document_id not in self.engine.documents:
+            self.engine.add_document(document)
+
     def ingest(
         self,
         source: ResearchSource,
@@ -139,6 +159,11 @@ class ResearchIngestionPipeline:
         )
 
         if persistent_match is not None:
+            self._ensure_engine_registration(
+                source=source,
+                document=persistent_match,
+            )
+
             return IngestionResult(
                 source_id=source.source_id,
                 document_id=document.document_id,
