@@ -27,6 +27,11 @@ def main() -> None:
         "IMAGE modality must exist.",
     )
 
+    check(
+        InputModality.FILE.value == "file",
+        "FILE modality must exist.",
+    )
+
     text_input = MultimodalInput(
         modality=InputModality.TEXT,
         content="Hello SAHIBEX",
@@ -56,6 +61,29 @@ def main() -> None:
     check(
         text_input.input_id != second_input.input_id,
         "Each multimodal input must have a unique ID.",
+    )
+
+    file_input = MultimodalInput(
+        modality=InputModality.FILE,
+        content="document.pdf",
+    )
+
+    check(
+        file_input.modality == InputModality.FILE,
+        "FILE input modality must be preserved.",
+    )
+
+    check(
+        file_input.content == "document.pdf",
+        "FILE input content must be preserved.",
+    )
+
+    check(
+        file_input.input_id not in {
+            text_input.input_id,
+            second_input.input_id,
+        },
+        "FILE input must have a unique ID.",
     )
 
     invalid_modality_rejected = False
@@ -88,7 +116,9 @@ def main() -> None:
         "Empty content must be rejected.",
     )
 
-    fields = set(MultimodalInput.__dataclass_fields__)
+    fields = set(
+        MultimodalInput.__dataclass_fields__
+    )
 
     check(
         "permission" not in fields,
@@ -105,7 +135,9 @@ def main() -> None:
         "Multimodal input must not contain credential fields.",
     )
 
-    print("SAHIBEX 6M-1 MULTIMODAL INPUT CONTRACT TEST: PASS")
+    print(
+        "SAHIBEX 6M-1 MULTIMODAL INPUT CONTRACT TEST: PASS"
+    )
 
 
 if __name__ == "__main__":

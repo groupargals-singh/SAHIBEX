@@ -18,11 +18,14 @@ from core.research.research_executor import ResearchExecutor
 from core.research.job import ResearchJob
 from core.research.research_plan import ResearchPlan, ResearchStep
 from core.research.storage import ResearchStorage
+from core.research.provider_router import ResearchProviderRouter
 
 
 @dataclass
 class ResearchPipelineContext:
-    """Runtime state shared by research execution step handlers."""
+    """
+    Runtime state shared by research execution step handlers.
+    """
 
     query: str
     acquisition: Any = None
@@ -99,12 +102,20 @@ class ResearchPipelineIntegration:
 
         self.acquisition_pipeline = acquisition_pipeline
         self.extraction_pipeline = extraction_pipeline
+
+        self.provider_router = ResearchProviderRouter(
+            self.acquisition_pipeline.acquisition_engine
+        )
+
         self.answer_pipeline = answer_pipeline
         self.storage = storage
 
         self._contexts: Dict[str, ResearchPipelineContext] = {}
 
-    def context_for(self, job_id: str) -> ResearchPipelineContext:
+    def context_for(
+        self,
+        job_id: str,
+    ) -> ResearchPipelineContext:
         if not isinstance(job_id, str) or not job_id.strip():
             raise ValueError("job_id must be a non-empty string")
 
@@ -134,6 +145,7 @@ class ResearchPipelineIntegration:
         )
 
         self._contexts[job.job_id] = context
+
         return context
 
     def register_handlers(
@@ -147,18 +159,22 @@ class ResearchPipelineIntegration:
             self.STEP_SCOPE,
             self.handle_scope,
         )
+
         executor.register_step_handler(
             self.STEP_ACQUISITION,
             self.handle_acquisition,
         )
+
         executor.register_step_handler(
             self.STEP_EXTRACTION,
             self.handle_extraction,
         )
+
         executor.register_step_handler(
             self.STEP_VERIFICATION,
             self.handle_verification,
         )
+
         executor.register_step_handler(
             self.STEP_ANSWER,
             self.handle_answer,
@@ -200,11 +216,15 @@ class ResearchPipelineIntegration:
                 "source-acquisition step has no source types"
             )
 
-        provider_name = step.source_types[0]
+        source_type = step.source_types[0]
 
         request = AcquisitionRequest(
             query=job.query,
-            source_type=provider_name,
+            source_type=source_type,
+        )
+
+        provider_name = self.provider_router.provider_name(
+            request
         )
 
         result = self.acquisition_pipeline.acquire_and_ingest(

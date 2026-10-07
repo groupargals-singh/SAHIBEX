@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 from core.policies.constitution import (
     ActionClass,
     ActionDecision,
@@ -19,6 +20,7 @@ PROTECTED_ACTIONS = (
     ActionClass.SELF_UPDATE,
     ActionClass.EXTERNAL_CONTROL,
 )
+
 
 AUTONOMOUS_ACTIONS = (
     ActionClass.THINK,
@@ -73,12 +75,14 @@ def main() -> None:
         )
 
         check(
-            decision.decision == ActionDecision.ALLOW,
+            decision.decision
+            == ActionDecision.ALLOW,
             f"{action.value} must be allowed after explicit user authorization.",
         )
 
         check(
-            decision.authority == AuthorityLevel.USER,
+            decision.authority
+            == AuthorityLevel.USER,
             f"{action.value} must retain USER authority.",
         )
 
@@ -93,7 +97,8 @@ def main() -> None:
         )
 
         check(
-            decision.decision == ActionDecision.ALLOW,
+            decision.decision
+            == ActionDecision.ALLOW,
             f"{action.value} must be autonomously allowed.",
         )
 
@@ -109,7 +114,9 @@ def main() -> None:
 
     for action in PROTECTED_ACTIONS:
         check(
-            constitution.can_sahibex_override_user(action)
+            constitution.can_sahibex_override_user(
+                action
+            )
             is False,
             f"SAHIBEX must never override {action.value} authority.",
         )
@@ -125,25 +132,30 @@ def main() -> None:
     )
 
     # -------------------------------------------------
-    # 6. Unknown action denied
+    # 6. Unknown action fails closed
     # -------------------------------------------------
 
     class FakeAction:
         value = "unknown"
 
-    decision = constitution.decide(
-        FakeAction(),  # type: ignore[arg-type]
-        user_confirmation=True,
-    )
+    try:
+        constitution.decide(
+            FakeAction(),  # type: ignore[arg-type]
+            user_confirmation=True,
+        )
+    except TypeError as exc:
+        check(
+            str(exc)
+            == "action must be an ActionClass.",
+            "Unknown action must fail closed with a strict type error.",
+        )
+    else:
+        raise AssertionError(
+            "Unknown action object must not be accepted."
+        )
 
-    check(
-        decision.decision == ActionDecision.DENY,
-        "Unknown action class must be denied.",
-    )
-
-    check(
-        decision.authority == AuthorityLevel.USER,
-        "Unknown action must remain under user authority.",
+    print(
+        "[PASS] unknown action fails closed"
     )
 
     print(

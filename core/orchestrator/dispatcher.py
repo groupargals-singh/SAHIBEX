@@ -3,6 +3,7 @@ from typing import Any
 
 from core.brain.intent import IntentResult
 from core.brain.action_classifier import ActionClassifier
+from core.brain.permission_gateway import PermissionGateway
 from core.policies.approval import (
     ActionType,
     PermissionEngine,
@@ -53,6 +54,9 @@ class CommandRouter:
 
     def __init__(self) -> None:
         self.permission_engine = PermissionEngine()
+        self.permission_gateway = PermissionGateway(
+            permission_engine=self.permission_engine,
+        )
         self.action_classifier = ActionClassifier()
         self.verifier = VerificationEngine()
 
@@ -72,7 +76,7 @@ class CommandRouter:
                 ActionType.RESPOND,
             )
 
-        decision = self.permission_engine.check(action)
+        decision = self.permission_gateway.check(action)
 
         verification = self.verifier.verify(
             intent=intent_result.intent,

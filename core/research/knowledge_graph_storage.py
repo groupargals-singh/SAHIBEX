@@ -4,6 +4,7 @@ import sqlite3
 from pathlib import Path
 from typing import Optional
 
+from core.research.fact import Fact
 from core.research.knowledge_registry import (
     Concept,
     Entity,
@@ -19,6 +20,7 @@ class KnowledgeGraphStorage:
     Stores:
     - Entities
     - Concepts
+    - Facts
     - Relationships
 
     This storage is intentionally separate from the existing research
@@ -41,7 +43,6 @@ class KnowledgeGraphStorage:
         self._connection = sqlite3.connect(
             str(self.database_path),
         )
-
         self._connection.row_factory = sqlite3.Row
         self._initialize_schema()
 
@@ -58,6 +59,17 @@ class KnowledgeGraphStorage:
                 data TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS knowledge_facts (
+                fact_id TEXT PRIMARY KEY,
+                subject_id TEXT NOT NULL,
+                subject_type TEXT NOT NULL,
+                predicate TEXT NOT NULL,
+                object_id TEXT,
+                object_type TEXT,
+                object_value TEXT,
+                data TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS knowledge_relationships (
                 relationship_id TEXT PRIMARY KEY,
                 source_id TEXT NOT NULL,
@@ -66,6 +78,18 @@ class KnowledgeGraphStorage:
                 target_type TEXT NOT NULL,
                 data TEXT NOT NULL
             );
+
+            CREATE INDEX IF NOT EXISTS
+            idx_facts_subject
+            ON knowledge_facts(subject_id);
+
+            CREATE INDEX IF NOT EXISTS
+            idx_facts_object
+            ON knowledge_facts(object_id);
+
+            CREATE INDEX IF NOT EXISTS
+            idx_facts_predicate
+            ON knowledge_facts(predicate);
 
             CREATE INDEX IF NOT EXISTS
             idx_relationships_source
@@ -214,6 +238,104 @@ class KnowledgeGraphStorage:
         return int(row["count"])
 
     # ---------------------------------------------------------
+    # Facts
+    # ---------------------------------------------------------
+
+    def save_fact(
+        self,
+        fact: Fact,
+    ) -> None:
+        if not isinstance(fact, Fact):
+            raise TypeError(
+                "fact must be a Fact"
+            )
+
+        self._connection.execute(
+            """
+            INSERT OR REPLACE INTO knowledge_facts
+            (
+                fact_id,
+                subject_id,
+                subject_type,
+                predicate,
+                object_id,
+                object_type,
+                object_value,
+                data
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                fact.fact_id,
+                fact.subject_id,
+                fact.subject_type,
+                fact.predicate,
+                fact.object_id,
+                fact.object_type,
+                fact.object_value,
+                self._serialize(fact),
+            ),
+        )
+
+        self._connection.commit()
+
+    def get_fact(
+        self,
+        fact_id: str,
+    ) -> Optional[Fact]:
+        row = self._connection.execute(
+            """
+            SELECT data
+            FROM knowledge_facts
+            WHERE fact_id = ?
+            """,
+            (fact_id,),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return Fact(
+            **self._deserialize(row["data"])
+        )
+
+    def fact_count(self) -> int:
+        row = self._connection.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM knowledge_facts
+            """
+        ).fetchone()
+
+        return int(row["count"])
+
+    def facts_for_subject(
+        self,
+        subject_id: str,
+    ) -> tuple[Fact, ...]:
+        if not subject_id.strip():
+            raise ValueError(
+                "subject_id cannot be empty"
+            )
+
+        rows = self._connection.execute(
+            """
+            SELECT data
+            FROM knowledge_facts
+            WHERE subject_id = ?
+            ORDER BY fact_id
+            """,
+            (subject_id,),
+        ).fetchall()
+
+        return tuple(
+            Fact(
+                **self._deserialize(row["data"])
+            )
+            for row in rows
+        )
+
+    # ---------------------------------------------------------
     # Relationships
     # ---------------------------------------------------------
 
@@ -282,6 +404,137 @@ class KnowledgeGraphStorage:
         return int(row["count"])
 
     # ---------------------------------------------------------
+    # Concept Graph
+    # ---------------------------------------------------------
+
+    def concept_relationships(
+        self,
+        concept_id: str,
+        relationship_type: Optional[str] = None,
+    ) -> tuple[Relationship, ...]:
+        """Return outgoing relationships from a concept."""
+
+        if not concept_id.strip():
+            raise ValueError(
+                "concept_id cannot be empty"
+            )
+
+        if self.get_concept(concept_id) is None:
+            raise KeyError(
+                f"unknown concept: {concept_id}"
+            )
+
+        query = """
+            SELECT data
+            FROM knowledge_relationships
+            WHERE source_id = ?
+              AND source_type = 'concept'
+              AND target_type = 'concept'
+        """
+
+        params: list[object] = [concept_id]
+
+        if relationship_type is not None:
+            if not relationship_type.strip():
+                raise ValueError(
+                    "relationship_type cannot be empty"
+                )
+
+            query += """
+                AND json_extract(
+                    data,
+                    '$.relationship_type'
+                ) = ?
+            """
+
+            params.append(relationship_type)
+
+        query += " ORDER BY relationship_id"
+
+        rows = self._connection.execute(
+            query,
+            tuple(params),
+        ).fetchall()
+
+        return tuple(
+            Relationship(
+                **self._deserialize(row["data"])
+            )
+            for row in rows
+        )
+
+    def concepts_related_to(
+        self,
+        concept_id: str,
+        relationship_type: Optional[str] = None,
+    ) -> tuple[str, ...]:
+        """Return concept IDs related from the given concept."""
+
+        relationships = self.concept_relationships(
+            concept_id,
+            relationship_type,
+        )
+
+        return tuple(
+            relationship.target_id
+            for relationship in relationships
+        )
+
+    def concepts_linked_to(
+        self,
+        concept_id: str,
+        relationship_type: Optional[str] = None,
+    ) -> tuple[str, ...]:
+        """Return concept IDs having relationships to the given concept."""
+
+        if not concept_id.strip():
+            raise ValueError(
+                "concept_id cannot be empty"
+            )
+
+        if self.get_concept(concept_id) is None:
+            raise KeyError(
+                f"unknown concept: {concept_id}"
+            )
+
+        query = """
+            SELECT data
+            FROM knowledge_relationships
+            WHERE target_id = ?
+              AND target_type = 'concept'
+              AND source_type = 'concept'
+        """
+
+        params: list[object] = [concept_id]
+
+        if relationship_type is not None:
+            if not relationship_type.strip():
+                raise ValueError(
+                    "relationship_type cannot be empty"
+                )
+
+            query += """
+                AND json_extract(
+                    data,
+                    '$.relationship_type'
+                ) = ?
+            """
+
+            params.append(relationship_type)
+
+        query += " ORDER BY relationship_id"
+
+        rows = self._connection.execute(
+            query,
+            tuple(params),
+        ).fetchall()
+
+        return tuple(
+            self._deserialize(row["data"])["source_id"]
+            for row in rows
+        )
+
+    # ---------------------------------------------------------
     # Summary
     # ---------------------------------------------------------
 
@@ -290,6 +543,7 @@ class KnowledgeGraphStorage:
             "database": str(self.database_path),
             "entities": self.entity_count(),
             "concepts": self.concept_count(),
+            "facts": self.fact_count(),
             "relationships": self.relationship_count(),
         }
 

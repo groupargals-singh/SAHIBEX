@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Any
 from uuid import uuid4
 
+from core.brain.permission_gateway import PermissionGateway
 from core.policies.approval import (
     ActionType,
     PermissionEngine,
@@ -134,6 +135,9 @@ class OperationalProtectedActionGateway:
         self.permission_engine = (
             permission_engine or PermissionEngine()
         )
+        self.permission_gateway = PermissionGateway(
+            permission_engine=self.permission_engine,
+        )
 
     def approve(
         self,
@@ -191,7 +195,7 @@ class OperationalProtectedActionGateway:
                 execution_allowed=False,
             )
 
-        permission = self.permission_engine.check(
+        permission = self.permission_gateway.check(
             action_type,
             confirmation=user_confirmation,
         )

@@ -40,6 +40,15 @@ class IntentEngine:
             r"\bresearch\b",
         ],
 
+        "learn": [
+            r"\blearn\b",
+            r"\blearning\b",
+            r"\bstudy\b",
+            r"\bteach me\b",
+            r"\bhelp me learn\b",
+            r"\bhelp me understand\b",
+        ],
+
         "code": [
             r"\bwrite\s+(?:a\s+)?(?:python|javascript|java|c\+\+|rust|go)\b",
             r"\bcode\b",
@@ -85,6 +94,7 @@ class IntentEngine:
         "file_operation": 70,
         "explain": 60,
         "create": 50,
+        "learn": 95,
     }
 
     def detect(self, text: str) -> IntentResult:

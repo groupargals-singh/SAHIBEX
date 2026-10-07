@@ -9,9 +9,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 from core.brain.master_brain import MasterBrain
-from core.policies.constitution import (
-    ActionDecision,
-)
+from core.policies.constitution import ActionDecision
 
 
 def main() -> None:
@@ -36,12 +34,21 @@ def main() -> None:
         "Search the internet for AI security."
     )
 
-    assert result.success is True
     assert result.intent == "search"
-    assert result.plan_created is True
-    assert result.task_count == 3
+    assert result.action == "research"
+    assert result.permission_allowed is True
+    assert (
+        result.authority_decision
+        == ActionDecision.ALLOW.value
+    )
+    assert result.success is False
+    assert result.plan_created is False
+    assert (
+        "required acquisition provider is not registered"
+        in result.message
+    )
 
-    print("[PASS] research planning pipeline")
+    print("[PASS] research authorization pipeline")
 
     result = brain.process(
         "Create a Python program."

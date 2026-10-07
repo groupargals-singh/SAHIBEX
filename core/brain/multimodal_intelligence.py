@@ -64,22 +64,24 @@ class MultimodalIntelligence:
     """
     Contract-level multimodal intelligence.
 
-    This layer combines modality references into a
-    normalized intelligence result.
-
     Supported modalities:
     - text
     - voice
     - image
+    - file
 
-    It does not access devices, models, credentials,
-    permissions, or external systems.
+    This layer normalizes modality references only.
+
+    It does not access devices, files, models,
+    credentials, permissions, or external systems.
     """
 
     _SUPPORTED_MODALITIES = {
         "text",
         "voice",
         "image",
+        "file",
+        "child",
     }
 
     def process(
@@ -88,6 +90,7 @@ class MultimodalIntelligence:
         modalities: list[str],
         summary: str,
     ) -> MultimodalIntelligenceResult:
+
         if not isinstance(modalities, list):
             raise TypeError("modalities must be a list.")
 

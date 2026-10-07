@@ -1,0 +1,851 @@
+/wfrom __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+from core.brain.context import ContextManager
+from core.brain.intent import IntentEngine
+from core.brain.mother_operational_integration import (
+    MotherOperationalIntegration,
+)
+from core.brain.permission_constitution_integration import (
+    MasterPermissionConstitutionIntegration,
+)
+from core.brain.verification_trust_integration import (
+    MasterVerificationTrustIntegration,
+)
+from core.orchestrator.planner import MasterPlanner, PlanStep
+from core.orchestrator.task_state import TaskPriority
+from core.policies.approval import (
+    ActionType,
+    PermissionEngine,
+)
+from core.policies.constitution import (
+    ActionClass,
+    ActionDecision,
+    SahibexConstitution,
+)
+from verification.verifier import VerificationEngine
+
+
+@dataclass(frozen=True)
+class BrainResult:
+    success: bool
+    message: str
+    intent: str
+    intent_confidence: float
+    action: str
+    action_confidence: float
+    risk: str
+    permission_allowed: bool
+    confirmation_required: bool
+    authority_decision: str
+    plan_created: bool
+    task_count: int
+    goal_id: str | None
+    verification_status: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+class MasterBrain:
+    """
+    Central coordination layer of SAHIBEX.
+
+    Pipeline:
+
+        User Request
+            ↓
+        Intent
+            ↓
+        Explicit Action Detection
+            ↓
+        Constitution
+            ↓
+        Permission
+            ↓
+        Permission/Constitution Integration
+            ↓
+        Verification
+            ↓
+        Verification/Trust Integration
+            ↓
+        Planning
+            ↓
+        Context
+    """
+
+    INTENT_ACTION_MAP = {
+        "system_status": (
+            ActionType.RESPOND,
+            ActionClass.THINK,
+        ),
+        "search": (
+            ActionType.RESEARCH,
+            ActionClass.RESEARCH,
+        ),
+        "create": (
+            ActionType.CREATE,
+            ActionClass.THINK,
+        ),
+        "explain": (
+            ActionType.RESPOND,
+            ActionClass.THINK,
+        ),
+        "code": (
+            ActionType.CREATE,
+            ActionClass.THINK,
+        ),
+        "file_operation": (
+            ActionType.READ_FILE,
+            ActionClass.READ,
+        ),
+        "general_request": (
+            ActionType.RESPOND,
+            ActionClass.THINK,
+        ),
+        "empty": (
+            ActionType.RESPOND,
+            ActionClass.THINK,
+        ),
+    }
+
+    def __init__(
+        self,
+        *,
+        intent_engine: IntentEngine | None = None,
+        context_manager: ContextManager | None = None,
+        planner: MasterPlanner | None = None,
+        constitution: SahibexConstitution | None = None,
+        permission_engine: PermissionEngine | None = None,
+        verification_engine: VerificationEngine | None = None,
+    ) -> None:
+
+        self.intent_engine = (
+            intent_engine
+            if intent_engine is not None
+            else IntentEngine()
+        )
+
+        self.context = (
+            context_manager
+            if context_manager is not None
+            else ContextManager()
+        )
+
+        self.planner = (
+            planner
+            if planner is not None
+            else MasterPlanner()
+        )
+
+        self.constitution = (
+            constitution
+            if constitution is not None
+            else SahibexConstitution()
+        )
+
+        self.permission = (
+            permission_engine
+            if permission_engine is not None
+            else PermissionEngine()
+        )
+
+        self.verification = (
+            verification_engine
+            if verification_engine is not None
+            else VerificationEngine()
+        )
+
+        # Existing contract-level integration boundaries.
+        # These do not grant authority or execute actions.
+        self.permission_constitution_integration = (
+            MasterPermissionConstitutionIntegration()
+        )
+
+        self.verification_trust_integration = (
+            MasterVerificationTrustIntegration()
+        )
+       self.mother_operational = MotherOperationalIntegration()
+    def process(
+        self,
+        text: str,
+        *,
+        user_confirmation: bool = False,
+    ) -> BrainResult:
+
+        intent_result = self.intent_engine.detect(text)
+
+        action, constitution_action = self._classify_action(
+            text,
+            intent_result.intent,
+        )
+
+        action_confidence = self._action_confidence(
+            text,
+            action,
+        )
+
+        risk = self.permission.RISK_MAP[action]
+
+        authority = self.constitution.decide(
+            constitution_action,
+            user_confirmation=user_confirmation,
+        )
+
+        permission = self.permission.check(
+            action,
+            confirmation=user_confirmation,
+        )
+
+        # ---------------------------------------------------------
+        # PERMISSION + CONSTITUTION INTEGRATION
+        # ---------------------------------------------------------
+
+        permission_constitution_integration = (
+            self.permission_constitution_integration.evaluate(
+                action=action.value,
+                allowed=permission.allowed,
+                requires_confirmation=(
+                    permission.requires_confirmation
+                ),
+                reason=permission.reason,
+            )
+        )
+
+        verification = self.verification.verify(
+            intent=intent_result.intent,
+            intent_confidence=intent_result.confidence,
+            action=action,
+            action_confidence=action_confidence,
+            risk=risk,
+            permission_allowed=permission.allowed,
+            confirmation_required=(
+                permission.requires_confirmation
+            ),
+        )
+
+        # ---------------------------------------------------------
+        # VERIFICATION + TRUST INTEGRATION
+        # ---------------------------------------------------------
+
+        verification_trust_integration = (
+            self.verification_trust_integration.integrate(
+                verification_id=(
+                    f"master-verification-{intent_result.intent}"
+                ),
+                brain_id="sahibex-master-brain",
+                trust_status=(
+                    "verified"
+                    if verification.verified
+                    else "unverified"
+                ),
+                confidence=float(
+                    verification.confidence
+                    if hasattr(verification, "confidence")
+                    else intent_result.confidence
+                ),
+                summary=(
+                    "Master Brain verification status: "
+                    f"{verification.status}"
+                ),
+            )
+        )
+
+        # ---------------------------------------------------------
+        # EMPTY REQUEST
+        # ---------------------------------------------------------
+
+        if intent_result.intent == "empty":
+            result = BrainResult(
+                success=False,
+                message="Empty request.",
+                intent=intent_result.intent,
+                intent_confidence=intent_result.confidence,
+                action=action.value,
+                action_confidence=action_confidence,
+                risk=risk.value,
+                permission_allowed=False,
+                confirmation_required=False,
+                authority_decision=authority.decision.value,
+                plan_created=False,
+                task_count=0,
+                goal_id=None,
+                verification_status=verification.status,
+                metadata={
+                    "permission_constitution_integration": {
+                        "success": (
+                            permission_constitution_integration.success
+                        ),
+                        "integration_id": (
+                            permission_constitution_integration
+                            .integration_id
+                        ),
+                    },
+                    "verification_trust_integration": {
+                        "success": (
+                            verification_trust_integration.success
+                        ),
+                        "integration_id": (
+                            verification_trust_integration
+                            .integration_id
+                        ),
+                    },
+                },
+            )
+
+            self._record_context(text, result)
+            return result
+
+        # ---------------------------------------------------------
+        # PROTECTED ACTION WITHOUT CONFIRMATION
+        # ---------------------------------------------------------
+
+        if (
+            authority.decision
+            == ActionDecision.REQUIRE_CONFIRMATION
+            and not user_confirmation
+        ):
+            result = self._blocked_result(
+                text=text,
+                intent=intent_result.intent,
+                intent_confidence=intent_result.confidence,
+                action=action,
+                action_confidence=action_confidence,
+                risk=risk.value,
+                authority_decision=authority.decision.value,
+                confirmation_required=True,
+                message=(
+                    "Protected action requires explicit "
+                    "user confirmation."
+                ),
+            )
+
+            self._record_context(text, result)
+            return result
+
+        # ---------------------------------------------------------
+        # PERMISSION BLOCK
+        # ---------------------------------------------------------
+
+        if not permission.allowed:
+            result = self._blocked_result(
+                text=text,
+                intent=intent_result.intent,
+                intent_confidence=intent_result.confidence,
+                action=action,
+                action_confidence=action_confidence,
+                risk=risk.value,
+                authority_decision=authority.decision.value,
+                confirmation_required=(
+                    permission.requires_confirmation
+                ),
+                message=permission.reason,
+            )
+
+            self._record_context(text, result)
+            return result
+
+        # ---------------------------------------------------------
+        # VERIFICATION BLOCK
+        # ---------------------------------------------------------
+
+        if not verification.verified:
+            result = self._blocked_result(
+                text=text,
+                intent=intent_result.intent,
+                intent_confidence=intent_result.confidence,
+                action=action,
+                action_confidence=action_confidence,
+                risk=risk.value,
+                authority_decision=authority.decision.value,
+                confirmation_required=(
+                    permission.requires_confirmation
+                ),
+                message=(
+                    "Request failed safety verification."
+                ),
+                verification_status=verification.status,
+            )
+
+            self._record_context(text, result)
+            return result
+       # ---------------------------------------------------------
+# MOTHER OPERATIONAL COGNITIVE RUNTIME
+# ---------------------------------------------------------
+
+operational_result = None
+
+if intent_result.intent in {
+    "system_status",
+    "explain",
+    "general_request",
+    "create",
+    "code",
+    "search",
+}:
+    operational_result = (
+        self.mother_operational.process_approved_request(
+            objective=text,
+            intent=intent_result.intent,
+            provider="mock",
+        )
+    )
+
+    if not operational_result.success:
+        result = self._blocked_result(
+            text=text,
+            intent=intent_result.intent,
+            intent_confidence=intent_result.confidence,
+            action=action,
+            action_confidence=action_confidence,
+            risk=risk.value,
+            authority_decision=authority.decision.value,
+            confirmation_required=(
+                permission.requires_confirmation
+            ),
+            message=operational_result.response,
+            verification_status=(
+                operational_result.verification_status
+            ),
+        )
+
+        self._record_context(text, result)
+        return result
+
+
+        # ---------------------------------------------------------
+        # PLAN
+        # ---------------------------------------------------------
+
+        plan = self._build_plan(
+            text,
+            intent_result.intent,
+        )
+
+        result = BrainResult(
+            success=True,
+            message=(
+    operational_result.response
+    if operational_result is not None
+    else "Request processed and plan created."
+),
+            intent=intent_result.intent,
+            intent_confidence=intent_result.confidence,
+            action=action.value,
+            action_confidence=action_confidence,
+            risk=risk.value,
+            permission_allowed=permission.allowed,
+            confirmation_required=(
+                permission.requires_confirmation
+            ),
+            authority_decision=authority.decision.value,
+            plan_created=True,
+            task_count=len(plan.tasks),
+            goal_id=plan.goal.goal_id,
+            verification_status=verification.status,
+            metadata={
+                "authority": authority.authority.value,
+                "authority_reason": authority.reason,
+                "permission_reason": permission.reason,
+                "verification_checks_passed": (
+                    verification.checks_passed
+                ),
+                "verification_checks_failed": (
+                    verification.checks_failed
+                ),
+                "permission_constitution_integration": {
+                    "success": (
+                        permission_constitution_integration.success
+                    ),
+                    "allowed": (
+                        permission_constitution_integration.allowed
+                    ),
+                    "requires_confirmation": (
+                        permission_constitution_integration
+                        .requires_confirmation
+                    ),
+                    "reason": (
+                        permission_constitution_integration.reason
+                    ),
+                    "integration_id": (
+                        permission_constitution_integration
+                        .integration_id
+                    ),
+                },
+                "verification_trust_integration": {
+                    "success": (
+                        verification_trust_integration.success
+                    ),
+                    "verification_id": (
+                        verification_trust_integration
+                        .verification_id
+                    ),
+                    "brain_id": (
+                        verification_trust_integration.brain_id
+                    ),
+                    "trust_status": (
+                        verification_trust_integration.trust_status
+                    ),
+                    "confidence": (
+                        verification_trust_integration.confidence
+                    ),
+                    "summary": (
+                        verification_trust_integration.summary
+                    ),
+                    "integration_id": (
+                        verification_trust_integration
+                        .integration_id
+                    ),
+                },
+            },
+        )
+
+        self._record_context(text, result)
+
+        return result
+
+    def _classify_action(
+        self,
+        text: str,
+        intent: str,
+    ) -> tuple[ActionType, ActionClass]:
+
+        normalized = text.lower().strip()
+
+        if any(
+            keyword in normalized
+            for keyword in (
+                "delete",
+                "remove",
+                "erase",
+                "destroy",
+                "uninstall",
+            )
+        ):
+            return (
+                ActionType.DELETE_FILE,
+                ActionClass.DELETE,
+            )
+
+        if any(
+            keyword in normalized
+            for keyword in (
+                "run command",
+                "execute command",
+                "execute",
+                "shell",
+                "terminal",
+            )
+        ):
+            return (
+                ActionType.RUN_COMMAND,
+                ActionClass.EXECUTE,
+            )
+
+        if any(
+            keyword in normalized
+            for keyword in (
+                "api key",
+                "api token",
+                "password",
+                "secret",
+                "credential",
+                "access token",
+            )
+        ):
+            return (
+                ActionType.CREDENTIAL_USE,
+                ActionClass.CREDENTIAL,
+            )
+
+        if any(
+            keyword in normalized
+            for keyword in (
+                "transfer money",
+                "send money",
+                "make payment",
+                "pay ",
+                "buy ",
+                "sell ",
+            )
+        ):
+            return (
+                ActionType.FINANCIAL_ACTION,
+                ActionClass.FINANCIAL,
+            )
+
+        if any(
+            keyword in normalized
+            for keyword in (
+                "system configuration",
+                "change system",
+                "system change",
+                "install system",
+                "configure system",
+            )
+        ):
+            return (
+                ActionType.SYSTEM_CHANGE,
+                ActionClass.SYSTEM_CHANGE,
+            )
+
+        if any(
+            keyword in normalized
+            for keyword in (
+                "self update",
+                "self-update",
+                "update yourself",
+                "modify yourself",
+                "rewrite yourself",
+            )
+        ):
+            return (
+                ActionType.SYSTEM_CHANGE,
+                ActionClass.SELF_UPDATE,
+            )
+
+        if any(
+            keyword in normalized
+            for keyword in (
+                "upload",
+                "download",
+                "connect to",
+                "network access",
+                "http://",
+                "https://",
+            )
+        ):
+            return (
+                ActionType.NETWORK_ACCESS,
+                ActionClass.NETWORK,
+            )
+
+        if any(
+            keyword in normalized
+            for keyword in (
+                "write file",
+                "save file",
+                "modify file",
+                "edit file",
+                "update file",
+                "overwrite file",
+            )
+        ):
+            return (
+                ActionType.WRITE_FILE,
+                ActionClass.WRITE,
+            )
+
+        return self.INTENT_ACTION_MAP.get(
+            intent,
+            (
+                ActionType.RESPOND,
+                ActionClass.THINK,
+            ),
+        )
+
+    def _action_confidence(
+        self,
+        text: str,
+        action: ActionType,
+    ) -> float:
+
+        normalized = text.lower().strip()
+
+        protected_keywords = {
+            ActionType.DELETE_FILE: (
+                "delete",
+                "remove",
+                "erase",
+                "destroy",
+                "uninstall",
+            ),
+            ActionType.RUN_COMMAND: (
+                "run command",
+                "execute command",
+                "execute",
+                "shell",
+                "terminal",
+            ),
+            ActionType.CREDENTIAL_USE: (
+                "api key",
+                "api token",
+                "password",
+                "secret",
+                "credential",
+                "access token",
+            ),
+            ActionType.FINANCIAL_ACTION: (
+                "transfer money",
+                "send money",
+                "make payment",
+                "pay ",
+                "buy ",
+                "sell ",
+            ),
+            ActionType.SYSTEM_CHANGE: (
+                "system configuration",
+                "change system",
+                "system change",
+                "install system",
+                "configure system",
+            ),
+            ActionType.NETWORK_ACCESS: (
+                "upload",
+                "download",
+                "connect to",
+                "network access",
+                "http://",
+                "https://",
+            ),
+            ActionType.WRITE_FILE: (
+                "write file",
+                "save file",
+                "modify file",
+                "edit file",
+                "update file",
+                "overwrite file",
+            ),
+        }
+
+        keywords = protected_keywords.get(action)
+
+        if keywords is None:
+            return 0.80
+
+        matches = sum(
+            1
+            for keyword in keywords
+            if keyword in normalized
+        )
+
+        if matches == 0:
+            return 0.50
+
+        return min(
+            0.98,
+            0.80 + (matches * 0.05),
+        )
+
+    def _build_plan(
+        self,
+        text: str,
+        intent: str,
+    ):
+        if intent == "search":
+            steps = [
+                PlanStep(
+                    title="Understand research request",
+                    description=text,
+                    priority=TaskPriority.NORMAL,
+                ),
+                PlanStep(
+                    title="Prepare research",
+                    description=(
+                        "Collect and organize relevant information."
+                    ),
+                    priority=TaskPriority.NORMAL,
+                ),
+                PlanStep(
+                    title="Verify research result",
+                    description=(
+                        "Check evidence and consistency."
+                    ),
+                    priority=TaskPriority.HIGH,
+                ),
+            ]
+
+        elif intent in {"create", "code"}:
+            steps = [
+                PlanStep(
+                    title="Understand requirements",
+                    description=text,
+                    priority=TaskPriority.NORMAL,
+                ),
+                PlanStep(
+                    title="Prepare creation plan",
+                    description=(
+                        "Design the requested output."
+                    ),
+                    priority=TaskPriority.NORMAL,
+                ),
+                PlanStep(
+                    title="Verify proposed result",
+                    description=(
+                        "Check the planned result before delivery."
+                    ),
+                    priority=TaskPriority.HIGH,
+                ),
+            ]
+
+        else:
+            steps = [
+                PlanStep(
+                    title="Analyze request",
+                    description=text,
+                    priority=TaskPriority.NORMAL,
+                ),
+                PlanStep(
+                    title="Prepare response",
+                    description=(
+                        "Construct a suitable response."
+                    ),
+                    priority=TaskPriority.NORMAL,
+                ),
+            ]
+
+        return self.planner.create_plan(
+            title=f"SAHIBEX: {intent}",
+            description=text,
+            steps=steps,
+        )
+
+    def _blocked_result(
+        self,
+        *,
+        text: str,
+        intent: str,
+        intent_confidence: float,
+        action: ActionType,
+        action_confidence: float,
+        risk: str,
+        authority_decision: str,
+        confirmation_required: bool,
+        message: str,
+        verification_status: str = "NOT_EXECUTED",
+    ) -> BrainResult:
+
+        success = (
+            confirmation_required
+            and authority_decision
+            == ActionDecision.REQUIRE_CONFIRMATION.value
+        )
+
+        return BrainResult(
+            success=success,
+            message=message,
+            intent=intent,
+            intent_confidence=intent_confidence,
+            action=action.value,
+            action_confidence=action_confidence,
+            risk=risk,
+            permission_allowed=False,
+            confirmation_required=confirmation_required,
+            authority_decision=authority_decision,
+            plan_created=False,
+            task_count=0,
+            goal_id=None,
+            verification_status=verification_status,
+        )
+
+    def _record_context(
+        self,
+        text: str,
+        result: BrainResult,
+    ) -> None:
+
+        self.context.add_turn(
+            user=text,
+            assistant=result.message,
+            intent=result.intent,
+        )

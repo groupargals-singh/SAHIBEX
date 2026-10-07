@@ -9,15 +9,23 @@ class InputModality(str, Enum):
     TEXT = "text"
     VOICE = "voice"
     IMAGE = "image"
-
+    FILE = "file"
+    CHILD = "child"
 
 @dataclass(frozen=True)
 class MultimodalInput:
     """
     Immutable contract representing one multimodal input.
 
+    Supported input modalities:
+    - text
+    - voice
+    - image
+    - file
+
     This is an input representation only.
-    It does not execute models, access devices, or grant permissions.
+    It does not execute models, access devices,
+    perform file operations, or grant permissions.
     """
 
     modality: InputModality
@@ -34,5 +42,10 @@ class MultimodalInput:
         if not self.content.strip():
             raise ValueError("content must be a non-empty string.")
 
-        if not isinstance(self.input_id, str) or not self.input_id.strip():
-            raise ValueError("input_id must be a non-empty string.")
+        if (
+            not isinstance(self.input_id, str)
+            or not self.input_id.strip()
+        ):
+            raise ValueError(
+                "input_id must be a non-empty string."
+            )

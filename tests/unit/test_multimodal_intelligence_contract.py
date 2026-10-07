@@ -14,7 +14,10 @@ def main() -> None:
         summary="User asked a question using text and voice context.",
     )
 
-    assert isinstance(result, MultimodalIntelligenceResult)
+    assert isinstance(
+        result,
+        MultimodalIntelligenceResult,
+    )
 
     assert result.success is True
     assert result.modalities == ["text", "voice"]
@@ -30,8 +33,35 @@ def main() -> None:
 
     assert image_result.success is True
     assert image_result.modalities == ["image"]
+    assert image_result.result_id
+
+    file_result = intelligence.process(
+        modalities=["file"],
+        summary="File input prepared for reasoning.",
+    )
+
+    assert file_result.success is True
+    assert file_result.modalities == ["file"]
+    assert file_result.summary == (
+        "File input prepared for reasoning."
+    )
+    assert file_result.result_id
+
+    mixed_result = intelligence.process(
+        modalities=["text", "file", "image"],
+        summary="Mixed multimodal input.",
+    )
+
+    assert mixed_result.success is True
+    assert mixed_result.modalities == [
+        "text",
+        "file",
+        "image",
+    ]
 
     assert result.result_id != image_result.result_id
+    assert image_result.result_id != file_result.result_id
+    assert file_result.result_id != mixed_result.result_id
 
     try:
         intelligence.process(
@@ -69,7 +99,10 @@ def main() -> None:
             "Invalid modality must be rejected."
         )
 
-    fields = MultimodalIntelligenceResult.__dataclass_fields__
+    fields = (
+        MultimodalIntelligenceResult
+        .__dataclass_fields__
+    )
 
     forbidden_fields = {
         "api_key",

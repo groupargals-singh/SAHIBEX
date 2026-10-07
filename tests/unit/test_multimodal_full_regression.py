@@ -4,6 +4,7 @@ import importlib
 
 
 TEST_MODULES = [
+    "tests.unit.test_file_input_unified_pipeline",
     "tests.unit.test_multimodal_input_contract",
     "tests.unit.test_voice_input_contract",
     "tests.unit.test_voice_output_contract",
@@ -21,7 +22,11 @@ def main() -> None:
     for module_name in TEST_MODULES:
         module = importlib.import_module(module_name)
 
-        test_main = getattr(module, "main", None)
+        test_main = getattr(
+            module,
+            "main",
+            None,
+        )
 
         if test_main is None:
             raise AssertionError(

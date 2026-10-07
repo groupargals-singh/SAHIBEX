@@ -1,0 +1,530 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from uuid import uuid4
+
+from app.config import settings
+from core.brain.prompt_injection_guard import (
+    PromptInjectionGuard,
+    PromptInjectionStatus,
+)
+from core.research.acquisition import ResearchAcquisitionEngine
+from core.research.acquisition_pipeline import ResearchAcquisitionPipeline
+from core.research.answer_pipeline import ResearchAnswerPipeline
+from core.research.extraction_pipeline import ResearchExtractionPipeline
+from core.research.query import ResearchQueryEngine
+from core.research.research_execution_manager import (
+    ResearchExecutionManager,
+)
+from core.research.research_pipeline_integration import (
+    ResearchPipelineIntegration,
+)
+from core.research.storage import ResearchStorage
+
+
+@dataclass(frozen=True)
+class MotherResearchResult:
+    """
+    Result returned by the Mother Brain research integration.
+
+    Conflict information is observational metadata only.
+    It does not grant authority, mutate knowledge, or replace
+    the existing research conflict resolver/aggregator.
+
+    Prompt-injection information is also observational security
+    metadata. Research content is untrusted data and never becomes
+    authority, permission, or executable instruction.
+    """
+
+    success: bool
+    query: str
+    status: str
+    answer: str
+    job_id: str
+    execution_id: str
+    verification_status: str
+
+    conflict_status: str = "NO_CONFLICT"
+    conflict_count: int = 0
+    resolved_conflict_count: int = 0
+    unresolved_conflict_count: int = 0
+    conflict_ids: tuple[str, ...] = ()
+    resolved_knowledge_ids: tuple[str, ...] = ()
+
+    prompt_injection_status: str = "SAFE"
+    prompt_injection_safe_to_follow: bool = True
+    prompt_injection_rules: tuple[str, ...] = ()
+
+    error: str = ""
+
+
+class MotherResearchIntegration:
+    """
+    Mother Brain bridge to the existing SAHIBEX research stack.
+
+    MasterBrain remains authoritative for:
+    - Constitution
+    - Permission
+    - Protected actions
+    - Human authority
+    - Verification
+
+    This adapter connects an already-approved research request
+    to the existing research execution pipeline.
+
+    Network permission is NOT granted here. The existing
+    ResearchAcquisitionPipeline remains responsible for enforcing
+    NETWORK_ACCESS before a network-capable provider is executed.
+
+    Conflict detection and resolution are NOT duplicated here.
+    Existing ResearchAggregationResult already contains the
+    authoritative conflict-resolution metadata.
+
+    Prompt-injection protection is observational and defensive:
+    research output is treated as untrusted data. Detected
+    instruction-hijacking content cannot become executable
+    authority through this integration.
+    """
+
+    VERSION = "1.2"
+
+    def __init__(
+        self,
+        *,
+        storage: ResearchStorage | None = None,
+        acquisition_pipeline: ResearchAcquisitionPipeline | None = None,
+        extraction_pipeline: ResearchExtractionPipeline | None = None,
+        answer_pipeline: ResearchAnswerPipeline | None = None,
+        research_pipeline: ResearchPipelineIntegration | None = None,
+        execution_manager: ResearchExecutionManager | None = None,
+    ) -> None:
+        if storage is None:
+            database_path = settings.data_dir / "sahibex_brain.db"
+            database_path.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+            storage = ResearchStorage(database_path)
+
+        self.storage = storage
+        self.prompt_injection_guard = PromptInjectionGuard()
+
+        if acquisition_pipeline is None:
+            database_path = (
+                Path(settings.data_dir)
+                / "sahibex_brain.db"
+            )
+
+            acquisition_engine = ResearchAcquisitionEngine()
+
+            acquisition_pipeline = ResearchAcquisitionPipeline(
+                database_path=database_path,
+                acquisition_engine=acquisition_engine,
+            )
+
+        self.acquisition_pipeline = acquisition_pipeline
+
+        ingestion_pipeline = (
+            self.acquisition_pipeline.ingestion_pipeline
+        )
+
+        if extraction_pipeline is None:
+            extraction_pipeline = ResearchExtractionPipeline(
+                ingestion_pipeline,
+            )
+
+        self.extraction_pipeline = extraction_pipeline
+
+        if answer_pipeline is None:
+            query_engine = ResearchQueryEngine(
+                ingestion_pipeline.engine,
+                self.storage,
+            )
+
+            answer_pipeline = ResearchAnswerPipeline(
+                query_engine,
+            )
+
+        self.answer_pipeline = answer_pipeline
+
+        if research_pipeline is None:
+            research_pipeline = ResearchPipelineIntegration(
+                acquisition_pipeline=self.acquisition_pipeline,
+                extraction_pipeline=self.extraction_pipeline,
+                answer_pipeline=self.answer_pipeline,
+                storage=self.storage,
+            )
+
+        self.research_pipeline = research_pipeline
+
+        if execution_manager is None:
+            execution_manager = ResearchExecutionManager()
+
+        self.execution_manager = execution_manager
+
+        self.research_pipeline.register_handlers(
+            self.execution_manager.executor
+        )
+
+    @staticmethod
+    def _conflict_metadata(answer) -> dict:
+        """
+        Extract conflict metadata from the existing
+        ResearchAnswerPipelineResult.
+
+        Source of truth:
+
+        ResearchAnswerPipelineResult
+            -> ResearchAggregationResult
+            -> conflict metadata
+
+        This method is observational only.
+        It does not resolve, mutate, delete, or override conflicts.
+        """
+
+        aggregation = getattr(
+            answer,
+            "aggregation",
+            None,
+        )
+
+        if aggregation is None:
+            return {
+                "conflict_status": "NO_CONFLICT",
+                "conflict_count": 0,
+                "resolved_conflict_count": 0,
+                "unresolved_conflict_count": 0,
+                "conflict_ids": (),
+                "resolved_knowledge_ids": (),
+            }
+
+        conflict_count = int(
+            getattr(
+                aggregation,
+                "conflict_count",
+                0,
+            )
+        )
+
+        resolved_conflict_count = int(
+            getattr(
+                aggregation,
+                "resolved_conflict_count",
+                0,
+            )
+        )
+
+        unresolved_conflict_count = int(
+            getattr(
+                aggregation,
+                "unresolved_conflict_count",
+                0,
+            )
+        )
+
+        conflict_ids = tuple(
+            getattr(
+                aggregation,
+                "conflict_ids",
+                [],
+            )
+            or []
+        )
+
+        resolved_knowledge_ids = tuple(
+            getattr(
+                aggregation,
+                "resolved_knowledge_ids",
+                [],
+            )
+            or []
+        )
+
+        if unresolved_conflict_count > 0:
+            conflict_status = "UNRESOLVED_CONFLICT"
+        elif resolved_conflict_count > 0:
+            conflict_status = "CONFLICT_RESOLVED"
+        elif conflict_count > 0:
+            conflict_status = "CONFLICT_DETECTED"
+        else:
+            conflict_status = "NO_CONFLICT"
+
+        return {
+            "conflict_status": conflict_status,
+            "conflict_count": conflict_count,
+            "resolved_conflict_count": (
+                resolved_conflict_count
+            ),
+            "unresolved_conflict_count": (
+                unresolved_conflict_count
+            ),
+            "conflict_ids": conflict_ids,
+            "resolved_knowledge_ids": (
+                resolved_knowledge_ids
+            ),
+        }
+
+    def _prompt_injection_metadata(
+        self,
+        answer: str,
+    ) -> dict:
+        """
+        Inspect research output as untrusted content.
+
+        This check never grants authority and never executes,
+        approves, or rejects a protected action.
+        """
+
+        result = self.prompt_injection_guard.inspect(
+            answer,
+            source="research",
+        )
+
+        return {
+            "prompt_injection_status": (
+                result.status.value
+            ),
+            "prompt_injection_safe_to_follow": (
+                result.safe_to_follow
+            ),
+            "prompt_injection_rules": (
+                result.matched_rules
+            ),
+        }
+
+    def research(
+        self,
+        *,
+        query: str,
+    ) -> MotherResearchResult:
+        if not isinstance(query, str):
+            raise TypeError("query must be str")
+
+        query = query.strip()
+
+        if not query:
+            raise ValueError(
+                "query must not be empty"
+            )
+
+        job_id = (
+            f"mother-research-{uuid4().hex}"
+        )
+
+        execution_id = (
+            f"execution-{uuid4().hex}"
+        )
+
+        try:
+            self.execution_manager.create_job(
+                job_id=job_id,
+                query=query,
+            )
+
+            self.execution_manager.create_plan(
+                job_id
+            )
+
+            self.execution_manager.start_job(
+                job_id
+            )
+
+            execution = self.execution_manager.execute(
+                execution_id=execution_id,
+                job_id=job_id,
+            )
+
+            context = self.research_pipeline.context_for(
+                job_id
+            )
+
+            answer = ""
+            verification_status = "UNKNOWN"
+
+            conflict_metadata = {
+                "conflict_status": "NO_CONFLICT",
+                "conflict_count": 0,
+                "resolved_conflict_count": 0,
+                "unresolved_conflict_count": 0,
+                "conflict_ids": (),
+                "resolved_knowledge_ids": (),
+            }
+
+            prompt_injection_metadata = {
+                "prompt_injection_status": (
+                    PromptInjectionStatus.SAFE.value
+                ),
+                "prompt_injection_safe_to_follow": True,
+                "prompt_injection_rules": (),
+            }
+
+            if context.answer is not None:
+                answer = str(
+                    getattr(
+                        context.answer,
+                        "answer",
+                        getattr(
+                            context.answer,
+                            "result",
+                            "",
+                        ),
+                    )
+                )
+
+                verification_status = str(
+                    getattr(
+                        context.answer,
+                        "verification_status",
+                        "VERIFIED",
+                    )
+                )
+
+                conflict_metadata = (
+                    self._conflict_metadata(
+                        context.answer
+                    )
+                )
+
+                prompt_injection_metadata = (
+                    self._prompt_injection_metadata(
+                        answer
+                    )
+                )
+
+            if execution.status != "completed":
+                return MotherResearchResult(
+                    success=False,
+                    query=query,
+                    status=execution.status,
+                    answer=answer,
+                    job_id=job_id,
+                    execution_id=execution_id,
+                    verification_status=(
+                        verification_status
+                    ),
+                    conflict_status=(
+                        conflict_metadata[
+                            "conflict_status"
+                        ]
+                    ),
+                    conflict_count=(
+                        conflict_metadata[
+                            "conflict_count"
+                        ]
+                    ),
+                    resolved_conflict_count=(
+                        conflict_metadata[
+                            "resolved_conflict_count"
+                        ]
+                    ),
+                    unresolved_conflict_count=(
+                        conflict_metadata[
+                            "unresolved_conflict_count"
+                        ]
+                    ),
+                    conflict_ids=(
+                        conflict_metadata[
+                            "conflict_ids"
+                        ]
+                    ),
+                    resolved_knowledge_ids=(
+                        conflict_metadata[
+                            "resolved_knowledge_ids"
+                        ]
+                    ),
+                    prompt_injection_status=(
+                        prompt_injection_metadata[
+                            "prompt_injection_status"
+                        ]
+                    ),
+                    prompt_injection_safe_to_follow=(
+                        prompt_injection_metadata[
+                            "prompt_injection_safe_to_follow"
+                        ]
+                    ),
+                    prompt_injection_rules=(
+                        prompt_injection_metadata[
+                            "prompt_injection_rules"
+                        ]
+                    ),
+                    error=(
+                        execution.error
+                        or "research execution failed"
+                    ),
+                )
+
+            return MotherResearchResult(
+                success=True,
+                query=query,
+                status=execution.status,
+                answer=answer,
+                job_id=job_id,
+                execution_id=execution_id,
+                verification_status=(
+                    verification_status
+                ),
+                conflict_status=(
+                    conflict_metadata[
+                        "conflict_status"
+                    ]
+                ),
+                conflict_count=(
+                    conflict_metadata[
+                        "conflict_count"
+                    ]
+                ),
+                resolved_conflict_count=(
+                    conflict_metadata[
+                        "resolved_conflict_count"
+                    ]
+                ),
+                unresolved_conflict_count=(
+                    conflict_metadata[
+                        "unresolved_conflict_count"
+                    ]
+                ),
+                conflict_ids=(
+                    conflict_metadata[
+                        "conflict_ids"
+                    ]
+                ),
+                resolved_knowledge_ids=(
+                    conflict_metadata[
+                        "resolved_knowledge_ids"
+                    ]
+                ),
+                prompt_injection_status=(
+                    prompt_injection_metadata[
+                        "prompt_injection_status"
+                    ]
+                ),
+                prompt_injection_safe_to_follow=(
+                    prompt_injection_metadata[
+                        "prompt_injection_safe_to_follow"
+                    ]
+                ),
+                prompt_injection_rules=(
+                    prompt_injection_metadata[
+                        "prompt_injection_rules"
+                    ]
+                ),
+            )
+
+        except Exception as exc:
+            return MotherResearchResult(
+                success=False,
+                query=query,
+                status="failed",
+                answer="",
+                job_id=job_id,
+                execution_id=execution_id,
+                verification_status="FAILED",
+                conflict_status="UNKNOWN",
+                prompt_injection_status=(
+                    PromptInjectionStatus.SAFE.value
+                ),
+                prompt_injection_safe_to_follow=True,
+                prompt_injection_rules=(),
+                error=str(exc),
+            )
