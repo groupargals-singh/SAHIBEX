@@ -9,7 +9,9 @@ from core.brain.prompt_injection_guard import (
     PromptInjectionGuard,
     PromptInjectionStatus,
 )
-from core.research.acquisition import ResearchAcquisitionEngine
+from core.research.runtime_providers import (
+    build_default_research_acquisition_engine,
+)
 from core.research.acquisition_pipeline import ResearchAcquisitionPipeline
 from core.research.answer_pipeline import ResearchAnswerPipeline
 from core.research.extraction_pipeline import ResearchExtractionPipeline
@@ -109,6 +111,7 @@ class MotherResearchIntegration:
 
         self.storage = storage
         self.prompt_injection_guard = PromptInjectionGuard()
+        self.research_provider_status = None
 
         if acquisition_pipeline is None:
             database_path = (
@@ -116,12 +119,18 @@ class MotherResearchIntegration:
                 / "sahibex_brain.db"
             )
 
-            acquisition_engine = ResearchAcquisitionEngine()
+            acquisition_engine, provider_status = (
+                build_default_research_acquisition_engine(
+                    project_root=settings.project_root,
+                )
+            )
 
             acquisition_pipeline = ResearchAcquisitionPipeline(
                 database_path=database_path,
                 acquisition_engine=acquisition_engine,
             )
+
+            self.research_provider_status = provider_status
 
         self.acquisition_pipeline = acquisition_pipeline
 
