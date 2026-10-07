@@ -19,7 +19,7 @@ def canonical_request(*,action:str,payload:dict[str,Any],nonce:str)->bytes:
     if not action.strip(): raise ValueError("action cannot be empty")
     if not nonce.strip(): raise ValueError("nonce cannot be empty")
     body={"protocol_version":PROTOCOL_VERSION,"action":action,"nonce":nonce,"payload":payload}
-    return json.dumps(body,sort_keys=True,separators=(",",":")).encode()
+    return json.dumps(body,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()
 def sign_request(*,token:str,action:str,payload:dict[str,Any],nonce:str)->str:
     if not token: raise ValueError("token cannot be empty")
     return hmac.new(token.encode(),canonical_request(action=action,payload=payload,nonce=nonce),hashlib.sha256).hexdigest()
