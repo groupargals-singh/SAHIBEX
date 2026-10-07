@@ -20,7 +20,7 @@ class KnowledgeMatch:
 @dataclass(frozen=True)
 class ResearchQueryResult:
     query: str
-    matches: List[KnowledgeMatch]
+    matches: List[KnowledgeCandidate]
     verified_only: bool
     total_matches: int
 
@@ -153,7 +153,7 @@ class ResearchQueryEngine:
         )
 
         matches = [
-            KnowledgeMatch(
+            KnowledgeCandidate(
                 knowledge_id=item[2].knowledge_id,
                 statement=item[2].statement,
                 confidence=item[2].confidence,
