@@ -282,6 +282,7 @@ def build_default_registry(
     project_root: Path,
     *,
     include_protected: bool = False,
+    evidence_recorder=None,
 ) -> ToolRegistry:
 
     registry = ToolRegistry()
@@ -323,7 +324,9 @@ def build_default_registry(
         # Protected computer/UI control is opt-in. Permission remains the
         # responsibility of ToolPermissionGateway.
         from tools.computer_control_tool import ComputerControlTool
-        computer_tool = ComputerControlTool()
+        computer_tool = ComputerControlTool(
+            evidence_recorder=evidence_recorder,
+        )
         registry.register(
             name="computer_control",
             description="Control Android UI: click, swipe, type text, press keys, screenshot.",
@@ -336,9 +339,10 @@ def build_default_registry(
     return registry
 
 
-def build_runtime_registry(project_root: Path) -> ToolRegistry:
+def build_runtime_registry(project_root: Path, *, evidence_recorder=None) -> ToolRegistry:
     """Build the full runtime registry, including protected UI control."""
     return build_default_registry(
         project_root,
         include_protected=True,
+        evidence_recorder=evidence_recorder,
     )

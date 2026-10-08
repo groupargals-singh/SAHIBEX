@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any
 
 from core.policies.approval import PermissionEngine
+from core.brain.emergency_stop import EmergencyStop
+from security.audit.execution_evidence import ExecutionEvidenceRecorder
 from tools.discovery import ToolCandidate
 from tools.intelligence import ToolIntelligence, ToolIntelligenceResult
 from tools.registry import ToolRegistry, build_runtime_registry
@@ -48,6 +50,8 @@ class ToolBrain:
         *,
         project_root: Path | None = None,
         registry: ToolRegistry | None = None,
+        emergency_stop: EmergencyStop | None = None,
+        evidence_recorder: ExecutionEvidenceRecorder | None = None,
     ) -> None:
         if not isinstance(permission_engine, PermissionEngine):
             raise TypeError("permission_engine must be PermissionEngine")
@@ -57,7 +61,14 @@ class ToolBrain:
             if project_root is not None
             else Path.cwd().resolve()
         )
-        self.registry = registry or build_runtime_registry(root)
+        self.emergency_stop = emergency_stop or EmergencyStop()
+        self.evidence_recorder = evidence_recorder or ExecutionEvidenceRecorder(
+            root / "security" / "audit"
+        )
+        self.registry = registry or build_runtime_registry(
+            root,
+            evidence_recorder=self.evidence_recorder,
+        )
 
         # Import lazily to keep this facade a composition boundary only.
         from tools.discovery import ToolDiscovery
@@ -101,6 +112,22 @@ class ToolBrain:
         max_attempts: int = 3,
         **kwargs: Any,
     ) -> ToolBrainResult:
+        if self.emergency_stop.requires_execution_block():
+            return ToolBrainResult(
+                operation="execute",
+                success=False,
+                tool="",
+                allowed=False,
+                requires_confirmation=False,
+                attempts=0,
+                recovery_status="BLOCKED",
+                retryable=False,
+                result=None,
+                error="Emergency stop is engaged; protected execution is blocked.",
+                risk="high",
+                reason="Emergency stop is engaged.",
+            )
+
         result: ToolIntelligenceResult = self.intelligence.execute(
             discovery_query,
             user_confirmation=user_confirmation,

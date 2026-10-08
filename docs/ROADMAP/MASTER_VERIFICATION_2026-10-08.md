@@ -121,3 +121,28 @@ Verification:
 - Security authority boundary: PASS
 
 Final Phase 7 status: **COMPLETE / PASS**.
+
+## Phase 8 Verification — Computer / Device Control
+
+### Acceptance matrix
+1. Computer control — PASS: protected computer-control tool and action contract integrated.
+2. Android control — PASS: Companion + Android control adapter implemented.
+3. Screen understanding — PASS: screenshot capability + UI-tree extraction.
+4. UI element detection — PASS: UI-tree element normalization/search.
+5. Click/tap — PASS: real-device E2E evidence + runtime implementation.
+6. Typing — PASS: real-device E2E evidence + runtime implementation.
+7. Keyboard actions — PASS: real-device E2E evidence + runtime implementation.
+8. Screenshots — PASS: screenshot path, hash evidence, and Companion screenshot implementation.
+9. UI-tree understanding — PASS: accessibility tree extraction.
+10. Action verification — PASS: result checks + authenticated execution evidence.
+11. Emergency stop — PASS: Tool Brain fail-closed enforcement test.
+12. Complete audit trail — PASS: authenticated execution evidence/provenance is now wired into runtime computer-control registration.
+
+### Regression gate
+- Full suite: 1106 passed.
+- Dedicated Phase 8 integration: PASS.
+- Compile: PASS.
+- Diff check: PASS.
+
+### Device-state caveat
+The latest direct screenshot probe returned Capturing failed because enabled_accessibility_services is empty. The Companion package is installed. Re-running the full real-device UI E2E requires the user to enable the SAHIBEX Companion Accessibility Service in Android Settings. No automatic privilege escalation was performed.

@@ -162,3 +162,21 @@ Security boundary verified:
 - Constitution cannot be modified by the autonomous runtime
 - actual tool execution remains behind Tool Brain permission/safe-execution boundaries
 - checkpoint state excludes protected secret/authority keys
+
+## Phase 8 — Computer / Device Control
+
+**Status: COMPLETE (implementation + security + regression gate PASS).**
+
+Implemented/verified:
+- Computer-control contract and protected runtime tool.
+- Android control: tap/click, swipe, text typing, key actions, screenshots.
+- Android loopback bridge with protocol v1, HMAC-SHA256 authentication and nonce replay protection.
+- Screen/UI understanding: accessibility UI-tree extraction plus searchable UI-element normalization.
+- Action verification and execution evidence with authenticated provenance.
+- Emergency-stop enforcement at the Tool Brain execution boundary; engaged stop fail-closes protected execution.
+- Protected computer-control remains permission/confirmation gated; Tool Brain does not grant authority or modify constitution.
+- Dedicated Phase 8 integration test PASS.
+- Full repository regression: 1106 passed.
+- compileall PASS and git diff --check PASS.
+
+Runtime note: the latest non-destructive Android screenshot probe could not re-run because the installed Companion accessibility service is currently disabled on the device. This is a device-state prerequisite, not a code failure. The previously completed real-device E2E evidence remains the acceptance evidence for the Android control gate.
