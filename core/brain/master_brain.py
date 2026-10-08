@@ -43,6 +43,8 @@ from core.brain.memory_brain import MemoryBrain
 from core.brain.knowledge_brain import KnowledgeBrain
 from core.brain.research_learning_brain import ResearchLearningBrain
 from core.brain.tool_brain import ToolBrain
+from core.agent.autonomous_work_brain import AutonomousWorkBrain
+from core.agent_goal import AgentGoal
 
 @dataclass(frozen=True)
 class BrainResult:
@@ -256,6 +258,29 @@ class MasterBrain:
         )
         self.tool_brain = ToolBrain(
             permission_engine=self.permission,
+        )
+        self.autonomous_work_brain = AutonomousWorkBrain()
+
+    def run_autonomous_work(
+        self,
+        goal: AgentGoal,
+        *,
+        execute_step,
+        verify_step,
+        user_confirmation: bool = False,
+        job_id: str | None = None,
+        runtime_id: str = "main",
+        max_steps: int = 100,
+    ):
+        """Run a permission-governed multi-step goal through Phase 7."""
+        return self.autonomous_work_brain.run(
+            goal,
+            execute_step=execute_step,
+            verify_step=verify_step,
+            user_confirmation=user_confirmation,
+            job_id=job_id,
+            runtime_id=runtime_id,
+            max_steps=max_steps,
         )
 
     def process(

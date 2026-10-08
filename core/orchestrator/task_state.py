@@ -368,7 +368,7 @@ class TaskManager:
 
         for task in goal.tasks:
 
-            if task.status != TaskStatus.PENDING:
+            if task.status not in {TaskStatus.PENDING, TaskStatus.READY}:
                 continue
 
             dependencies_complete = all(

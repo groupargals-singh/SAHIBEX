@@ -97,3 +97,27 @@ A structural integration gap identified during the audit has now been addressed.
 - Full regression after the change: **1100 passed, 0 warnings**.
 - Android Phase 6B real physical-device Companion E2E: **COMPLETE**.
 - The unrecovered original A–AC 417-item specification remains **NEEDS RECONCILIATION**; no invented mapping is being treated as completion.
+
+## Phase 7 — Autonomous Work Brain verification
+
+The REAL BRAIN master source defines Phase 7 as:
+large-goal acceptance, decomposition, dependency handling, execution planning, next-step selection, tool use, result checking, failure recovery, checkpoints, resume, controlled execution until done, and final verified result.
+
+Implementation audit found a real integration gap: the repository had the component-level agent/task/checkpoint primitives, but no single autonomous runtime boundary composing them end-to-end. That gap was fixed without replacing the existing security architecture.
+
+Added:
+- `core/agent/autonomous_work_brain.py`
+- Master Brain integration through `run_autonomous_work()`
+- dedicated Phase 7 tests including real Tool Brain execution
+- checkpoint serialization for dataclass/tool results
+- failed-job resume lifecycle
+- READY-task retry scheduling
+
+Verification:
+- Dedicated Phase 7: **6 passed**
+- Phase 7 + long-running/checkpoint regression: **5 passed**
+- Full repository regression: **1106 passed, 0 warnings**
+- Compile/import path: PASS
+- Security authority boundary: PASS
+
+Final Phase 7 status: **COMPLETE / PASS**.

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -9,6 +9,18 @@ from typing import Any
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _json_safe(value: Any) -> Any:
+    if is_dataclass(value) and not isinstance(value, type):
+        return _json_safe(asdict(value))
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return repr(value)
 
 
 @dataclass(frozen=True)
@@ -52,7 +64,7 @@ class CheckpointResumeStore:
             raise ValueError("job_id and runtime_id are required")
         if sequence < 0:
             raise ValueError("sequence must be non-negative")
-        safe = self._sanitize(dict(state))
+        safe = self._sanitize(_json_safe(dict(state)))
         record = CheckpointRecord(
             job_id, runtime_id, sequence, self.SCHEMA_VERSION,
             safe, self._hash(safe), _now(),

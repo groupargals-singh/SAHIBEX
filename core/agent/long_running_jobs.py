@@ -68,10 +68,10 @@ class LongRunningJobManager:
 
     def _transition(self, job_id: str, status: LongRunningJobStatus, reason: str | None = None) -> LongRunningJobRecord:
         record = self.get(job_id)
-        terminal = {LongRunningJobStatus.STOPPED.value, LongRunningJobStatus.FAILED.value, LongRunningJobStatus.COMPLETED.value, LongRunningJobStatus.CANCELLED.value}
+        terminal = {LongRunningJobStatus.STOPPED.value, LongRunningJobStatus.COMPLETED.value, LongRunningJobStatus.CANCELLED.value}
         if record.status in terminal:
             raise RuntimeError("terminal job cannot transition")
-        if status == LongRunningJobStatus.RUNNING and record.status not in {LongRunningJobStatus.CREATED.value, LongRunningJobStatus.PAUSED.value}:
+        if status == LongRunningJobStatus.RUNNING and record.status not in {LongRunningJobStatus.CREATED.value, LongRunningJobStatus.PAUSED.value, LongRunningJobStatus.FAILED.value}:
             raise RuntimeError("job cannot start/resume from current state")
         if status == LongRunningJobStatus.PAUSED and record.status != LongRunningJobStatus.RUNNING.value:
             raise RuntimeError("job must be running to pause")

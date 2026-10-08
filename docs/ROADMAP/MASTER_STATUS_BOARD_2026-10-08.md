@@ -126,3 +126,39 @@ Instead of repeatedly rebuilding the project, the next work is now frozen to one
 8. Only then publish the final 417-item completion percentage.
 
 No new phase or milestone should be invented unless it is explicitly added to this board and mapped to the master architecture.
+
+## REAL BRAIN master sequence — Phase 7
+
+🟢 **Phase 7 — Autonomous Work Brain: COMPLETE**
+
+Verified against the uploaded REAL BRAIN work-list's 12 requirements:
+
+1. Large-goal acceptance — PASS
+2. Task decomposition — PASS
+3. Dependency handling — PASS
+4. Execution planning — PASS
+5. Next-step selection — PASS
+6. Tool use through Tool Brain — PASS
+7. Result checking — PASS
+8. Failure recovery/retry — PASS
+9. Checkpoints — PASS
+10. Interrupted-work resume — PASS
+11. Controlled execution until done — PASS
+12. Final verified result — PASS
+
+Implementation:
+- `core/agent/autonomous_work_brain.py`
+- integrated into `MasterBrain.run_autonomous_work()`
+- checkpoint integrity/serialization hardened
+- failed long-running jobs can resume from a validated checkpoint
+- READY tasks are now correctly eligible after retry
+
+Dedicated Phase 7 verification: **6 passed**.
+Phase 7 + checkpoint/long-running regression: **5 passed**.
+Full repository regression after Phase 7: **1106 passed, 0 failed, 0 warnings**.
+
+Security boundary verified:
+- autonomous runtime grants no permission
+- Constitution cannot be modified by the autonomous runtime
+- actual tool execution remains behind Tool Brain permission/safe-execution boundaries
+- checkpoint state excludes protected secret/authority keys
