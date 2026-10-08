@@ -46,6 +46,7 @@ from core.brain.tool_brain import ToolBrain
 from core.agent.autonomous_work_brain import AutonomousWorkBrain
 from core.agent_goal import AgentGoal
 from core.brain.specialist_child_manager import SpecialistChildBrainManager
+from core.brain.continuous_learning_improvement import ContinuousLearningImprovement
 
 @dataclass(frozen=True)
 class BrainResult:
@@ -228,6 +229,12 @@ class MasterBrain:
         # binds only the Mother identity; protected authority remains
         # with the existing Constitution/permission pipeline.
         self.specialist_child_brains = SpecialistChildBrainManager()
+
+        # Phase 10: controlled continuous learning and improvement.
+        # Experience is collected from real BrainResult outcomes; skill
+        # activation remains gated and cannot modify Constitution or
+        # self-authorize protected updates.
+        self.continuous_learning = ContinuousLearningImprovement()
 
         self.mother_operational = (
             mother_operational
@@ -1459,3 +1466,34 @@ class MasterBrain:
             action=result.action,
             verification_status=result.verification_status,
         )
+
+        # Phase 10 experience collection is deliberately observational.
+        # A failed/blocked result becomes a learning signal; it never
+        # grants permission or triggers an automatic protected update.
+        try:
+            self.continuous_learning.record_experience(
+                task=text or "empty request",
+                context=f"intent={result.intent}; risk={result.risk}",
+                action_taken=result.action,
+                outcome=result.message,
+                lesson=(
+                    "Successful verified interaction."
+                    if result.success
+                    else "Review failed/blocked interaction before proposing improvement."
+                ),
+                success=result.success,
+                confidence=(
+                    1.0
+                    if result.verification_status == "VERIFIED"
+                    else 0.6
+                ),
+                importance=0.7,
+                tags=[result.intent, result.action, result.verification_status],
+                provenance={
+                    "goal_id": result.goal_id,
+                    "authority_decision": result.authority_decision,
+                },
+            )
+        except (TypeError, ValueError):
+            # Learning telemetry must never break the primary Brain result.
+            pass

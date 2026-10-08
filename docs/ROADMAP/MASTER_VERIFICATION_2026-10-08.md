@@ -185,3 +185,31 @@ The earlier direct Termux /system/bin/screencap diagnostic failure is not the An
 - REAL DEVICE E2E PASS
 
 Therefore the Phase 8 device-state caveat is superseded by the Companion's real-device E2E evidence; no code change is required for that diagnostic.
+
+## Phase 10 Verification — Continuous Learning & Improvement
+
+### Audit result
+Existing learning and Child self-improvement components were retained. The missing integration was closed with a dedicated Main-Brain continuous learning/improvement runtime.
+
+### Dedicated evidence
+- Phase 10 dedicated test: **43 passed**
+- Full repository regression: **1108 passed, 0 failed**
+- Compileall: **PASS**
+- git diff --check: **PASS**
+
+### Real bug fixed
+Approval moved the proposal state to TESTED but left the skill version at VERIFIED, causing activation to fail despite all required approvals. The state transition was corrected so an approved protected skill becomes TESTED and can then pass the activation gate.
+
+### Security evidence
+- Protected update without human approval: blocked
+- Activation without security/regression/verification: blocked
+- Rollback without Mother + human approval: blocked
+- Rollback without restoration verification: blocked
+- Constitution modification: permanently denied by this layer
+- Self-authorization: denied
+- Uncontrolled live-code execution: denied
+
+### Runtime integration
+MasterBrain._record_context() now feeds every real BrainResult into the Phase-10 experience store. Learning telemetry is observational and fail-safe: a telemetry problem cannot break the primary Brain result and cannot trigger an automatic protected update.
+
+Final Phase 10 status: **COMPLETE / PASS**.

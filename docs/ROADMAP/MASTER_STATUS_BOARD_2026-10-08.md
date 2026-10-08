@@ -233,3 +233,48 @@ Security invariants:
 - Protected execution remains with the Mother Brain permission/tool pipeline.
 
 Final Phase 9 status: **COMPLETE / PASS**.
+
+## Phase 10 — Continuous Learning & Improvement
+
+**Status: COMPLETE / PASS.**
+
+Phase 10 was first audited against the REAL BRAIN work list and the existing learning/self-improvement implementation. The audit found that many safety and self-improvement gate components already existed and passed their regression suite, but there was no single Main-Brain runtime boundary that connected real interaction outcomes to continuous experience analysis, versioned skill generation/improvement, capability expansion, pre-use testing, protected activation, and rollback.
+
+Implemented:
+- core/brain/continuous_learning_improvement.py
+- Integrated into MasterBrain as self.continuous_learning
+- Real experience collection from every completed/blocked Main-Brain interaction
+- Success/failure analysis and repeated-failure detection
+- New skill generation as versioned skill proposals
+- Skill improvement through successor versions
+- Capability expansion proposals
+- Security + regression + verification testing before activation
+- Mother + human approval for protected updates
+- Versioned active skill registry
+- Verified rollback to trusted previous skill versions
+- Fail-closed protection against unapproved activation
+- Constitution self-modification denied
+- Self-authorization denied
+- Uncontrolled live-code execution denied
+
+A real implementation bug was found during Phase-10 verification: after Mother + human approval, a verified skill remained in VERIFIED state while activation required TESTED. Fixed by transitioning the approved skill version to TESTED before activation.
+
+Verification:
+- Dedicated Phase 10 suite: **43 passed**
+- Full repository regression: **1108 passed, 0 failed**
+- Compileall: **PASS**
+- git diff --check: **PASS**
+
+Phase 10 acceptance:
+1. Experience collection — PASS
+2. Success/failure analysis — PASS
+3. Skill improvement — PASS
+4. New skill generation — PASS
+5. Skill testing before use — PASS
+6. Capability expansion — PASS
+7. Regression testing — PASS
+8. Rollback — PASS
+9. Protected self-update approval — PASS
+10. Constitution cannot be self-modified — PASS
+
+Final Phase 10 status: **COMPLETE / PASS**.
