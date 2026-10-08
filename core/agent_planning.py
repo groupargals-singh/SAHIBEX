@@ -39,6 +39,19 @@ class AgentPlan:
             raise ValueError("plan_id must not be empty.")
 
 
+REPLAN_TRIGGERS = frozenset(
+    {
+        "task_failed",
+        "new_evidence",
+        "dependency_changed",
+        "verification_failed",
+        "objective_changed",
+        "approval_unavailable",
+        "replan_requested",
+    }
+)
+
+
 @dataclass(frozen=True)
 class ReplanningResult:
     success: bool
@@ -133,47 +146,51 @@ class DynamicPlanningEngine:
         plan: AgentPlan,
         *,
         completed_goal_ids: tuple[str, ...] = (),
+        replacement_goals: tuple[DecomposedGoal, ...] = (),
+        trigger: str = "replan_requested",
         reason: str = "replan_requested",
     ) -> ReplanningResult:
+        """Create a new plan version without gaining execution authority.
+
+        A replan may be triggered by task failure, new evidence, dependency
+        changes, verification failure, objective changes, or unavailable
+        approval. Replacement goals are supplied by an upstream planner;
+        this engine only validates and composes them.
+        """
         if not isinstance(plan, AgentPlan):
-            raise TypeError(
-                "plan must be AgentPlan."
-            )
+            raise TypeError("plan must be AgentPlan.")
 
-        if not isinstance(
-            completed_goal_ids,
-            tuple,
-        ):
-            raise TypeError(
-                "completed_goal_ids must be tuple."
-            )
-
+        if not isinstance(completed_goal_ids, tuple):
+            raise TypeError("completed_goal_ids must be tuple.")
         for goal_id in completed_goal_ids:
             if not isinstance(goal_id, str):
-                raise TypeError(
-                    "every completed goal ID must be str."
-                )
+                raise TypeError("every completed goal ID must be str.")
             if not goal_id.strip():
-                raise ValueError(
-                    "completed goal IDs must not be empty."
+                raise ValueError("completed goal IDs must not be empty.")
+
+        if not isinstance(replacement_goals, tuple):
+            raise TypeError("replacement_goals must be tuple.")
+        for goal in replacement_goals:
+            if not isinstance(goal, DecomposedGoal):
+                raise TypeError(
+                    "every replacement goal must be DecomposedGoal."
                 )
+
+        if not isinstance(trigger, str):
+            raise TypeError("trigger must be str.")
+        if trigger not in REPLAN_TRIGGERS:
+            raise ValueError(
+                "unsupported replan trigger: " + trigger
+            )
 
         if not isinstance(reason, str):
             raise TypeError("reason must be str.")
         if not reason.strip():
-            raise ValueError(
-                "reason must not be empty."
-            )
+            raise ValueError("reason must not be empty.")
 
         completed = set(completed_goal_ids)
-
-        known_ids = {
-            goal.goal_id
-            for goal in plan.goals
-        }
-
+        known_ids = {goal.goal_id for goal in plan.goals}
         unknown_ids = completed - known_ids
-
         if unknown_ids:
             return ReplanningResult(
                 success=False,
@@ -187,28 +204,57 @@ class DynamicPlanningEngine:
             )
 
         remaining_goals = tuple(
-            goal
-            for goal in plan.goals
+            goal for goal in plan.goals
             if goal.goal_id not in completed
         )
+        replacement_ids = {goal.goal_id for goal in replacement_goals}
+        if len(replacement_ids) != len(replacement_goals):
+            return ReplanningResult(
+                success=False,
+                previous_plan_id=plan.plan_id,
+                plan=None,
+                changed=False,
+                reason="Replacement goals contain duplicate IDs.",
+            )
 
-        if not remaining_goals:
+        combined_goals = remaining_goals + replacement_goals
+        combined_ids = {goal.goal_id for goal in combined_goals}
+        unknown_dependencies = sorted(
+            {
+                dependency
+                for goal in combined_goals
+                for dependency in goal.dependencies
+                if dependency not in combined_ids
+            }
+        )
+        if unknown_dependencies:
+            return ReplanningResult(
+                success=False,
+                previous_plan_id=plan.plan_id,
+                plan=None,
+                changed=False,
+                reason=(
+                    "Unknown dependency after replan: "
+                    + unknown_dependencies[0]
+                ),
+            )
+
+        if not combined_goals:
             return ReplanningResult(
                 success=True,
                 previous_plan_id=plan.plan_id,
                 plan=None,
-                changed=False,
+                changed=bool(completed),
                 reason="All plan goals are completed.",
             )
 
-        changed = bool(completed)
+        changed = bool(completed or replacement_goals)
 
         new_plan = AgentPlan(
-            goals=remaining_goals,
+            goals=combined_goals,
             version=plan.version + 1,
             reason=reason,
         )
-
         return ReplanningResult(
             success=True,
             previous_plan_id=plan.plan_id,

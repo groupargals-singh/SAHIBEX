@@ -83,6 +83,59 @@ def main() -> None:
     assert no_change.plan.version == 2
     assert len(no_change.plan.goals) == 3
 
+    replacement = DecomposedGoal(
+        title="Recover failed work",
+        objective=source_goal.objective,
+        intent="recover",
+        success_criteria=("Recovery is completed.",),
+        dependencies=(first_goal.goal_id,),
+    )
+    for trigger in (
+        "task_failed",
+        "new_evidence",
+        "dependency_changed",
+        "verification_failed",
+        "objective_changed",
+        "approval_unavailable",
+    ):
+        dynamic = engine.replan(
+            plan,
+            completed_goal_ids=(first_goal.goal_id,),
+            replacement_goals=(replacement,),
+            trigger=trigger,
+            reason=trigger,
+        )
+        assert dynamic.success is True
+        assert dynamic.changed is True
+        assert dynamic.plan is not None
+        assert dynamic.plan.version == 2
+        assert dynamic.plan.reason == trigger
+        assert replacement.goal_id in {
+            goal.goal_id for goal in dynamic.plan.goals
+        }
+
+    invalid_trigger = engine.replan(
+        plan,
+        trigger="unsafe_trigger",
+    )
+    assert invalid_trigger.success is False
+    assert invalid_trigger.plan is None
+
+    bad_replacement = DecomposedGoal(
+        title="Broken dependency",
+        objective=source_goal.objective,
+        intent="recover",
+        success_criteria=("Recovery is completed.",),
+        dependencies=("missing-goal",),
+    )
+    invalid_dependency = engine.replan(
+        plan,
+        replacement_goals=(bad_replacement,),
+        trigger="dependency_changed",
+    )
+    assert invalid_dependency.success is False
+    assert invalid_dependency.plan is None
+
     unknown = engine.replan(
         plan,
         completed_goal_ids=(

@@ -5,7 +5,7 @@
 - Phase: 6P
 - Status: DEFINED
 - Previous Phase: 6O — Operational Intelligence & Real Capability
-- Next Milestone: 6P-1
+- Next Milestone: 6P-5
 - Regression Gate: 6P-12
 
 ---
@@ -310,7 +310,7 @@ Status was reconciled against the current repository evidence. This document def
 6P-1 → IMPLEMENTED / verification evidence exists
 6P-2 → IMPLEMENTED / verification evidence exists
 6P-3 → IMPLEMENTED / verification evidence exists
-6P-4 → NEEDS VERIFICATION / reconciliation
+6P-4 → COMPLETE / dynamic trigger + replacement-plan verification PASS
 6P-5 → NEEDS VERIFICATION / reconciliation
 6P-6 → IMPLEMENTED / verification evidence exists
 6P-7 → IMPLEMENTED / verification evidence exists

@@ -68,7 +68,7 @@ Verified with dedicated execution-loop tests and full regression.
 | 6P-1 | 🟢 evidence/test |
 | 6P-2 | 🟢 evidence/test |
 | 6P-3 | 🟢 evidence/test |
-| 6P-4 | 🟡 dynamic replanning needs dedicated verification |
+| 6P-4 | 🟢 dynamic replanning verified and COMPLETE |
 | 6P-5 | 🟡 dependency orchestration needs dedicated verification |
 | 6P-6 | 🟢 evidence/test |
 | 6P-7 | 🟢 evidence/test |
