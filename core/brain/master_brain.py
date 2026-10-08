@@ -42,6 +42,7 @@ from core.brain.root_instance import SahibexRootInstanceIdentity
 from core.brain.memory_brain import MemoryBrain
 from core.brain.knowledge_brain import KnowledgeBrain
 from core.brain.research_learning_brain import ResearchLearningBrain
+from core.brain.tool_brain import ToolBrain
 
 @dataclass(frozen=True)
 class BrainResult:
@@ -252,6 +253,9 @@ class MasterBrain:
         self.research_learning_brain = ResearchLearningBrain(
             research=self.mother_research,
             learning=self.mother_learning,
+        )
+        self.tool_brain = ToolBrain(
+            permission_engine=self.permission,
         )
 
     def process(
