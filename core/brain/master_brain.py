@@ -41,6 +41,7 @@ from core.brain.root_identity import SahibexRootIdentity
 from core.brain.root_instance import SahibexRootInstanceIdentity
 from core.brain.memory_brain import MemoryBrain
 from core.brain.knowledge_brain import KnowledgeBrain
+from core.brain.research_learning_brain import ResearchLearningBrain
 
 @dataclass(frozen=True)
 class BrainResult:
@@ -248,6 +249,10 @@ class MasterBrain:
         self.runtime_state = MotherBrainState()
         self.memory_brain = MemoryBrain(storage=self.mother_operational.storage)
         self.knowledge_brain = KnowledgeBrain(storage=self.mother_operational.storage)
+        self.research_learning_brain = ResearchLearningBrain(
+            research=self.mother_research,
+            learning=self.mother_learning,
+        )
 
     def process(
         self,

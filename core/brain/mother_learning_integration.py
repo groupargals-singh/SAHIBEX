@@ -165,11 +165,21 @@ class MotherLearningIntegration:
                     verified_knowledge_ids
                 )
 
-        except Exception:
-            knowledge_count = 0
-            verified_knowledge_count = 0
-            learned_knowledge_ids = ()
-            verified_knowledge_ids = ()
+        except Exception as exc:
+            return MotherLearningResult(
+                success=False,
+                topic=topic,
+                status="failed",
+                answer=result.answer,
+                knowledge_count=0,
+                verified_knowledge_count=0,
+                research_job_id=result.job_id,
+                verification_status="FAILED",
+                research_execution_id=getattr(result, "execution_id", ""),
+                learned_knowledge_ids=(),
+                verified_knowledge_ids=(),
+                error=f"learning knowledge extraction failed: {exc}",
+            )
 
         return MotherLearningResult(
             success=True,
