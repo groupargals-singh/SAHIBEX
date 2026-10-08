@@ -233,3 +233,35 @@ The existing security layers were not replaced. Phase 11 added the missing integ
 Unknown/unbound security runtime fails closed. Protected actions require explicit confirmation. Parent denial is final. Emergency stop blocks protected execution. Security layer cannot modify Constitution, grant authority, override human authority, bypass permission, disable audit/prompt-injection defense, read plaintext secrets, allow uncontrolled network access, approve unverified self-update, or authorize external/financial control without permission.
 
 Final Phase 11 status: **COMPLETE / PASS**.
+
+
+## Phase 12 Verification — Brain Lifecycle
+
+### Acceptance matrix
+1. Brain startup — PASS
+2. Health monitoring — PASS
+3. Sleep/consolidation — PASS
+4. Wake/recovery — PASS
+5. Checkpoint — PASS
+6. Backup — PASS
+7. Restore — PASS
+8. Crash recovery — PASS
+9. State integrity — PASS
+10. Identity integrity — PASS
+11. Brain versioning — PASS
+
+### Dedicated evidence
+- Phase 12 + existing lifecycle suite: **16 passed, 0 failed**
+- Full repository regression: **1117 passed, 0 failed**
+- Compileall: **PASS**
+- git diff --check: **PASS**
+
+### Bugs fixed
+- Recursive secret sanitization for backup state.
+- Recovery-state startup transition.
+- Test syntax defect found during verification.
+
+### Security/authority evidence
+Lifecycle remains control/observation only. It does not grant permission, modify the Constitution, override human authority, or execute protected actions. Checkpoint and backup restore require explicit authorization; integrity and identity mismatches fail closed.
+
+Final Phase 12 status: **COMPLETE / PASS**.

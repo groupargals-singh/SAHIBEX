@@ -331,3 +331,42 @@ Phase 11 acceptance:
 15. Emergency shutdown — PASS
 
 Final Phase 11 status: **COMPLETE / PASS**.
+
+
+## Phase 12 Verification — Brain Lifecycle
+
+Phase 12 REAL BRAIN scope completed against the authoritative product work list:
+- Brain startup
+- Health monitoring
+- Sleep/consolidation
+- Wake/recovery
+- Checkpoint
+- Backup
+- Restore
+- Crash recovery
+- State integrity
+- Identity integrity
+- Brain versioning
+
+Implementation:
+- Added `core/brain/brain_lifecycle.py` as the integrated lifecycle control plane.
+- Integrated lifecycle into `MasterBrain` without replacing existing identity, security, memory, tool, or execution boundaries.
+- Added lifecycle startup/status wrappers.
+- Reused existing `BrainClock`, `WakeSleepController`, `HealthMonitor`, `BackupRecoveryManager`, and immutable Root Identity.
+- Checkpoints carry sequence, checksum, schema/version, and Root Identity fingerprint.
+- Restore/recovery requires explicit authorization and fails closed on identity, schema, or checksum mismatch.
+- Backup sanitization now recursively removes credential/secret/token/password keys from nested state.
+- Lifecycle explicitly cannot grant permission, modify Constitution, override human authority, or execute protected actions.
+
+Verification found and fixed:
+1. Backup secret sanitization was only top-level; changed to recursive sanitization.
+2. Crash recovery entered RECOVERING and then could not restart because startup rejected RECOVERING; startup now supports the controlled recovery transition.
+3. New Phase-12 test file initially contained a syntax typo; corrected before final verification.
+
+Verification:
+- Dedicated Phase 12 + lifecycle regression suite: **16 passed, 0 failed**
+- Full repository regression: **1117 passed, 0 failed**
+- Compileall: **PASS**
+- git diff --check: **PASS**
+
+Final Phase 12 status: **COMPLETE / PASS**.

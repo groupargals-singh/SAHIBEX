@@ -49,6 +49,7 @@ from core.brain.specialist_child_manager import SpecialistChildBrainManager
 from core.brain.continuous_learning_improvement import ContinuousLearningImprovement
 from core.brain.security_safety_brain import SecuritySafetyBrain
 from core.brain.emergency_stop import EmergencyStop
+from core.brain.brain_lifecycle import BrainLifecycle
 
 @dataclass(frozen=True)
 class BrainResult:
@@ -250,6 +251,13 @@ class MasterBrain:
             emergency_stop=self.emergency_stop,
         )
 
+        # Phase 12: lifecycle control plane. Identity remains the
+        # existing immutable Root Identity; lifecycle never grants
+        # authority or executes protected actions.
+        self.brain_lifecycle = BrainLifecycle(
+            root_identity=self.root_identity,
+        )
+
         self.mother_operational = (
             mother_operational
             if mother_operational is not None
@@ -287,6 +295,12 @@ class MasterBrain:
             permission_engine=self.permission,
         )
         self.autonomous_work_brain = AutonomousWorkBrain()
+
+    def start_lifecycle(self):
+        return self.brain_lifecycle.startup()
+
+    def lifecycle_status(self):
+        return self.brain_lifecycle.status()
 
     def run_autonomous_work(
         self,

@@ -32,7 +32,22 @@ class BackupRecoveryManager:
     @classmethod
     def verify_integrity(cls,payload,manifest): return cls.checksum(payload)==manifest.payload_checksum
     @classmethod
-    def sanitize_state(cls,state): return {k:v for k,v in state.items() if k.lower() not in cls.FORBIDDEN_KEYS}
+    def sanitize_state(cls, state):
+        if not isinstance(state, dict):
+            raise TypeError("state must be a dictionary")
+        def clean(value):
+            if isinstance(value, dict):
+                return {
+                    k: clean(v)
+                    for k, v in value.items()
+                    if str(k).lower() not in cls.FORBIDDEN_KEYS
+                }
+            if isinstance(value, list):
+                return [clean(v) for v in value]
+            if isinstance(value, tuple):
+                return [clean(v) for v in value]
+            return value
+        return clean(state)
     @staticmethod
     def compatibility(source_version,target_version): return bool(source_version.strip() and target_version.strip())
     @classmethod
