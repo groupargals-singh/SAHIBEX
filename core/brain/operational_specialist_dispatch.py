@@ -176,14 +176,14 @@ class OperationalSpecialistDispatcher:
                 error="Selected specialist brain has no registered runtime handler.",
             )
 
-        if brain.status != BrainStatus.READY:
+        if brain.status not in {BrainStatus.READY, BrainStatus.ACTIVE}:
             return SpecialistDispatchResult(
                 success=False,
                 brain_id=brain_id,
                 request=normalized_request,
                 result=None,
                 error=(
-                    "Selected specialist brain is not READY: "
+                    "Selected specialist brain is not READY/ACTIVE: "
                     f"{brain.status.value}."
                 ),
             )
@@ -197,7 +197,9 @@ class OperationalSpecialistDispatcher:
                 error="Selected specialist brain cannot accept more work.",
             )
 
-        brain.transition_to(BrainStatus.ACTIVE)
+        started_from_ready = brain.status == BrainStatus.READY
+        if started_from_ready:
+            brain.transition_to(BrainStatus.ACTIVE)
         brain.update_load(
             active_tasks=brain.resource_state.active_tasks + 1
         )
@@ -234,4 +236,5 @@ class OperationalSpecialistDispatcher:
                 active_tasks=brain.resource_state.active_tasks - 1
             )
 
-            brain.transition_to(BrainStatus.READY)
+            if started_from_ready:
+                brain.transition_to(BrainStatus.READY)

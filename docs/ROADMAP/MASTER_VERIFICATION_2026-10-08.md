@@ -146,3 +146,42 @@ Final Phase 7 status: **COMPLETE / PASS**.
 
 ### Device-state caveat
 The latest direct screenshot probe returned Capturing failed because enabled_accessibility_services is empty. The Companion package is installed. Re-running the full real-device UI E2E requires the user to enable the SAHIBEX Companion Accessibility Service in Android Settings. No automatic privilege escalation was performed.
+
+## Phase 9 Verification — Specialist Child Brains
+
+### Runtime completion
+The Phase-9 implementation audit found a genuine integration gap between the many existing Child-Brain boundary components and a single operational Child-Brain lifecycle runtime. That gap is now closed by core/brain/specialist_child_manager.py, integrated into MasterBrain.
+
+### Acceptance evidence
+- Dedicated Phase 9 test: **13 passed**
+- Existing specialist/trust/genesis/mother-child/living-child regression: **13 passed**
+- Full repository regression: **1107 passed, 0 failed**
+- Compileall: **PASS**
+- git diff --check: **PASS**
+
+### Security/authority evidence
+The integrated manager does not create constitutional authority. Child cognitive capabilities are separate from protected execution authority. Creation requires Mother + human approval; suspension/resume uses Mother authority and fresh verification; retirement/replacement requires human authority; child self-authorization, Mother override, Constitution modification, and external-model/tool authority are denied.
+
+### Specialist profiles
+The runtime provides explicit capability profiles for:
+- Research
+- Coding
+- Trading
+- Business
+- Computer-Control
+
+These are specialist capability templates only; Quantum-Bot is not yet attached. Its later integration can use the Trading specialist boundary without changing Mother authority.
+
+Final Phase 9 status: **COMPLETE / PASS**.
+
+## Phase 8 device evidence clarification
+
+The earlier direct Termux /system/bin/screencap diagnostic failure is not the Android Companion acceptance path. The user subsequently confirmed the SAHIBEX Accessibility Service is ON, and the Companion UI itself displays:
+- UI-tree: PASS
+- Tap/click: PASS
+- Text typing: PASS
+- Key press: PASS
+- Screenshot: PASS
+- REAL DEVICE E2E PASS
+
+Therefore the Phase 8 device-state caveat is superseded by the Companion's real-device E2E evidence; no code change is required for that diagnostic.

@@ -45,6 +45,7 @@ from core.brain.research_learning_brain import ResearchLearningBrain
 from core.brain.tool_brain import ToolBrain
 from core.agent.autonomous_work_brain import AutonomousWorkBrain
 from core.agent_goal import AgentGoal
+from core.brain.specialist_child_manager import SpecialistChildBrainManager
 
 @dataclass(frozen=True)
 class BrainResult:
@@ -222,6 +223,11 @@ class MasterBrain:
         self.verification_trust_integration = (
             MasterVerificationTrustIntegration()
         )
+
+        # Phase 9: secure specialist Child-Brain runtime. The manager
+        # binds only the Mother identity; protected authority remains
+        # with the existing Constitution/permission pipeline.
+        self.specialist_child_brains = SpecialistChildBrainManager()
 
         self.mother_operational = (
             mother_operational

@@ -180,3 +180,56 @@ Implemented/verified:
 - compileall PASS and git diff --check PASS.
 
 Runtime note: the latest non-destructive Android screenshot probe could not re-run because the installed Companion accessibility service is currently disabled on the device. This is a device-state prerequisite, not a code failure. The previously completed real-device E2E evidence remains the acceptance evidence for the Android control gate.
+
+## Phase 9 — Specialist Child Brains
+
+**Status: COMPLETE / PASS.**
+
+Phase 9 was audited against the REAL BRAIN master sequence and the existing Child-Brain boundary work. A real runtime gap was found: the repository contained extensive Child-Brain boundary/identity/trust/lifecycle components, but lacked one integrated runtime manager that actually materialized specialist Child-Brain instances and exercised the complete Phase-9 lifecycle.
+
+Implemented without replacing the existing security architecture:
+- core/brain/specialist_child_manager.py
+- Master Brain integration through self.specialist_child_brains
+- Specialist capability profiles for Research, Coding, Trading, Business and Computer-Control
+- Child creation with Mother + human authorization
+- Child identity/parent binding and isolated memory
+- Parent/child communication and Child Brain cognitive boundary reuse
+- Trust verification and trust-state handling
+- Runtime activation and suspension/resume with fresh verification
+- Performance tracking
+- Retirement
+- Replacement with new identity and predecessor/trust-lineage linkage
+- Protected actions remain behind Mother/Constitution/permission boundaries
+- Child cannot grant authority, override Mother, or modify Constitution
+
+Dedicated Phase 9 verification: **13 passed**.
+
+Full repository regression after Phase 9: **1107 passed, 0 failed**.
+
+Compileall: **PASS**
+git diff --check: **PASS**
+
+Phase 9 acceptance status:
+1. Child-brain creation — PASS
+2. Specialist role definition — PASS
+3. Capability assignment — PASS
+4. Permission boundaries — PASS
+5. Trust establishment — PASS
+6. Parent-child communication boundary — PASS
+7. Child memory isolation — PASS
+8. Child verification — PASS
+9. Performance tracking — PASS
+10. Suspension — PASS
+11. Replacement — PASS
+12. Retirement — PASS
+13. Trust lineage — PASS
+
+Security invariants:
+- Child self-authorization: DENIED
+- Child authority grant: DENIED
+- Child Mother override: DENIED
+- Child Constitution modification: DENIED
+- External model/tool Child creation: DENIED
+- Protected execution remains with the Mother Brain permission/tool pipeline.
+
+Final Phase 9 status: **COMPLETE / PASS**.
