@@ -604,6 +604,23 @@ class MasterBrain:
             return result
 
         # ---------------------------------------------------------
+        # MASTER PLAN (created BEFORE execution)
+        # ---------------------------------------------------------
+        # The plan is now a true control point between reasoning and
+        # execution. A request must have a concrete goal/task graph
+        # before research, learning, or operational work can run.
+        self.runtime_state.transition(
+            MotherRuntimeState.PLANNING
+        )
+        self.runtime_state.set_operation(
+            "master_planner"
+        )
+        plan = self._build_plan(
+            text,
+            intent_result.intent,
+        )
+
+        # ---------------------------------------------------------
         # MOTHER RESEARCH / LEARNING / OPERATIONAL RUNTIME
         # ---------------------------------------------------------
         self.runtime_state.transition(
@@ -654,6 +671,7 @@ class MasterBrain:
                         research_result.verification_status
                     ),
                     permission_allowed=permission.allowed,
+                    plan=plan,
                 )
 
                 self._record_context(text, result)
@@ -699,6 +717,7 @@ class MasterBrain:
                         learning_result.verification_status
                     ),
                     permission_allowed=permission.allowed,
+                    plan=plan,
                 )
 
                 self._record_context(text, result)
@@ -747,26 +766,11 @@ class MasterBrain:
                         operational_result.verification_status
                     ),
                     permission_allowed=permission.allowed,
+                    plan=plan,
                 )
 
                 self._record_context(text, result)
                 return result
-
-        # ---------------------------------------------------------
-        # PLAN
-        # ---------------------------------------------------------
-        self.runtime_state.transition(
-            MotherRuntimeState.PLANNING
-        )
-
-        self.runtime_state.set_operation(
-            "master_planner"
-        )
-
-        plan = self._build_plan(
-            text,
-            intent_result.intent,
-        )
 
         # ---------------------------------------------------------
         # FINAL RESPONSE MESSAGE
@@ -1369,6 +1373,7 @@ class MasterBrain:
         message: str,
         verification_status: str = "NOT_EXECUTED",
         permission_allowed: bool = False,
+        plan: Any | None = None,
     ) -> BrainResult:
         success = (
             confirmation_required
@@ -1387,9 +1392,9 @@ class MasterBrain:
             permission_allowed=permission_allowed,
             confirmation_required=confirmation_required,
             authority_decision=authority_decision,
-            plan_created=False,
-            task_count=0,
-            goal_id=None,
+            plan_created=plan is not None,
+            task_count=(len(plan.tasks) if plan is not None else 0),
+            goal_id=(plan.goal.goal_id if plan is not None else None),
             verification_status=verification_status,
         )
 

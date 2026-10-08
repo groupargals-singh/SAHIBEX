@@ -77,3 +77,15 @@ The real Android runtime probe remains **BLOCKED** because the device-level scre
 3. Reconcile E01–E13 and 6P-1..29 into that baseline.
 4. Run the final end-to-end 6P gate after reconciliation.
 5. Complete the Android device-level runtime gate when the companion can actually run.
+
+
+## Main Brain commissioning update
+
+A structural integration gap identified during the audit has now been addressed.
+
+- Master Brain planning is now created before research/learning/operational execution.
+- Added `core/brain/sahibex_execution_loop.py` as the commissioned root execution-loop boundary.
+- Added dedicated end-to-end tests for read-only execution, protected-action stopping, cognitive completion, recovery/observability authority boundaries.
+- Full regression after the change: **1081 passed, 6 warnings**.
+- Android real runtime remains **BLOCKED** because the device-side companion/bridge runtime is not yet operational.
+- The unrecovered original A–AC 417-item specification remains **NEEDS RECONCILIATION**; no invented mapping is being treated as completion.
