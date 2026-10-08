@@ -102,7 +102,7 @@ ENTITY_XML = """<?xml version="1.0"?>
 """
 
 
-class TestHandler(
+class LocalRSSHandler(
     BaseHTTPRequestHandler
 ):
     response_body = RSS_XML.encode(
@@ -181,14 +181,14 @@ class TestHandler(
         pass
 
 
-class TestServer:
+class LocalRSSServer:
     def __init__(self):
         self.server = HTTPServer(
             (
                 "127.0.0.1",
                 0,
             ),
-            TestHandler,
+            LocalRSSHandler,
         )
 
         self.thread = threading.Thread(
@@ -294,15 +294,15 @@ def test_default_private_hosts_are_blocked():
 
 
 def test_rss_parsing():
-    TestHandler.response_body = (
+    LocalRSSHandler.response_body = (
         RSS_XML.encode("utf-8")
     )
 
-    TestHandler.response_type = (
+    LocalRSSHandler.response_type = (
         "application/rss+xml"
     )
 
-    server = TestServer()
+    server = LocalRSSServer()
 
     try:
         provider = local_provider()
@@ -387,15 +387,15 @@ def test_rss_parsing():
 
 
 def test_atom_parsing():
-    TestHandler.response_body = (
+    LocalRSSHandler.response_body = (
         ATOM_XML.encode("utf-8")
     )
 
-    TestHandler.response_type = (
+    LocalRSSHandler.response_type = (
         "application/atom+xml"
     )
 
-    server = TestServer()
+    server = LocalRSSServer()
 
     try:
         provider = local_provider()
@@ -452,11 +452,11 @@ def test_atom_parsing():
     finally:
         server.close()
 
-        TestHandler.response_body = (
+        LocalRSSHandler.response_body = (
             RSS_XML.encode("utf-8")
         )
 
-        TestHandler.response_type = (
+        LocalRSSHandler.response_type = (
             "application/rss+xml"
         )
 
@@ -504,15 +504,15 @@ def test_different_urls_have_different_ids():
 
 
 def test_duplicate_feed_urls_handled():
-    TestHandler.response_body = (
+    LocalRSSHandler.response_body = (
         RSS_XML.encode("utf-8")
     )
 
-    TestHandler.response_type = (
+    LocalRSSHandler.response_type = (
         "application/rss+xml"
     )
 
-    server = TestServer()
+    server = LocalRSSServer()
 
     try:
         provider = local_provider()
@@ -550,11 +550,11 @@ def test_duplicate_feed_urls_handled():
 
 
 def test_max_sources_limit():
-    TestHandler.response_body = (
+    LocalRSSHandler.response_body = (
         RSS_XML.encode("utf-8")
     )
 
-    server = TestServer()
+    server = LocalRSSServer()
 
     try:
         provider = local_provider(
@@ -584,11 +584,11 @@ def test_max_sources_limit():
 
 
 def test_request_max_sources_limit():
-    TestHandler.response_body = (
+    LocalRSSHandler.response_body = (
         RSS_XML.encode("utf-8")
     )
 
-    server = TestServer()
+    server = LocalRSSServer()
 
     try:
         provider = local_provider(
@@ -619,11 +619,11 @@ def test_request_max_sources_limit():
 
 
 def test_malformed_xml_blocked():
-    TestHandler.response_body = (
+    LocalRSSHandler.response_body = (
         MALFORMED_XML.encode("utf-8")
     )
 
-    server = TestServer()
+    server = LocalRSSServer()
 
     try:
         provider = local_provider()
@@ -656,11 +656,11 @@ def test_malformed_xml_blocked():
 
 
 def test_doctype_blocked():
-    TestHandler.response_body = (
+    LocalRSSHandler.response_body = (
         DOCTYPE_XML.encode("utf-8")
     )
 
-    server = TestServer()
+    server = LocalRSSServer()
 
     try:
         provider = local_provider()
@@ -693,11 +693,11 @@ def test_doctype_blocked():
 
 
 def test_entity_blocked():
-    TestHandler.response_body = (
+    LocalRSSHandler.response_body = (
         ENTITY_XML.encode("utf-8")
     )
 
-    server = TestServer()
+    server = LocalRSSServer()
 
     try:
         provider = local_provider()
@@ -939,11 +939,11 @@ def test_empty_urls_list_blocked():
 
 
 def test_redirect_blocked():
-    TestHandler.response_body = (
+    LocalRSSHandler.response_body = (
         RSS_XML.encode("utf-8")
     )
 
-    server = TestServer()
+    server = LocalRSSServer()
 
     try:
         provider = local_provider()
@@ -978,15 +978,15 @@ def test_redirect_blocked():
 
 
 def test_response_size_limit():
-    TestHandler.response_body = (
+    LocalRSSHandler.response_body = (
         b"x" * 4096
     )
 
-    TestHandler.response_type = (
+    LocalRSSHandler.response_type = (
         "application/rss+xml"
     )
 
-    server = TestServer()
+    server = LocalRSSServer()
 
     try:
         provider = local_provider(
@@ -1019,19 +1019,19 @@ def test_response_size_limit():
     finally:
         server.close()
 
-        TestHandler.response_body = (
+        LocalRSSHandler.response_body = (
             RSS_XML.encode("utf-8")
         )
 
 
 def test_timeout():
-    TestHandler.response_body = (
+    LocalRSSHandler.response_body = (
         RSS_XML.encode("utf-8")
     )
 
-    TestHandler.delay_seconds = 0.5
+    LocalRSSHandler.delay_seconds = 0.5
 
-    server = TestServer()
+    server = LocalRSSServer()
 
     try:
         provider = local_provider(
@@ -1078,7 +1078,7 @@ def test_timeout():
             )
 
     finally:
-        TestHandler.delay_seconds = 0.0
+        LocalRSSHandler.delay_seconds = 0.0
         server.close()
 
 

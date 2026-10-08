@@ -9,7 +9,7 @@ from core.research.web_provider import (
 )
 
 
-class TestableWebProvider(
+class StubWebProvider(
     DirectWebResearchProvider
 ):
     """
@@ -58,7 +58,7 @@ def main():
         "SAHIBEX DIRECT WEB PROVIDER TEST"
     )
 
-    provider = TestableWebProvider()
+    provider = StubWebProvider()
 
     # Provider identity.
     assert provider.provider_name == "direct_web"

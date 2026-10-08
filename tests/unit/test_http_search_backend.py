@@ -10,7 +10,7 @@ from core.research.http_search_backend import (
 )
 
 
-class TestHandler(BaseHTTPRequestHandler):
+class LocalHTTPHandler(BaseHTTPRequestHandler):
     payload = {
         "results": [
             {
@@ -41,7 +41,7 @@ class TestHandler(BaseHTTPRequestHandler):
 
 
 def start_server():
-    server = HTTPServer(("127.0.0.1", 0), TestHandler)
+    server = HTTPServer(("127.0.0.1", 0), LocalHTTPHandler)
 
     thread = Thread(
         target=server.serve_forever,

@@ -14,7 +14,7 @@ from core.research.web_provider import (
 )
 
 
-class TestDirectWebProvider(DirectWebResearchProvider):
+class StubDirectWebProvider(DirectWebResearchProvider):
     """
     Deterministic test version of DirectWebResearchProvider.
 
@@ -67,7 +67,7 @@ def make_pipeline(tmp_path: Path):
 
     acquisition_engine = ResearchAcquisitionEngine()
 
-    provider = TestDirectWebProvider()
+    provider = StubDirectWebProvider()
 
     acquisition_engine.register_provider(provider)
 

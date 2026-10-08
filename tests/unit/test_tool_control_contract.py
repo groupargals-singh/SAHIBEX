@@ -14,10 +14,14 @@ def check(condition: bool, message: str) -> None:
     print(f"[PASS] {message}")
 
 
-def test_handler(value: str = "ok") -> dict:
+def tool_handler(value: str = "ok") -> dict:
     return {
         "value": value,
     }
+
+
+def test_tool_handler_contract() -> None:
+    assert tool_handler() == {"value": "ok"}
 
 
 def main() -> None:
@@ -30,7 +34,7 @@ def main() -> None:
     tool = ToolDefinition(
         name="test_tool",
         description="Tool control contract test tool",
-        handler=test_handler,
+        handler=tool_handler,
         read_only=True,
         requires_confirmation=False,
     )
@@ -70,7 +74,7 @@ def main() -> None:
     registry.register(
         name="test_tool",
         description="Tool control contract test tool",
-        handler=test_handler,
+        handler=tool_handler,
         read_only=True,
         requires_confirmation=False,
     )
@@ -94,7 +98,7 @@ def main() -> None:
     )
 
     check(
-        resolved.handler is test_handler,
+        resolved.handler is tool_handler,
         "registry preserves handler identity",
     )
 
@@ -123,7 +127,7 @@ def main() -> None:
         registry.register(
             name="test_tool",
             description="Duplicate tool",
-            handler=test_handler,
+            handler=tool_handler,
             read_only=True,
             requires_confirmation=False,
         )
@@ -145,7 +149,7 @@ def main() -> None:
         registry.register(
             name="",
             description="Invalid tool",
-            handler=test_handler,
+            handler=tool_handler,
             read_only=True,
             requires_confirmation=False,
         )
