@@ -63,6 +63,10 @@ class MotherOperationalIntegration:
         self.model = OperationalModelIntegration(
             gateway=model_gateway
         )
+        providers = model_gateway.providers()
+        if not providers:
+            raise RuntimeError("No model provider is registered.")
+        self.default_provider = providers[0]
 
         self.verification = OperationalVerificationRecovery()
 
