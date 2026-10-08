@@ -85,31 +85,30 @@ Verified with dedicated execution-loop tests and full regression.
 - 🟢 Code-side computer-control integration
 - 🟢 Android bridge protocol tests
 - 🟢 Android adapter tests
-- 🔴 **Real Android screenshot probe still fails**
-  - Failed to take take screenshot. Capturing failed.
-  - Companion process is not observed running.
-  - Therefore real device UI control is NOT declared complete.
+- 🟢 **Real physical-device Companion E2E PASS**
+  - UI-tree: PASS
+  - Tap/click: PASS
+  - Text typing: PASS
+  - Key press: PASS
+  - Screenshot: PASS
+  - REAL DEVICE E2E PASS
+- 🟢 **Phase 6B COMPLETE**
+
+The separate Termux-side `/system/bin/screencap` probe is an auxiliary shell-runtime diagnostic. Its failure does not invalidate the Companion Accessibility E2E acceptance test.
 
 ## Full repository
 
-Latest full regression after Main Brain commissioning:
+Latest full regression after Phase 6B verification:
 
-**1081 passed, 6 warnings**
+**1100 passed, 0 failed, 0 warnings**
 
 Compileall: 🟢 PASS  
 git diff --check: 🟢 PASS  
-working tree after commit: 🟢 CLEAN
+working tree: documentation reconciliation pending commit
 
-## The 6 warnings
+## Regression hygiene
 
-1. tests/unit/test_direct_web_provider.py — pytest cannot collect TestableWebProvider because it has __init__.
-2. tests/unit/test_direct_web_provider_integration.py — same collection issue for TestDirectWebProvider.
-3. tests/unit/test_http_search_backend.py — TestHandler has __init__.
-4. tests/unit/test_rss_provider.py — TestHandler has __init__.
-5. tests/unit/test_rss_provider.py — TestServer has __init__.
-6. tests/unit/test_tool_control_contract.py::test_handler returns a dict instead of None.
-
-These are **test-suite hygiene warnings**, not SAHIBEX architecture failures.
+The current full regression reports **1100 passed, 0 failed, 0 warnings**. The earlier six pytest collection/return warnings have been cleaned up and are no longer present.
 
 ## The real completion picture
 

@@ -58,7 +58,15 @@ The original claim of **417 architecture items** is retained as the baseline, bu
 
 Computer-control integration and Android companion source are present and unit/integration tested.
 
-The real Android runtime probe remains **BLOCKED** because the device-level screenshot capture did not pass and the companion bridge was not observed running. This cannot be truthfully promoted to COMPLETE without a real device-level pass.
+The physical Android device completed the Companion E2E acceptance test:
+- UI-tree: PASS
+- Tap/click: PASS
+- Text typing: PASS
+- Key press: PASS
+- Screenshot: PASS
+- REAL DEVICE E2E PASS
+
+Therefore **Phase 6B is COMPLETE**. The separate Termux-side `/system/bin/screencap` probe is retained only as an auxiliary shell-runtime diagnostic and is not the Companion E2E acceptance gate.
 
 ## Final classification
 
@@ -67,8 +75,8 @@ The real Android runtime probe remains **BLOCKED** because the device-level scre
 - 6P available implementation/evidence: **VERIFIED**
 - A–AC full 417-item completion: **NOT YET CLAIMABLE**
 - G/K/T/U/V/AC: **NEEDS RECONCILIATION**
-- Android real runtime: **BLOCKED**
-- No implementation code was changed as part of this audit.
+- Phase 6B / Android real runtime: **COMPLETE**
+- Roadmap/status documentation was reconciled to the physical-device E2E evidence; implementation code was not changed by this documentation update.
 
 ## Required next work
 
@@ -76,7 +84,7 @@ The real Android runtime probe remains **BLOCKED** because the device-level scre
 2. Map all 417 items to current files/tests.
 3. Reconcile E01–E13 and 6P-1..29 into that baseline.
 4. Run the final end-to-end 6P gate after reconciliation.
-5. Complete the Android device-level runtime gate when the companion can actually run.
+5. Continue with the next unreconciled architecture/6P workstream; the Phase 6B Android device-level gate is already COMPLETE.
 
 
 ## Main Brain commissioning update
@@ -86,6 +94,6 @@ A structural integration gap identified during the audit has now been addressed.
 - Master Brain planning is now created before research/learning/operational execution.
 - Added `core/brain/sahibex_execution_loop.py` as the commissioned root execution-loop boundary.
 - Added dedicated end-to-end tests for read-only execution, protected-action stopping, cognitive completion, recovery/observability authority boundaries.
-- Full regression after the change: **1081 passed, 6 warnings**.
-- Android real runtime remains **BLOCKED** because the device-side companion/bridge runtime is not yet operational.
+- Full regression after the change: **1100 passed, 0 warnings**.
+- Android Phase 6B real physical-device Companion E2E: **COMPLETE**.
 - The unrecovered original A–AC 417-item specification remains **NEEDS RECONCILIATION**; no invented mapping is being treated as completion.

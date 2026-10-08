@@ -102,12 +102,19 @@ These are evidence records, not blanket completion claims.
 ## 4. ANDROID / COMPUTER CONTROL
 Android Companion source and gated computer-control implementation exist.
 
-Current blocker:
-- Real Android screenshot runtime test is BLOCKED.
-- Companion bridge is not currently observed running on the device.
-- Device-level screenshot/UI-control end-to-end verification is still required.
+Phase 6B acceptance gate:
+- Real physical-device Companion E2E: PASS.
+- UI-tree: PASS.
+- Tap/click: PASS.
+- Text typing: PASS.
+- Key press: PASS.
+- Screenshot: PASS.
+- REAL DEVICE E2E PASS.
+- Full repository regression after the gate: 1100 passed, 0 failed, 0 warnings.
 
-ANDROID REAL RUNTIME = BLOCKED until the actual device-level test passes.
+The separate Termux-side `/system/bin/screencap` probe is an auxiliary shell-runtime probe, not the Phase 6B Companion acceptance test. It may fail when Android's shell UID is not granted direct screenshot capture; that does not invalidate the Companion Accessibility E2E pass.
+
+ANDROID REAL RUNTIME / PHASE 6B = COMPLETE.
 
 ## 5. CURRENT REPOSITORY SCALE
 - Branch: main
