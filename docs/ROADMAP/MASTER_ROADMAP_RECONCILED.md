@@ -112,9 +112,11 @@ ANDROID REAL RUNTIME = BLOCKED until the actual device-level test passes.
 ## 5. CURRENT REPOSITORY SCALE
 - Branch: main
 - Working tree was clean before this roadmap document
-- Approximately 745 Python files excluding virtualenv/git
-- Approximately 430 unit tests
+- 745 Python files excluding virtualenv/git
+- 431 test files
+- Full regression baseline: 1077 passed, 6 warnings (latest run)
 - Core, research, memory, specialist-brain, security, verification, tools, agent, and Android companion layers exist.
+- Working tree was clean before and after the verification run.
 
 ## 6. STATUS DEFINITIONS
 PASS = a specific test/verification passed.

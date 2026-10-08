@@ -305,16 +305,19 @@ Final phase status becomes COMPLETE only after the full regression passes.
 
 ## 6. Current Status
 
-6P-1 → NEXT
+Status was reconciled against the current repository evidence. This document defines 6P-1..12; additional 6P-13..29 tests are tracked in the master roadmap and require separate reconciliation.
 
-6P-2 → PENDING
-6P-3 → PENDING
-6P-4 → PENDING
-6P-5 → PENDING
-6P-6 → PENDING
-6P-7 → PENDING
-6P-8 → PENDING
-6P-9 → PENDING
-6P-10 → PENDING
-6P-11 → PENDING
-6P-12 → PENDING
+6P-1 → IMPLEMENTED / verification evidence exists
+6P-2 → IMPLEMENTED / verification evidence exists
+6P-3 → IMPLEMENTED / verification evidence exists
+6P-4 → NEEDS VERIFICATION / reconciliation
+6P-5 → NEEDS VERIFICATION / reconciliation
+6P-6 → IMPLEMENTED / verification evidence exists
+6P-7 → IMPLEMENTED / verification evidence exists
+6P-8 → IMPLEMENTED / approval-gated evidence exists
+6P-9 → NEEDS VERIFICATION / reconciliation
+6P-10 → NEEDS VERIFICATION / reconciliation
+6P-11 → NEEDS END-TO-END VERIFICATION
+6P-12 → PENDING FINAL 6P REGRESSION GATE
+
+Important: IMPLEMENTED or PASS evidence does not by itself mean COMPLETE. Protected actions, authority boundaries, recovery behavior, and end-to-end verification must still be proven before 6P is declared COMPLETE.
