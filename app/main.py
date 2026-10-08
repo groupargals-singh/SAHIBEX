@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from core.brain.master_brain import MasterBrain
 
 
@@ -61,6 +63,8 @@ def print_status(brain: MasterBrain) -> None:
 
 
 def main() -> None:
+    # Production runtime uses the self-hosted local cognitive engine by default.
+    os.environ.setdefault("SAHIBEX_MODEL_PROVIDER", "local")
     brain = MasterBrain()
 
     print(BANNER)

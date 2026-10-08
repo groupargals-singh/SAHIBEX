@@ -741,7 +741,7 @@ class MasterBrain:
                 self.mother_operational.process_approved_request(
                     objective=text,
                     intent=intent_result.intent,
-                    provider="mock",
+                    provider=self.mother_operational.default_provider,
                 )
             )
 

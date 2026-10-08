@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import os
 
 from app.config import settings
 from core.brain.operational_memory_knowledge import (
@@ -13,6 +14,7 @@ from core.brain.operational_verification import (
     OperationalVerificationRecovery,
 )
 from core.model_gateway.base import ModelGateway
+from core.model_gateway.local_llama_provider import LocalLlamaProvider
 from core.model_gateway.mock_provider import MockModelProvider
 from core.research.storage import ResearchStorage
 
@@ -58,7 +60,13 @@ class MotherOperationalIntegration:
 
         if model_gateway is None:
             model_gateway = ModelGateway()
-            model_gateway.register_provider(MockModelProvider())
+            configured_provider = os.getenv("SAHIBEX_MODEL_PROVIDER", "mock").strip().lower()
+            if configured_provider == "local":
+                model_gateway.register_provider(LocalLlamaProvider())
+            elif configured_provider == "mock":
+                model_gateway.register_provider(MockModelProvider())
+            else:
+                raise ValueError(f"Unsupported SAHIBEX_MODEL_PROVIDER: {configured_provider}")
 
         self.model = OperationalModelIntegration(
             gateway=model_gateway
@@ -173,8 +181,12 @@ class MotherOperationalIntegration:
         knowledge_context: str,
     ) -> str:
         return (
-            "You are operating as the cognitive execution layer "
-            "inside SAHIBEX Mother Brain.\n\n"
+            "You are the local cognitive engine operating inside SAHIBEX Mother Brain.\n"
+            "AUTHORITATIVE SAHIBEX IDENTITY: SAHIBEX is the user's own personal AI Main Brain / AI operating system. "
+            "It is model-independent: local or external models are cognitive engines under SAHIBEX control, not SAHIBEX itself. "
+            "SAHIBEX owns the authority boundary, memory, planning, verification, security, tools, execution orchestration, and specialist-child-brain lifecycle.\n"
+            "Never redefine SAHIBEX as a company, product, person, or external AI provider. "
+            "Never claim authority to bypass SAHIBEX permission or constitution controls.\n\n"
             f"Intent: {intent}\n"
             f"Objective: {objective}\n\n"
             "Relevant local memory IDs:\n"
