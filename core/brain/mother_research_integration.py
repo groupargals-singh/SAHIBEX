@@ -306,6 +306,7 @@ class MotherResearchIntegration:
         self,
         *,
         query: str,
+        confirmation: bool = False,
     ) -> MotherResearchResult:
         if not isinstance(query, str):
             raise TypeError("query must be str")
@@ -329,6 +330,7 @@ class MotherResearchIntegration:
             self.execution_manager.create_job(
                 job_id=job_id,
                 query=query,
+                metadata={"network_confirmation": bool(confirmation)},
             )
 
             self.execution_manager.create_plan(

@@ -230,7 +230,9 @@ class ResearchPipelineIntegration:
         result = self.acquisition_pipeline.acquire_and_ingest(
             request,
             provider_name=provider_name,
-            confirmation=False,
+            confirmation=bool(
+                job.metadata.get("network_confirmation", False)
+            ),
         )
 
         context.acquisition = result.acquisition

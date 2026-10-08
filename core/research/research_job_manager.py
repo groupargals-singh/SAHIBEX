@@ -43,6 +43,7 @@ class ResearchJobManager:
         self,
         job_id: str,
         query: str,
+        metadata: Dict[str, object] | None = None,
     ) -> ResearchJob:
         if not isinstance(job_id, str) or not job_id.strip():
             raise ValueError(
@@ -62,6 +63,7 @@ class ResearchJobManager:
         job = ResearchJob(
             job_id=job_id,
             query=query.strip(),
+            metadata=dict(metadata or {}),
         )
 
         self._jobs[job_id] = job

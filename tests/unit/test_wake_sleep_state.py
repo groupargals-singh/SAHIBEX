@@ -55,7 +55,10 @@ def test_brain_clock_follows_wake_sleep_boundary():
 def test_failed_clock_cannot_be_overridden_by_wake():
     clock = BrainClock()
     clock.start()
-    clock.tick(lambda _: (_ for _ in ()).throw(RuntimeError("clock failure")))
+    try:
+        clock.tick(lambda _: (_ for _ in ()).throw(RuntimeError("clock failure")))
+    except RuntimeError as exc:
+        assert "clock failure" in str(exc)
 
     controller = WakeSleepController(clock=clock)
 

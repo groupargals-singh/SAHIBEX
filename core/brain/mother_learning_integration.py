@@ -76,6 +76,7 @@ class MotherLearningIntegration:
         self,
         *,
         topic: str,
+        confirmation: bool = False,
     ) -> MotherLearningResult:
         if not isinstance(topic, str):
             raise TypeError("topic must be str")
@@ -87,6 +88,7 @@ class MotherLearningIntegration:
 
         result = self.research.research(
             query=topic,
+            confirmation=confirmation,
         )
 
         if not result.success:

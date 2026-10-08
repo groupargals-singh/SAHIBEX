@@ -625,6 +625,7 @@ class MasterBrain:
             research_result = (
                 self.mother_research.research(
                     query=text,
+                    confirmation=user_confirmation,
                 )
             )
 
@@ -669,6 +670,7 @@ class MasterBrain:
             learning_result = (
                 self.mother_learning.learn(
                     topic=text,
+                    confirmation=user_confirmation,
                 )
             )
 

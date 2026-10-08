@@ -66,7 +66,8 @@ def test_master_brain_learning_flow() -> None:
     provider = FakeLearningProvider()
 
     research.acquisition_pipeline.acquisition_engine.register_provider(
-        provider
+        provider,
+        replace=True,
     )
 
     research.extraction_pipeline.extractor = LearningExtractor()
@@ -81,7 +82,8 @@ def test_master_brain_learning_flow() -> None:
     )
 
     result = brain.process(
-        "I want to learn about SAHIBEX architecture."
+        "I want to learn about SAHIBEX architecture.",
+        user_confirmation=True,
     )
 
     print("\n--- LEARNING RESULT DEBUG ---")

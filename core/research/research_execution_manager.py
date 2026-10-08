@@ -45,10 +45,12 @@ class ResearchExecutionManager:
         self,
         job_id: str,
         query: str,
+        metadata: dict[str, object] | None = None,
     ) -> ResearchJob:
         return self.job_manager.create_job(
             job_id=job_id,
             query=query,
+            metadata=metadata,
         )
 
     def get_job(

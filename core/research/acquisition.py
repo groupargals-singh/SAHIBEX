@@ -125,6 +125,8 @@ class ResearchAcquisitionEngine:
     def register_provider(
         self,
         provider: ResearchAcquisitionProvider,
+        *,
+        replace: bool = False,
     ) -> None:
         if not isinstance(
             provider,
@@ -139,7 +141,7 @@ class ResearchAcquisitionEngine:
         if not isinstance(name, str) or not name.strip():
             raise ValueError("provider_name is required")
 
-        if name in self._providers:
+        if name in self._providers and not replace:
             raise ValueError(
                 f"provider already registered: {name}"
             )

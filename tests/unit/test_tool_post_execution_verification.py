@@ -47,7 +47,7 @@ def test_success_without_permission_is_rejected() -> None:
 
     assert verified.success is False
     assert verified.verified is False
-    assert verified.verification_status == "FAILED"
+    assert verified.verification_status == "VERIFICATION_FAILED"
 
 
 def test_success_requiring_confirmation_is_rejected() -> None:
@@ -68,7 +68,7 @@ def test_success_requiring_confirmation_is_rejected() -> None:
 
     assert verified.success is False
     assert verified.verified is False
-    assert verified.verification_status == "FAILED"
+    assert verified.verification_status == "VERIFICATION_FAILED"
 
 
 def test_success_without_result_is_rejected() -> None:
@@ -89,7 +89,7 @@ def test_success_without_result_is_rejected() -> None:
 
     assert verified.success is False
     assert verified.verified is False
-    assert verified.verification_status == "FAILED"
+    assert verified.verification_status == "VERIFICATION_FAILED"
 
 
 def test_failed_result_cannot_become_success() -> None:
