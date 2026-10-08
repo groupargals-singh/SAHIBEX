@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from uuid import uuid4
 
 from core.brain.reasoning import ReasoningEngine
+from core.brain.reasoning_coordinator import ReasoningCoordinator
 from core.brain.operational_model import (
     OperationalModelIntegration,
     OperationalModelResult,
@@ -128,6 +129,7 @@ class OperationalReasoningEngine:
             if reasoning_engine is not None
             else ReasoningEngine()
         )
+        self.reasoning_coordinator = ReasoningCoordinator()
 
         if not isinstance(
             model_integration,
@@ -206,6 +208,16 @@ class OperationalReasoningEngine:
                 verification_status=verification_status,
             )
 
+        structured_reasoning = self.reasoning_coordinator.assess(
+            goal=text,
+            intent=reasoning.intent,
+            confidence=reasoning.confidence,
+            quality_score=1.0 if verification_status == "VERIFIED" else 0.0,
+            ambiguous=reasoning.confidence < 0.50,
+            prior_context=reasoning.metadata.get("context"),
+        )
+        structured_reasoning = self.reasoning_coordinator.verify(structured_reasoning)
+
         if reasoning.requires_confirmation:
             return OperationalReasoningResult(
                 success=False,
@@ -228,7 +240,13 @@ class OperationalReasoningEngine:
             f"Detected action: {reasoning.action}\n\n"
             "Provide a useful response. Do not claim that "
             "an external action was executed unless an "
-            "execution result is explicitly supplied."
+            "execution result is explicitly supplied.\n\n"
+            "Structured reasoning control signals: "
+            f"strategy={structured_reasoning.selected_strategy}; "
+            f"confidence={structured_reasoning.confidence}; "
+            f"uncertainty={structured_reasoning.uncertainty}; "
+            f"verified={structured_reasoning.verified}; "
+            f"corrections={structured_reasoning.correction_count}."
         )
 
         model_result: OperationalModelResult = (
