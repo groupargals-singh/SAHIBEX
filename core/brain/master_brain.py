@@ -39,6 +39,7 @@ from core.policies.constitution import (
 from verification.verifier import VerificationEngine
 from core.brain.root_identity import SahibexRootIdentity
 from core.brain.root_instance import SahibexRootInstanceIdentity
+from core.brain.memory_brain import MemoryBrain
 
 @dataclass(frozen=True)
 class BrainResult:
@@ -244,6 +245,7 @@ class MasterBrain:
         )
 
         self.runtime_state = MotherBrainState()
+        self.memory_brain = MemoryBrain(storage=self.mother_operational.storage)
 
     def process(
         self,
@@ -1407,4 +1409,11 @@ class MasterBrain:
             user=text,
             assistant=result.message,
             intent=result.intent,
+        )
+        self.memory_brain.remember_interaction(
+            user_text=text or "",
+            assistant_text=result.message,
+            intent=result.intent,
+            action=result.action,
+            verification_status=result.verification_status,
         )
