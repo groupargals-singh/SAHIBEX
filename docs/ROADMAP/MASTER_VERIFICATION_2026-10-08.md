@@ -213,3 +213,23 @@ Approval moved the proposal state to TESTED but left the skill version at VERIFI
 MasterBrain._record_context() now feeds every real BrainResult into the Phase-10 experience store. Learning telemetry is observational and fail-safe: a telemetry problem cannot break the primary Brain result and cannot trigger an automatic protected update.
 
 Final Phase 10 status: **COMPLETE / PASS**.
+
+## Phase 11 Verification — Security/Safety Brain
+
+### Audit result
+The existing security layers were not replaced. Phase 11 added the missing integrated SecuritySafetyBrain control plane and bound it to the existing Constitution, PermissionGateway and EmergencyStop runtime.
+
+### Dedicated evidence
+- Security/Phase-11 suite: **57 passed, 0 failed**
+- Full repository regression: **1111 passed, 0 failed**
+- Compileall: **PASS**
+- git diff --check: **PASS**
+
+### Bugs fixed during verification
+- EmergencyStop integration ordering bug in MasterBrain initialization.
+- Blocked protected requests were incorrectly marked `success=True` when confirmation was merely required. They now correctly report `success=False`.
+
+### Security invariants
+Unknown/unbound security runtime fails closed. Protected actions require explicit confirmation. Parent denial is final. Emergency stop blocks protected execution. Security layer cannot modify Constitution, grant authority, override human authority, bypass permission, disable audit/prompt-injection defense, read plaintext secrets, allow uncontrolled network access, approve unverified self-update, or authorize external/financial control without permission.
+
+Final Phase 11 status: **COMPLETE / PASS**.

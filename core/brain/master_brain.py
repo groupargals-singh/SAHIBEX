@@ -47,6 +47,8 @@ from core.agent.autonomous_work_brain import AutonomousWorkBrain
 from core.agent_goal import AgentGoal
 from core.brain.specialist_child_manager import SpecialistChildBrainManager
 from core.brain.continuous_learning_improvement import ContinuousLearningImprovement
+from core.brain.security_safety_brain import SecuritySafetyBrain
+from core.brain.emergency_stop import EmergencyStop
 
 @dataclass(frozen=True)
 class BrainResult:
@@ -235,6 +237,18 @@ class MasterBrain:
         # activation remains gated and cannot modify Constitution or
         # self-authorize protected updates.
         self.continuous_learning = ContinuousLearningImprovement()
+
+        # Phase 11: unified fail-closed security/safety control plane.
+        # Existing Constitution, PermissionGateway, verification,
+        # audit, sandbox and emergency-stop components remain the
+        # authoritative execution boundaries.
+        self.emergency_stop = EmergencyStop()
+        self.security_safety = SecuritySafetyBrain()
+        self.security_safety.bind_runtime(
+            constitution=self.constitution,
+            permission_gateway=self.permission_gateway,
+            emergency_stop=self.emergency_stop,
+        )
 
         self.mother_operational = (
             mother_operational
@@ -1426,11 +1440,9 @@ class MasterBrain:
         permission_allowed: bool = False,
         plan: Any | None = None,
     ) -> BrainResult:
-        success = (
-            confirmation_required
-            and authority_decision
-            == ActionDecision.REQUIRE_CONFIRMATION.value
-        )
+        # A blocked protected action is not a successful execution.
+        # confirmation_required is status metadata, not success.
+        success = False
 
         return BrainResult(
             success=success,

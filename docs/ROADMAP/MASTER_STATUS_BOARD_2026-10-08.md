@@ -278,3 +278,56 @@ Phase 10 acceptance:
 10. Constitution cannot be self-modified — PASS
 
 Final Phase 10 status: **COMPLETE / PASS**.
+
+## Phase 11 — Security/Safety Brain
+
+**Status: COMPLETE / PASS.**
+
+Phase 11 was audited against the REAL BRAIN master work list. Existing Constitution, permission, audit, prompt-injection, secrets, sandbox, tool-isolation, network/credential/external-control/financial/self-update boundaries, tamper/integrity controls and emergency-stop components were retained. A missing integrated Main-Brain Security/Safety control-plane boundary was added.
+
+Implemented:
+- core/brain/security_safety_brain.py
+- MasterBrain integration through self.security_safety and a shared EmergencyStop latch
+- Fail-closed Constitution binding
+- Permission/confirmation enforcement for protected actions
+- Parent-authority denial as a final deny boundary
+- Emergency-stop enforcement for protected execution
+- Explicit immutable security-control contract
+- No Constitution modification
+- No authority granting or human override
+- No permission bypass
+- No audit/prompt-injection defense disabling
+- No plaintext secret access
+- No uncontrolled network access
+- No unverified self-update
+- No unauthorized external control or financial action
+- Tamper detection and emergency shutdown required as security invariants
+
+Verification found two real integration/test issues and corrected them:
+1. MasterBrain referenced EmergencyStop before constructing it.
+2. A blocked protected action was incorrectly reported as success merely because confirmation was required; blocked results now correctly report success=False.
+
+Verification:
+- Dedicated Phase 11/security suite: **57 passed, 0 failed**
+- Full repository regression: **1111 passed, 0 failed**
+- Compileall: **PASS**
+- git diff --check: **PASS**
+
+Phase 11 acceptance:
+1. Constitution — PASS
+2. Permission system — PASS
+3. Authority boundary — PASS
+4. Audit — PASS
+5. Prompt-injection hardening — PASS
+6. Secret protection — PASS
+7. Sandbox enforcement — PASS
+8. Tool isolation — PASS
+9. Network permission enforcement — PASS
+10. Credential permission — PASS
+11. External-control permission — PASS
+12. Financial-action permission — PASS
+13. Self-update permission — PASS
+14. Tamper detection — PASS
+15. Emergency shutdown — PASS
+
+Final Phase 11 status: **COMPLETE / PASS**.
