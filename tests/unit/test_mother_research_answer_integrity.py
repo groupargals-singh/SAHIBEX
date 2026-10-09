@@ -124,3 +124,23 @@ def test_insufficient_evidence_message_remains_english_for_english_query():
         [],
     )
     assert "I couldn't verify enough reliable evidence" in message
+
+
+def test_search_blocked_failure_is_localized_and_does_not_expose_raw_error():
+    message = MotherResearchIntegration._execution_failure_message(
+        "आज AI सुरक्षा में क्या नया है?",
+        "DuckDuckGo returned an anti-bot challenge instead of search results; internal marker",
+    )
+    assert "सर्च सेवा ने" in message
+    assert "बिना जाँचे कोई निष्कर्ष नहीं बनाया" in message
+    assert "DuckDuckGo" not in message
+    assert "internal marker" not in message
+
+
+def test_search_blocked_english_failure_is_actionable_and_safe():
+    message = MotherResearchIntegration._execution_failure_message(
+        "What is new in AI security?",
+        "No live search provider is configured",
+    )
+    assert "approved alternative search backend" in message
+    assert "No live search provider" not in message

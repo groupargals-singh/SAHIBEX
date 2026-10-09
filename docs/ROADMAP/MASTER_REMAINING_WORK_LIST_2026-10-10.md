@@ -143,3 +143,9 @@ Work in priority order. For each fix: reproduce → patch → focused regression
 - Added bilingual-query regression coverage, including a result-budget case. Search-provider + permission tests: **14 passed**.
 - Live investigation found DuckDuckGo returned HTTP 202 anti-bot/CAPTCHA HTML (`anomaly-modal`) instead of result HTML. The old parser silently treated this as zero results, hiding the actual provider failure. Added explicit anti-bot challenge detection with an actionable `RuntimeError`, plus tests for challenge detection and normal HTML parsing. Focused combined search tests: **16 passed**.
 - Important remaining limitation: a live provider may still block automated searches. This fix makes the failure visible; it does not bypass CAPTCHA or claim live research success. Use a permitted, configured alternative search backend for dependable research.
+
+## Engineering continuation — user-safe provider failure responses
+- Live authenticated voice smoke reproduced the provider failure after the search backend change. Before the latest fix, the raw English DuckDuckGo CAPTCHA error appeared directly in the Hindi answer (`NOT_EXECUTED`).
+- Added `_execution_failure_message()` in `core/brain/mother_research_integration.py`. Failed acquisition now returns a language-matched, user-safe explanation and keeps the raw error only in the structured error field for diagnostics. The message clearly says no unverified conclusion was generated and gives an actionable next step.
+- Focused research integrity + Master Brain research/learning regression: **17 passed**.
+- Remaining research blocker is external/backend availability and robust verified synthesis. The current DuckDuckGo HTML backend is being challenged; this is now detected rather than silently treated as an empty result set. Do not bypass the challenge. Configure an approved search API/backend for dependable live research.
