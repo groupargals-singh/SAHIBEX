@@ -25,6 +25,7 @@ data/android_companion_media_token
 data/captures/
 data/quarantine/
 android_companion/build-media/
+android_companion/manual-build/*.apk
 *.db
 *.db-*
 *.sqlite
