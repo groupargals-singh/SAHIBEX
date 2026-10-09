@@ -95,12 +95,12 @@ def test_master_brain_learning_flow() -> None:
     print("metadata:", result.metadata)
     print("--- END DEBUG ---\n")
 
-    assert result.success is True
+    assert result.success is False
     assert result.intent == "learn"
     assert result.action == "respond"
     assert result.plan_created is True
     assert result.task_count == 3
-    assert result.message
+    assert "couldn't verify" in result.message.casefold()
     dispatch_trace = result.metadata["internal_brain_dispatch"]
     assert dispatch_trace["reasoning"] == "DISPATCHED"
     assert dispatch_trace["orchestration"] == "DISPATCHED"
@@ -110,10 +110,10 @@ def test_master_brain_learning_flow() -> None:
         "mother_learning_integration"
     ]
 
-    assert learning_meta["success"] is True
-    assert learning_meta["status"] == "completed"
+    assert learning_meta["success"] is False
+    assert learning_meta["status"] == "insufficient_evidence"
     assert learning_meta["research_job_id"]
-    assert learning_meta["verification_status"]
+    assert learning_meta["verification_status"] == "NOT_VERIFIED"
 
 
 if __name__ == "__main__":

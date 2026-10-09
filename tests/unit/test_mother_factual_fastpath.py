@@ -23,7 +23,7 @@ def test_curated_fact_fast_path_skips_language_model():
     assert result.verification_status == "STRUCTURALLY_VALID"
 
 
-def test_compound_question_falls_through_to_model():
+def test_curated_compound_question_uses_complete_fact_without_model():
     gateway = ModelGateway()
     gateway.register_provider(MockModelProvider())
     integration = MotherOperationalIntegration(model_gateway=gateway)
@@ -31,9 +31,11 @@ def test_compound_question_falls_through_to_model():
         objective="भारत की राजधानी क्या है और इतिहास भी बताओ?",
         intent="general_request",
     )
-    assert result.success is False
-    assert result.provider == "mock"
-    assert result.verification_status == "QUALITY_REJECTED"
+    assert result.success is True
+    assert result.provider == "curated_local_knowledge:IN-CAPITAL-HISTORY-001"
+    assert "नई दिल्ली" in result.response
+    assert "1911" in result.response and "1931" in result.response
+    assert result.verification_status == "STRUCTURALLY_VALID"
 
 
 def test_photosynthesis_curated_fast_path_skips_weak_local_model():

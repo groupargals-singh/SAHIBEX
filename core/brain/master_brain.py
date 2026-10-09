@@ -1416,7 +1416,9 @@ class MasterBrain:
 
             if learning_result is None or not learning_result.success:
                 learning_error = (
-                    learning_result.error
+                    learning_result.answer
+                    if learning_result is not None and learning_result.answer
+                    else learning_result.error
                     if learning_result is not None
                     else learning_dispatch.reason
                 ) or "Learning execution failed."
@@ -1441,6 +1443,41 @@ class MasterBrain:
                     ),
                     permission_allowed=permission.allowed,
                     plan=plan,
+                    metadata={
+                        "internal_brain_dispatch": dict(internal_role_trace),
+                        "mother_learning_integration": {
+                            "success": (
+                                learning_result.success
+                                if learning_result is not None
+                                else False
+                            ),
+                            "status": (
+                                learning_result.status
+                                if learning_result is not None
+                                else "NOT_EXECUTED"
+                            ),
+                            "research_job_id": (
+                                learning_result.research_job_id
+                                if learning_result is not None
+                                else None
+                            ),
+                            "research_execution_id": (
+                                learning_result.research_execution_id
+                                if learning_result is not None
+                                else None
+                            ),
+                            "verification_status": (
+                                learning_result.verification_status
+                                if learning_result is not None
+                                else "NOT_EXECUTED"
+                            ),
+                            "error": (
+                                learning_result.error
+                                if learning_result is not None
+                                else learning_error
+                            ),
+                        },
+                    },
                 )
 
                 self._record_context(text, result)

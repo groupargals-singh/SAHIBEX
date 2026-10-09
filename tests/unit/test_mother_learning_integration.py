@@ -88,42 +88,21 @@ def main() -> None:
     print("DEBUG error:", result.error)
 
 
-    assert result.success is True
-    assert result.status == "completed"
-    assert result.answer
+    # A completed research pipeline is not a verified learning result.
+    # This one-source fixture must fail closed rather than promote claims.
+    assert result.success is False
+    assert result.status == "insufficient_evidence"
+    assert "couldn't verify" in result.answer.casefold()
     assert result.job_id
     assert result.execution_id
-    assert result.verification_status
+    assert result.verification_status == "NOT_VERIFIED"
+    assert result.learned_knowledge_ids == ()
+    assert result.verified_knowledge_ids == ()
 
     print("Learning success:", result.success)
     print("Learning status:", result.status)
-    print(
-        "Knowledge IDs:",
-        result.learned_knowledge_ids,
-    )
-    print(
-        "Verified IDs:",
-        result.verified_knowledge_ids,
-    )
-    print(
-        "Verification:",
-        result.verification_status,
-    )
-
-    assert result.learned_knowledge_ids
-    assert result.verified_knowledge_ids
-
-    for knowledge_id in result.verified_knowledge_ids:
-        knowledge = research.storage.get_knowledge(
-            knowledge_id,
-        )
-
-        assert knowledge is not None
-        assert knowledge.verified is True
-
-    print(
-        "SAHIBEX MOTHER LEARNING INTEGRATION TEST: PASS"
-    )
+    print("Verification:", result.verification_status)
+    print("SAHIBEX MOTHER LEARNING INTEGRITY TEST: PASS")
 
 
 if __name__ == "__main__":
