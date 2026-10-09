@@ -149,3 +149,13 @@ Work in priority order. For each fix: reproduce → patch → focused regression
 - Added `_execution_failure_message()` in `core/brain/mother_research_integration.py`. Failed acquisition now returns a language-matched, user-safe explanation and keeps the raw error only in the structured error field for diagnostics. The message clearly says no unverified conclusion was generated and gives an actionable next step.
 - Focused research integrity + Master Brain research/learning regression: **17 passed**.
 - Remaining research blocker is external/backend availability and robust verified synthesis. The current DuckDuckGo HTML backend is being challenged; this is now detected rather than silently treated as an empty result set. Do not bypass the challenge. Configure an approved search API/backend for dependable live research.
+
+## Latest verified state — 2026-10-10
+- Full repository regression after bilingual query expansion, CAPTCHA detection, and localized acquisition-failure handling: **1550 passed, 0 failed** in 127.09 seconds.
+- Focused search provider + permission tests: **14 passed**; focused DuckDuckGo challenge + search provider tests: **16 passed**; focused research integrity + Master Brain research/learning tests: **17 passed**.
+- `python -m compileall -q app core security verification tools tests`: PASS; `git diff --check`: PASS.
+- Commits pushed to `main`: `3b128ac` (consolidated work register), `c291bd1` (bilingual discovery and CAPTCHA detection), `d6e97e6` (localized provider failures).
+- After bridge restart, health: local model ONLINE, web search ACTIVE, supervisor ONLINE, Android voice bridge HTTP HEALTHY.
+- Live quality smoke: curated sky explanation and India capital/history responses succeed with `STRUCTURALLY_VALID`; current AI-security research returns `NOT_EXECUTED` because DuckDuckGo served a CAPTCHA challenge. User-facing Hindi error is now localized and does not expose raw backend internals. This is a known live research blocker, not a verified research success.
+- Directly tested Google News RSS with the existing hardened RSS provider: feed acquisition succeeded and returned five current-ish source leads. This proves RSS discovery can work even while DuckDuckGo is challenged; full verified answer synthesis from those leads has not yet been integrated or accepted. Do not mark research complete on RSS discovery alone.
+- Current Git tree was clean before this status append; rerun final status after commit.
