@@ -207,6 +207,7 @@ class SearchResearchProvider(
         self,
         backend: SearchProviderBackend,
         config: SearchProviderConfig | None = None,
+        fallback_backend: SearchProviderBackend | None = None,
     ):
         if not isinstance(
             backend,
@@ -217,6 +218,11 @@ class SearchResearchProvider(
             )
 
         self.backend = backend
+        if fallback_backend is not None and not isinstance(
+            fallback_backend, SearchProviderBackend
+        ):
+            raise TypeError("fallback_backend must be SearchProviderBackend or None")
+        self.fallback_backend = fallback_backend
 
         self.config = (
             config
@@ -353,12 +359,21 @@ class SearchResearchProvider(
                     variant, max_results=per_variant_limit
                 )
             except Exception:
-                # An optional expansion must not discard usable results from
-                # the original query. If the original search failed, preserve
-                # its failure rather than masking it with an expansion.
-                if variant == query:
+                # Optional fallback is another discovery provider, not a way
+                # to bypass a challenge. It runs only after the primary backend
+                # fails and still returns unverified source leads.
+                if self.fallback_backend is not None:
+                    batch = self.fallback_backend.search(
+                        variant, max_results=per_variant_limit
+                    )
+                elif variant == query:
                     raise
-                continue
+                else:
+                    continue
+            if not batch and self.fallback_backend is not None:
+                batch = self.fallback_backend.search(
+                    variant, max_results=per_variant_limit
+                )
             discovered.extend((item, variant) for item in batch[:limit])
 
         # Normalize ranking and deduplicate across all query variants.

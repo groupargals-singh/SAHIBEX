@@ -7,6 +7,7 @@ from security.secrets.credential_store import CredentialStore
 from core.research.acquisition import ResearchAcquisitionEngine
 from core.research.brave_search_backend import BraveSearchBackend
 from core.research.duckduckgo_search_backend import DuckDuckGoHTMLBackend
+from core.research.google_news_rss_search_backend import GoogleNewsRSSSearchBackend
 from core.research.document_provider import (
     DocumentProviderConfig,
     LocalDocumentResearchProvider,
@@ -78,7 +79,10 @@ def build_default_research_acquisition_engine(
         search_backend = "brave_search"
     elif configured_backend == "duckduckgo_html":
         engine.register_provider(
-            SearchResearchProvider(DuckDuckGoHTMLBackend())
+            SearchResearchProvider(
+                DuckDuckGoHTMLBackend(),
+                fallback_backend=GoogleNewsRSSSearchBackend(),
+            )
         )
         search_backend = "duckduckgo_html"
     else:

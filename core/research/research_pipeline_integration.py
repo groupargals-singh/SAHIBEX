@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from urllib.parse import urlparse
 from typing import Any, Dict, List, Optional
 
 from core.research.acquisition import AcquisitionRequest
@@ -260,6 +261,9 @@ class ResearchPipelineIntegration:
                 provider_name="search",
                 confirmation=confirmation,
             )
+            # Preserve discovery results in job context even if publisher
+            # fetching fails, so the final response can provide honest leads.
+            context.acquisition = search_result.acquisition
             urls = [
                 source.locator
                 for source in search_result.acquisition.sources
@@ -267,6 +271,18 @@ class ResearchPipelineIntegration:
             ][:3]
             if not urls:
                 raise RuntimeError("search provider returned no source URLs")
+
+            # Google News RSS provides wrapper links that redirect to publisher
+            # pages. The secure direct-web provider intentionally blocks automatic
+            # redirects, so do not misclassify wrapper URLs as publisher evidence.
+            if any(
+                (urlparse(url).hostname or "").lower() == "news.google.com"
+                for url in urls
+            ):
+                raise RuntimeError(
+                    "search discovery returned aggregator links; publisher content "
+                    "must be fetched and verified before synthesis"
+                )
 
             direct_request = AcquisitionRequest(
                 query=job.query,

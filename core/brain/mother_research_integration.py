@@ -348,8 +348,11 @@ class MotherResearchIntegration:
         return answer
 
     @staticmethod
-    def _execution_failure_message(query: str, error: str | None) -> str:
+    def _execution_failure_message(
+        query: str, error: str | None, source_leads: list[str] | None = None
+    ) -> str:
         """Return a safe, localized explanation without exposing raw internals."""
+        source_leads = source_leads or []
         is_hindi = any("\u0900" <= char <= "\u097f" for char in query)
         normalized_error = (error or "").casefold()
         search_blocked = any(
@@ -358,24 +361,32 @@ class MotherResearchIntegration:
         )
         if is_hindi:
             if search_blocked:
-                return (
+                message = (
                     "मैं अभी भरोसेमंद वेब स्रोत खोज नहीं सका, क्योंकि उपलब्ध सर्च सेवा ने "
                     "अनुरोध रोक दिया या कॉन्फ़िगर नहीं है। मैंने बिना जाँचे कोई निष्कर्ष नहीं बनाया। "
                     "कृपया बाद में दोबारा कोशिश करें या अनुमोदित वैकल्पिक सर्च सेवा कॉन्फ़िगर करें।"
                 )
-            return (
-                "यह रिसर्च अभी पूरी नहीं हो सकी, इसलिए मैं सत्यापित जवाब नहीं दे सकता। "
-                "मैंने बिना प्रमाण के निष्कर्ष नहीं बनाया। कृपया दोबारा कोशिश करें।"
-            )
+            else:
+                message = (
+                    "यह रिसर्च अभी पूरी नहीं हो सकी, इसलिए मैं सत्यापित जवाब नहीं दे सकता। "
+                    "मैंने बिना प्रमाण के निष्कर्ष नहीं बनाया। कृपया दोबारा कोशिश करें।"
+                )
+            if source_leads:
+                message += "\nआगे जाँचने के लिए स्रोत (सत्यापित निष्कर्ष नहीं):\n" + "\n".join(source_leads)
+            return message
         if search_blocked:
-            return (
+            message = (
                 "I couldn't reach a usable search service, so I couldn't verify this research. "
                 "No unsupported conclusion was generated. Retry later or configure an approved alternative search backend."
             )
-        return (
-            "This research attempt did not complete, so I can't provide a verified answer. "
-            "No unsupported conclusion was generated. Please retry."
-        )
+        else:
+            message = (
+                "This research attempt did not complete, so I can't provide a verified answer. "
+                "No unsupported conclusion was generated. Please retry."
+            )
+        if source_leads:
+            message += "\nResearch leads for review (not verified conclusions):\n" + "\n".join(source_leads)
+        return message
 
     @staticmethod
     def _answer_text_and_verification(
@@ -532,7 +543,7 @@ class MotherResearchIntegration:
                     # answer to verify; distinguish that from unknown truth.
                     verification_status = "NOT_EXECUTED"
                     answer = self._execution_failure_message(
-                        query, execution.error
+                        query, execution.error, self._source_leads(context)
                     )
                 return MotherResearchResult(
                     success=False,

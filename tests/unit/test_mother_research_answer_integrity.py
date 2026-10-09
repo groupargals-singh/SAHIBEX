@@ -144,3 +144,13 @@ def test_search_blocked_english_failure_is_actionable_and_safe():
     )
     assert "approved alternative search backend" in message
     assert "No live search provider" not in message
+
+
+def test_execution_failure_message_includes_leads_as_unverified():
+    message = MotherResearchIntegration._execution_failure_message(
+        "आज AI सुरक्षा में क्या नया है?",
+        "publisher fetch could not complete",
+        ["- AI safety report — https://news.google.com/rss/articles/example"],
+    )
+    assert "सत्यापित निष्कर्ष नहीं" in message
+    assert "https://news.google.com/rss/articles/example" in message

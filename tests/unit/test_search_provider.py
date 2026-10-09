@@ -314,6 +314,35 @@ def test_hindi_query_expansion_preserves_original_and_discovers_english_sources(
     assert any(item.metadata["discovery_query"] == seen_queries[1][0] for item in results)
 
 
+
+def test_fallback_backend_used_when_primary_search_is_blocked():
+    calls = []
+
+    class BlockingBackend(FunctionSearchBackend):
+        def search(self, query: str, *, max_results: int):
+            calls.append("primary")
+            raise RuntimeError("anti-bot challenge")
+
+    class FallbackBackend(FunctionSearchBackend):
+        def search(self, query: str, *, max_results: int):
+            calls.append("fallback")
+            return [SearchResult(
+                title="RSS discovery lead",
+                url="https://news.google.com/rss/articles/test",
+                snippet="Discovery only",
+                metadata={"discovery_only": True},
+            )]
+
+    provider = SearchResearchProvider(
+        BlockingBackend(lambda query, limit: []),
+        SearchProviderConfig(max_results=5),
+        fallback_backend=FallbackBackend(lambda query, limit: []),
+    )
+    results = provider.search("latest AI safety news", max_results=5)
+    assert calls == ["primary", "fallback"]
+    assert len(results) == 1
+    assert results[0].metadata["discovery_query"] == "latest AI safety news"
+
 def test_english_query_is_not_expanded():
     assert SearchResearchProvider._query_variants("latest AI security news") == [
         "latest AI security news"
@@ -341,6 +370,8 @@ def main():
     test_hindi_query_expansion_preserves_original_and_discovers_english_sources()
 
     test_english_query_is_not_expanded()
+
+    test_fallback_backend_used_when_primary_search_is_blocked()
 
     print(
         "SAHIBEX SEARCH PROVIDER TEST: PASS"
