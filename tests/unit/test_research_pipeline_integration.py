@@ -403,3 +403,47 @@ def test_answer_synthesis_is_blocked_without_verified_evidence():
             SimpleNamespace(job_id="job-no-evidence-answer", query="unrelated query"),
             SimpleNamespace(plan_id="test-plan"),
         )
+
+
+def test_answer_synthesis_is_blocked_when_evidence_has_no_retrievable_source():
+    from types import SimpleNamespace
+    import pytest
+
+    from core.research.research_pipeline_integration import (
+        ResearchPipelineContext,
+        ResearchPipelineIntegration,
+    )
+
+    integration = ResearchPipelineIntegration.__new__(
+        ResearchPipelineIntegration
+    )
+    integration._contexts = {
+        "job-evidence-without-source": ResearchPipelineContext(
+            query="source-grounded query",
+            extraction=[
+                SimpleNamespace(
+                    findings=[
+                        SimpleNamespace(
+                            evidence_id="evidence-1",
+                            source_id="missing-source-1",
+                        )
+                    ]
+                )
+            ],
+            verification={"status": "verified", "evidence_count": 1},
+        )
+    }
+    integration.storage = SimpleNamespace(
+        get_evidence=lambda evidence_id: SimpleNamespace(
+            evidence_id=evidence_id,
+            metadata={},
+        ),
+        get_source=lambda source_id: None,
+    )
+
+    with pytest.raises(RuntimeError, match="source traceability is unavailable"):
+        integration.handle_answer(
+            SimpleNamespace(step_id="answer-synthesis"),
+            SimpleNamespace(job_id="job-evidence-without-source", query="source-grounded query"),
+            SimpleNamespace(plan_id="test-plan"),
+        )

@@ -104,3 +104,18 @@ This audit document does not change Constitution, permissions, authority boundar
 - `scripts/start_sahibex_background.sh` starts the persistent model supervisor.
 - Search fail-closed tests explicitly clear the runtime environment and pass; no permission boundary was removed.
 - Latest full repository regression after live-runtime changes: **1130 passed, 0 failed**.
+
+## Source recovery + research evidence gate follow-up — 2026-10-09
+
+### Historical 417-item source recovery result
+- Repeated repository search across tracked/untracked project documentation found no independent original 417-item requirement list.
+- Repeated local archive inventory covered `SAHIBEX_FULL_BACKUP.zip`, `SAHIBEX_COMPLETE_ARCHIVE.zip`, `SAHIBEX_BACKUPS/SAHIBEX_FULL_BACKUP_2026-10-04.zip`, and `SAHIBEX_FULL_BACKUP_2026-10-09.zip`. The archive entries expose the current/reconstructed audit matrix and roadmap documents, but no separate original item-level 417 specification.
+- Git history for `docs/ROADMAP` contains the reconciled roadmap/status/audit documents but no independent original item-level source.
+- Therefore the historical source remains **NOT RECOVERED**. This is a source/provenance limitation, not evidence that 417 requirements failed. No original item text or exact completion ratio has been fabricated.
+- A reconstructed baseline can be drafted from documented architecture, existing code contracts, and tests, but must remain explicitly labelled `RECONSTRUCTED — NOT THE HISTORICAL ORIGINAL` until the user approves it as the new maintained baseline.
+
+### Additional research-answer integrity fix
+- `ResearchPipelineIntegration.handle_answer()` now refuses synthesis unless the current job has a positive verified-evidence count, the evidence records can be loaded, and at least one corresponding source record is retrievable for traceability.
+- Regression tests cover zero evidence, missing verified-evidence gate, and evidence with an unavailable source.
+- Focused research/security regression at this checkpoint: 26 passed; focused research answer/pipeline regression after source-traceability guard: 19 passed.
+- Full repository regression and compile validation are being rerun before this code change is committed.

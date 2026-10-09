@@ -442,6 +442,11 @@ class ResearchPipelineIntegration:
             for source in sources
         }
 
+        if not unique_sources:
+            raise RuntimeError(
+                "answer synthesis blocked: source traceability is unavailable"
+            )
+
         answer = self.answer_pipeline.run(
             job.query,
             verified_only=True,
