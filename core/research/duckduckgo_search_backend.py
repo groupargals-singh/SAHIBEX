@@ -127,8 +127,23 @@ class DuckDuckGoHTMLBackend(SearchProviderBackend):
         if len(payload) > self.max_response_bytes:
             raise ValueError("search response exceeds configured size limit")
 
+        decoded_payload = payload.decode("utf-8", errors="replace")
+        # DuckDuckGo can return HTTP 202 with a human CAPTCHA instead of
+        # search results. Do not silently interpret that challenge page as
+        # a valid empty search; fail with an actionable diagnostic.
+        lowered_payload = decoded_payload.casefold()
+        if (
+            "anomaly-modal" in lowered_payload
+            or "bots use duckduckgo too" in lowered_payload
+            or "select all squares containing a duck" in lowered_payload
+        ):
+            raise RuntimeError(
+                "DuckDuckGo returned an anti-bot challenge instead of search results; "
+                "configure an approved alternative search backend or retry later."
+            )
+
         parser = _DuckDuckGoHTMLParser()
-        parser.feed(payload.decode("utf-8", errors="replace"))
+        parser.feed(decoded_payload)
 
         results: list[SearchResult] = []
         for row in parser.finish()[:max_results]:

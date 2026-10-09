@@ -272,6 +272,53 @@ def test_provider_registration():
     )
 
 
+
+def test_hindi_query_expansion_preserves_original_and_discovers_english_sources():
+    seen_queries = []
+
+    def bilingual_search(query: str, max_results: int):
+        seen_queries.append((query, max_results))
+        if "AI सुरक्षा" in query:
+            return [
+                SearchResult(
+                    title=f"Hindi AI security {i}",
+                    url=f"https://example.com/hindi-{i}",
+                    snippet="Hindi discovery result",
+                )
+                for i in range(max_results)
+            ]
+        return [
+            SearchResult(
+                title=f"Official AI safety report {i}",
+                url=f"https://example.org/report-{i}",
+                snippet="English primary-source lead",
+            )
+            for i in range(max_results)
+        ]
+
+    provider = SearchResearchProvider(
+        FunctionSearchBackend(bilingual_search),
+        SearchProviderConfig(max_results=5),
+    )
+    results = provider.search("आज AI सुरक्षा में क्या नया है?", max_results=5)
+
+    assert seen_queries[0][0] == "आज AI सुरक्षा में क्या नया है?"
+    assert len(seen_queries) == 2
+    assert all(call[1] == 2 for call in seen_queries)
+    assert "latest news updates" in seen_queries[1][0]
+    assert "safety security" in seen_queries[1][0]
+    assert len(results) == 4
+    assert any("example.com/hindi" in item.url for item in results)
+    assert any("example.org/report" in item.url for item in results)
+    assert any(item.metadata["discovery_query"] == seen_queries[0][0] for item in results)
+    assert any(item.metadata["discovery_query"] == seen_queries[1][0] for item in results)
+
+
+def test_english_query_is_not_expanded():
+    assert SearchResearchProvider._query_variants("latest AI security news") == [
+        "latest AI security news"
+    ]
+
 def main():
     print(
         "SAHIBEX SEARCH PROVIDER TEST"
@@ -290,6 +337,10 @@ def main():
     test_acquisition_result()
 
     test_provider_registration()
+
+    test_hindi_query_expansion_preserves_original_and_discovers_english_sources()
+
+    test_english_query_is_not_expanded()
 
     print(
         "SAHIBEX SEARCH PROVIDER TEST: PASS"

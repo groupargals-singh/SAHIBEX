@@ -137,3 +137,9 @@ This is the single actionable remaining-work register, consolidated from the A�
 
 ## Session rule
 Work in priority order. For each fix: reproduce → patch → focused regression → full regression where practical → live test if safe → update this register → commit/push. Keep unresolved blockers visible. This register is a work queue, not a claim that its items have all been completed.
+
+## Engineering continuation — bilingual discovery + search failure visibility
+- Added a conservative Hindi keyword-expansion path in `core/research/search_provider.py`: original query is searched first; a second query is created only when known Hindi topical terms can be expanded; original wording is retained and each result records its `discovery_query`. Query result capacity is split across variants so the original query cannot crowd out the English expansion. This is discovery assistance only, not answer translation or verification.
+- Added bilingual-query regression coverage, including a result-budget case. Search-provider + permission tests: **14 passed**.
+- Live investigation found DuckDuckGo returned HTTP 202 anti-bot/CAPTCHA HTML (`anomaly-modal`) instead of result HTML. The old parser silently treated this as zero results, hiding the actual provider failure. Added explicit anti-bot challenge detection with an actionable `RuntimeError`, plus tests for challenge detection and normal HTML parsing. Focused combined search tests: **16 passed**.
+- Important remaining limitation: a live provider may still block automated searches. This fix makes the failure visible; it does not bypass CAPTCHA or claim live research success. Use a permitted, configured alternative search backend for dependable research.

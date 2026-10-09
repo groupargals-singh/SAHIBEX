@@ -243,6 +243,48 @@ class SearchResearchProvider(
         return normalized
 
     @staticmethod
+    def _query_variants(query: str) -> list[str]:
+        """Return the original query plus a conservative Hindi keyword expansion.
+
+        This is retrieval assistance, not translation of the user's intent.
+        The original query is always searched first and remains unchanged.
+        Only known topical phrases are expanded; unknown Hindi text is retained.
+        """
+        variants = [query]
+        if not any("\u0900" <= char <= "\u097f" for char in query):
+            return variants
+
+        expanded = query
+        replacements = (
+            ("क्या नया है", "latest news updates"),
+            ("क्या नई जानकारी है", "latest information updates"),
+            ("आधिकारिक", "official"),
+            ("विश्वसनीय", "reliable trusted"),
+            ("रिपोर्ट", "report"),
+            ("शोध", "research study"),
+            ("सुरक्षा", "safety security"),
+            ("खतरा", "risk threat"),
+            ("खतरे", "risks threats"),
+            ("कृत्रिम बुद्धिमत्ता", "artificial intelligence AI"),
+            ("राजधानी", "capital"),
+            ("इतिहास", "history"),
+            ("भारत", "India"),
+            ("आज", "latest current"),
+            ("अभी", "latest current"),
+            ("क्या", ""),
+            ("है", ""),
+            ("हैं", ""),
+            ("में", ""),
+            ("के बारे में", "about"),
+        )
+        for source, target in replacements:
+            expanded = expanded.replace(source, target)
+        expanded = " ".join(expanded.split()).strip(" ?।॥,;:")
+        if expanded and expanded.casefold() != query.casefold():
+            variants.append(expanded)
+        return variants
+
+    @staticmethod
     def _stable_source_id(url: str) -> str:
         """
         Create a deterministic source identity from the URL.
@@ -296,25 +338,42 @@ class SearchResearchProvider(
             self.config.max_results,
         )
 
-        results = self.backend.search(
-            query,
-            max_results=limit,
-        )
+        # Preserve the original query, then add a limited keyword expansion
+        # for recognized Hindi topical terms so English-language primary
+        # sources are not missed. Each variant is discovery-only.
+        discovered: list[tuple[SearchResult, str]] = []
+        variants = self._query_variants(query)
+        # Reserve result capacity for each query variant. Otherwise a full
+        # Hindi-result batch can crowd out all English-language primary-source
+        # leads before cross-query deduplication.
+        per_variant_limit = max(1, limit // len(variants))
+        for variant in variants:
+            try:
+                batch = self.backend.search(
+                    variant, max_results=per_variant_limit
+                )
+            except Exception:
+                # An optional expansion must not discard usable results from
+                # the original query. If the original search failed, preserve
+                # its failure rather than masking it with an expansion.
+                if variant == query:
+                    raise
+                continue
+            discovered.extend((item, variant) for item in batch[:limit])
 
-        # Defensive result limit.
-        results = results[:limit]
-
-        # Normalize ranking and remove duplicate URLs.
+        # Normalize ranking and deduplicate across all query variants.
         normalized_results = []
         seen_urls = set()
 
-        for result in results:
+        for result, discovery_query in discovered:
             normalized_url = result.url.strip()
 
             if normalized_url in seen_urls:
                 continue
 
             seen_urls.add(normalized_url)
+            metadata = dict(result.metadata or {})
+            metadata.setdefault("discovery_query", discovery_query)
 
             normalized_results.append(
                 SearchResult(
@@ -325,11 +384,11 @@ class SearchResearchProvider(
                     author=result.author,
                     published_at=result.published_at,
                     rank=len(normalized_results) + 1,
-                    metadata=dict(
-                        result.metadata or {}
-                    ),
+                    metadata=metadata,
                 )
             )
+            if len(normalized_results) >= limit:
+                break
 
         return normalized_results
 
