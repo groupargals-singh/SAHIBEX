@@ -383,6 +383,61 @@ class DirectWebResearchProvider(
         return visible[:max_chars].strip(), truncated
 
     # ---------------------------------------------------------
+    # Explicit, bounded redirect resolution
+    # ---------------------------------------------------------
+
+    def resolve_redirect_url(self, url: str, *, max_hops: int = 3) -> str:
+        """Resolve a redirect chain manually, validating every hop.
+
+        Automatic redirects remain disabled globally. This narrowly scoped
+        helper is for resolving search-aggregator discovery links only; each
+        Location is validated before a request is made to it.
+        """
+        if not isinstance(max_hops, int) or isinstance(max_hops, bool) or max_hops < 0 or max_hops > 5:
+            raise ValueError("max_hops must be an integer between 0 and 5")
+        current = url.strip() if isinstance(url, str) else url
+        self._validate_url(current)
+        seen = {current}
+        redirects = {301, 302, 303, 307, 308}
+
+        for hop in range(max_hops + 1):
+            request = Request(
+                url=current,
+                method="GET",
+                headers={"User-Agent": self.config.user_agent, "Range": "bytes=0-0"},
+            )
+            try:
+                response = self._opener.open(request, timeout=self.config.timeout_seconds)
+            except HTTPError as exc:
+                try:
+                    if exc.code not in redirects:
+                        raise RuntimeError(f"redirect resolution failed with HTTP {exc.code}") from exc
+                    location = exc.headers.get("Location") if exc.headers else None
+                finally:
+                    exc.close()
+                if not location:
+                    raise RuntimeError("redirect response has no Location header")
+                if hop >= max_hops:
+                    raise RuntimeError("redirect hop limit exceeded")
+                target = urljoin(current, location)
+                self._validate_url(target)
+                if target in seen:
+                    raise RuntimeError("redirect loop detected")
+                seen.add(target)
+                current = target
+                continue
+            except (URLError, TimeoutError) as exc:
+                raise RuntimeError("redirect resolution request failed") from exc
+            else:
+                try:
+                    # A successful non-redirect response means current is the
+                    # validated destination. Never treat its body as evidence.
+                    return response.geturl() or current
+                finally:
+                    response.close()
+        raise RuntimeError("redirect hop limit exceeded")
+
+    # ---------------------------------------------------------
     # Fetch
     # ---------------------------------------------------------
 

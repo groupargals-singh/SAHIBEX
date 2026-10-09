@@ -272,17 +272,29 @@ class ResearchPipelineIntegration:
             if not urls:
                 raise RuntimeError("search provider returned no source URLs")
 
-            # Google News RSS provides wrapper links that redirect to publisher
-            # pages. The secure direct-web provider intentionally blocks automatic
-            # redirects, so do not misclassify wrapper URLs as publisher evidence.
+            # Google News RSS uses wrapper links. Resolve only these links with
+            # bounded, per-hop URL/IP validation; automatic redirects remain
+            # disabled. Wrapper content/snippets are never passed as evidence.
             if any(
                 (urlparse(url).hostname or "").lower() == "news.google.com"
                 for url in urls
             ):
-                raise RuntimeError(
-                    "search discovery returned aggregator links; publisher content "
-                    "must be fetched and verified before synthesis"
-                )
+                direct_provider = engine.get_provider("direct_web") if "direct_web" in engine.providers() else None
+                resolver = getattr(direct_provider, "resolve_redirect_url", None)
+                if not callable(resolver):
+                    raise RuntimeError(
+                        "safe publisher-link resolver is unavailable; discovery links remain unverified"
+                    )
+                resolved_urls = []
+                for url in urls:
+                    hostname = (urlparse(url).hostname or "").lower()
+                    if hostname == "news.google.com":
+                        resolved_urls.append(resolver(url, max_hops=3))
+                    else:
+                        resolved_urls.append(url)
+                urls = list(dict.fromkeys(resolved_urls))
+                if not urls:
+                    raise RuntimeError("no publisher URLs resolved from search discovery")
 
             direct_request = AcquisitionRequest(
                 query=job.query,
