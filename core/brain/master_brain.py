@@ -1325,7 +1325,9 @@ class MasterBrain:
 
             if research_result is None or not research_result.success:
                 research_error = (
-                    research_result.error
+                    research_result.answer
+                    if research_result is not None and research_result.answer
+                    else research_result.error
                     if research_result is not None
                     else research_dispatch.reason
                 ) or "Research execution failed."
@@ -1350,6 +1352,41 @@ class MasterBrain:
                     ),
                     permission_allowed=permission.allowed,
                     plan=plan,
+                    metadata={
+                        "internal_brain_dispatch": dict(internal_role_trace),
+                        "mother_research_integration": {
+                            "success": (
+                                research_result.success
+                                if research_result is not None
+                                else False
+                            ),
+                            "status": (
+                                research_result.status
+                                if research_result is not None
+                                else "NOT_EXECUTED"
+                            ),
+                            "job_id": (
+                                research_result.job_id
+                                if research_result is not None
+                                else None
+                            ),
+                            "execution_id": (
+                                research_result.execution_id
+                                if research_result is not None
+                                else None
+                            ),
+                            "verification_status": (
+                                research_result.verification_status
+                                if research_result is not None
+                                else "NOT_EXECUTED"
+                            ),
+                            "error": (
+                                research_result.error
+                                if research_result is not None
+                                else research_error
+                            ),
+                        },
+                    },
                 )
 
                 self._record_context(text, result)

@@ -336,7 +336,7 @@ def test_master_brain_research_flow():
             "Search for SAHIBEX research integration."
         )
 
-        assert result.success is True
+        assert result.success is False
         assert result.intent == "search"
         assert result.action == "research"
         assert result.plan_created is True
@@ -350,19 +350,13 @@ def test_master_brain_research_flow():
             "mother_research_integration"
         ]
 
-        assert metadata["success"] is True
+        assert metadata["success"] is False
+        assert metadata["status"] == "insufficient_evidence"
 
-        assert metadata["status"] == (
-            "completed"
-        )
-
-        # The fixture's quality-aware answer is not independently supported;
-        # stored-knowledge verification alone must not upgrade it.
-        assert metadata[
-            "verification_status"
-        ] == "NOT_VERIFIED"
-
-        assert result.message
+        # An unverified answer must not be surfaced as a successful research
+        # result; the user receives a controlled evidence-insufficiency message.
+        assert metadata["verification_status"] == "NOT_VERIFIED"
+        assert "couldn't verify" in result.message.casefold()
 
         print(
             "[PASS] Master Brain research flow"

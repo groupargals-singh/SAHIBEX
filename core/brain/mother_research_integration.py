@@ -517,10 +517,24 @@ class MotherResearchIntegration:
                     ),
                 )
 
+            # Completing acquisition/extraction is not the same as verifying
+            # an answer. Never expose unverified page text as a successful
+            # research answer; fail closed with a clear user-facing status.
+            answer_verified = verification_status == "VERIFIED"
+            if not answer_verified:
+                answer = (
+                    "I couldn't verify enough reliable evidence to answer "
+                    "this query. Try a more specific question or another source."
+                )
+
             return MotherResearchResult(
-                success=True,
+                success=answer_verified,
                 query=query,
-                status=execution.status,
+                status=(
+                    execution.status
+                    if answer_verified
+                    else "insufficient_evidence"
+                ),
                 answer=answer,
                 job_id=job_id,
                 execution_id=execution_id,
@@ -571,6 +585,12 @@ class MotherResearchIntegration:
                     prompt_injection_metadata[
                         "prompt_injection_rules"
                     ]
+                ),
+                error=(
+                    "research completed but answer did not meet the "
+                    "verification threshold"
+                    if not answer_verified
+                    else ""
                 ),
             )
 

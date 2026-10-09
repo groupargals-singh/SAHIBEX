@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 import hashlib
 import html
 import ipaddress
@@ -76,6 +77,47 @@ class _NoRedirectHandler(HTTPRedirectHandler):
         newurl,
     ):
         return None
+
+
+class _VisibleTextParser(HTMLParser):
+    """Extract visible text from HTML while ignoring active/non-content nodes."""
+
+    _BLOCK_TAGS = {
+        "address", "article", "aside", "blockquote", "br", "dd", "div",
+        "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form",
+        "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li",
+        "main", "nav", "ol", "p", "pre", "section", "table", "td", "th",
+        "tr", "ul",
+    }
+    _IGNORED_TAGS = {
+        "script", "style", "noscript", "svg", "template",
+        "nav", "header", "footer", "aside", "form", "menu",
+    }
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self._ignored_depth = 0
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag in self._IGNORED_TAGS:
+            self._ignored_depth += 1
+        elif self._ignored_depth == 0 and tag in self._BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._IGNORED_TAGS and self._ignored_depth:
+            self._ignored_depth -= 1
+        elif self._ignored_depth == 0 and tag in self._BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if self._ignored_depth == 0 and data.strip():
+            self.parts.append(data)
+            self.parts.append(" ")
+
+    def text(self) -> str:
+        return " ".join(" ".join(self.parts).split())
 
 
 class DirectWebResearchProvider(
@@ -330,6 +372,16 @@ class DirectWebResearchProvider(
             errors="replace",
         )
 
+    @staticmethod
+    def _visible_text(content: str, *, max_chars: int = 200_000) -> tuple[str, bool]:
+        """Convert HTML to bounded visible text; return text and truncation flag."""
+        parser = _VisibleTextParser()
+        parser.feed(content)
+        parser.close()
+        visible = parser.text()
+        truncated = len(visible) > max_chars
+        return visible[:max_chars].strip(), truncated
+
     # ---------------------------------------------------------
     # Fetch
     # ---------------------------------------------------------
@@ -532,7 +584,14 @@ class DirectWebResearchProvider(
                     raw_url
                 )
 
-                content = fetched["content"]
+                raw_content = fetched["content"]
+                title = self._extract_title(raw_content)
+                content_truncated = False
+                if fetched.get("content_type") in {"text/html", "application/xhtml+xml"}:
+                    content, content_truncated = self._visible_text(raw_content)
+                else:
+                    content = raw_content[:200_000]
+                    content_truncated = len(raw_content) > 200_000
 
                 if not content.strip():
                     errors.append(
@@ -545,10 +604,6 @@ class DirectWebResearchProvider(
                         "utf-8"
                     )
                 ).hexdigest()
-
-                title = self._extract_title(
-                    content
-                )
 
                 source_id = (
                     f"web_{content_hash}"
@@ -578,6 +633,8 @@ class DirectWebResearchProvider(
                         "final_url"
                     ],
                     "reliability": 0.5,
+                    "html_sanitized": fetched.get("content_type") in {"text/html", "application/xhtml+xml"},
+                    "content_truncated": content_truncated,
                 }
 
                 acquired.append(
