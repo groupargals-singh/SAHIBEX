@@ -2,7 +2,7 @@
 
 ## What is ready
 - Android Companion voice build: `manual-build/SAHIBEX-Android-Companion-Voice-debug.apk`
-- Version: `0.2.0` / versionCode `4` (installed Companion was versionCode `3`; this is an in-place update with the same signing certificate).
+- Version: `0.2.2` / versionCode `6` (installed Companion is currently versionCode `4` / versionName `0.2.0`; this is an in-place update with the same signing certificate).
 - The native Android speech-recognition UI submits recognized text to SAHIBEX through the authenticated loopback relay. SAHIBEX response is displayed and read aloud using Android TextToSpeech.
 - Local relay is `127.0.0.1:38742`; its real E2E request returned HTTP 200 / SUCCESS / VERIFIED.
 - The relay calls `MasterBrain.process(..., user_confirmation=False)`. Voice cannot approve protected actions.

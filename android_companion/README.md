@@ -8,14 +8,14 @@ Build status: Android SDK 35, javac, aapt2, d8, apksigner, and Gradle are availa
 
 Device activation boundary: installing/replacing the companion APK and enabling the Accessibility service are Android user/system actions that this Termux UID is not authorized to perform programmatically. After installation, enable the SAHIBEX Accessibility service manually, open the companion, then run the secure screenshot test. Real screenshot/UI-tree/tap/type/key and emergency-stop/audit E2E must be marked PASS only after that device-side verification.
 
-## Voice companion bridge (v0.2.0, versionCode 4)
+## Voice companion bridge (v0.2.2, versionCode 6)
 
 The updated Companion includes native Android speech recognition and Android TextToSpeech playback. It sends the recognized transcript to the SAHIBEX Master Brain through a loopback-only HTTP bridge on `127.0.0.1:38742`. The phone app must be installed/updated and paired before voice can be called live.
 
 Termux setup: `scripts/start_sahibex_media_bridge.sh` starts the authenticated local bridge. The random pairing token is stored in `data/android_companion_media_token` with mode `0600`; never commit or share it. Enter that token into the Companion app and save it locally. The server accepts only bearer-authenticated requests, limits input size, and always calls `MasterBrain.process(..., user_confirmation=False)`: spoken words never count as authorization for protected actions.
 
-APK: `manual-build/SAHIBEX-Android-Companion-Voice-debug.apk`. It is signed with the same Android Debug certificate as the currently installed Companion and has versionCode 4, versionName 0.2.0. Build verified through javac, D8, AAPT2 link, and apksigner.
+APK: `manual-build/SAHIBEX-Android-Companion-Voice-debug.apk`. It is signed with the same Android Debug certificate as the currently installed Companion and has versionCode 6, versionName 0.2.2. The installed app is currently versionCode 4 / versionName 0.2.0; update it from Downloads to enable the current voice UI. Build verified through javac, D8, AAPT2 link, and apksigner.
 
 The voice relay's real localhost E2E smoke test returned HTTP 200 / SUCCESS / VERIFIED using the local model. This validates the Termux server route, not yet physical microphone/TTS operation in the updated Android UI. User must approve the Android app update and grant any requested permissions.
 
-The old Termux:API CLI path remains unresponsive on this phone. The official F-Droid Termux:API APK has a different signing certificate from the installed Termux app and must not be installed over this setup. The native Companion bridge is the safe alternative. Camera capture and image understanding are still not implemented in this v0.2.0 Companion; vision remains pending.
+The old Termux:API CLI path remains unresponsive on this phone. The official F-Droid Termux:API APK has a different signing certificate from the installed Termux app and must not be installed over this setup. The native Companion bridge is the safe alternative. Camera capture and image understanding are still not implemented in this v0.2.2 Companion; vision remains pending.

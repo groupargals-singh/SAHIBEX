@@ -20,6 +20,21 @@ print('WEB SEARCH:', 'ACTIVE' if status.search_backend else 'NOT CONFIGURED')
 print('ACTIVE PROVIDERS:', ', '.join(status.providers))
 PY
 
+SUPERVISOR_PID_FILE="logs/supervisor.pid"
+SUPERVISOR_PID=""
+if [ -f "$SUPERVISOR_PID_FILE" ]; then
+  SUPERVISOR_PID="$(cat "$SUPERVISOR_PID_FILE" 2>/dev/null || true)"
+fi
+SUPERVISOR_CMD=""
+if [[ "$SUPERVISOR_PID" =~ ^[0-9]+$ ]] && kill -0 "$SUPERVISOR_PID" 2>/dev/null; then
+  SUPERVISOR_CMD="$(ps -p "$SUPERVISOR_PID" -o args= 2>/dev/null || true)"
+fi
+if [[ "$SUPERVISOR_CMD" == *"scripts/sahibex_supervisor.sh"* ]]; then
+  echo "BACKGROUND SUPERVISOR: ONLINE (PID $SUPERVISOR_PID)"
+else
+  echo "BACKGROUND SUPERVISOR: OFFLINE"
+fi
+
 MEDIA_PID_FILE="logs/media_bridge.pid"
 if curl -fsS --max-time 2 http://127.0.0.1:38742/health >/dev/null 2>&1; then
   echo "ANDROID VOICE BRIDGE: HTTP HEALTHY"
