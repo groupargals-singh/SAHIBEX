@@ -342,3 +342,33 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def test_verification_reports_insufficient_evidence_when_none_persisted():
+    from types import SimpleNamespace
+
+    from core.research.research_pipeline_integration import (
+        ResearchPipelineContext,
+        ResearchPipelineIntegration,
+    )
+
+    integration = ResearchPipelineIntegration.__new__(
+        ResearchPipelineIntegration
+    )
+    integration._contexts = {
+        "job-no-evidence": ResearchPipelineContext(
+            query="test query",
+            extraction=[
+                SimpleNamespace(extracted_count=0, findings=[])
+            ],
+        )
+    }
+
+    result = integration.handle_verification(
+        SimpleNamespace(step_id="verification"),
+        SimpleNamespace(job_id="job-no-evidence"),
+        SimpleNamespace(plan_id="test-plan"),
+    )
+
+    assert result["evidence_count"] == 0
+    assert result["status"] == "insufficient_evidence"

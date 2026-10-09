@@ -373,7 +373,14 @@ class ResearchPipelineIntegration:
             "extracted_count": extracted_count,
             "finding_count": finding_count,
             "evidence_count": evidence_count,
-            "status": "verified",
+            # An extraction pass with zero persisted evidence is not a
+            # successful verification. Report the missing-evidence state
+            # explicitly so callers cannot mistake an empty result for proof.
+            "status": (
+                "verified"
+                if evidence_count > 0
+                else "insufficient_evidence"
+            ),
         }
 
         context.verification = output
