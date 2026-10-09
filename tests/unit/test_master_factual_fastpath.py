@@ -11,10 +11,14 @@ def test_exact_curated_question_is_not_claimed_fully_verified():
     assert result.metadata.get("fact_id") == "IN-CAPITAL-001"
 
 
-def test_compound_question_does_not_use_substring_fastpath():
+def test_curated_compound_question_uses_explicit_complete_fact():
     brain = MasterBrain()
     result = brain.process("भारत की राजधानी क्या है और इतिहास भी बताओ?")
-    assert result.metadata.get("response_source") != "curated_fast_fact"
+    assert result.success is True
+    assert "नई दिल्ली" in result.message
+    assert "1911" in result.message and "1931" in result.message
+    assert result.metadata.get("fact_id") == "IN-CAPITAL-HISTORY-001"
+    assert result.verification_status == "STRUCTURALLY_VALID"
 
 
 def main():

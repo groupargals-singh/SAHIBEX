@@ -22,8 +22,16 @@ def test_resolves_english_question():
     assert "New Delhi" in fact.answer or "नई दिल्ली" in fact.answer
 
 
-def test_does_not_guess_on_unrecognized_or_expanded_question():
-    assert resolve_local_fact("भारत की राजधानी क्या है और इतिहास भी बताओ?") is None
+def test_resolves_curated_compound_capital_and_history_question():
+    fact = resolve_local_fact("भारत की राजधानी क्या है और इतिहास भी बताओ?")
+    assert fact is not None
+    assert fact.fact_id == "IN-CAPITAL-HISTORY-001"
+    assert "नई दिल्ली" in fact.answer
+    assert "1911" in fact.answer
+    assert "1931" in fact.answer
+
+
+def test_does_not_guess_on_unrecognized_question():
     assert resolve_local_fact("Who will win the next election?") is None
     assert resolve_local_fact("") is None
 
