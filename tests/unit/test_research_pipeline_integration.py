@@ -372,3 +372,34 @@ def test_verification_reports_insufficient_evidence_when_none_persisted():
 
     assert result["evidence_count"] == 0
     assert result["status"] == "insufficient_evidence"
+
+
+def test_answer_synthesis_is_blocked_without_verified_evidence():
+    from types import SimpleNamespace
+    import pytest
+
+    from core.research.research_pipeline_integration import (
+        ResearchPipelineContext,
+        ResearchPipelineIntegration,
+    )
+
+    integration = ResearchPipelineIntegration.__new__(
+        ResearchPipelineIntegration
+    )
+    integration._contexts = {
+        "job-no-evidence-answer": ResearchPipelineContext(
+            query="unrelated query",
+            extraction=[SimpleNamespace(findings=[])],
+            verification={
+                "status": "insufficient_evidence",
+                "evidence_count": 0,
+            },
+        )
+    }
+
+    with pytest.raises(RuntimeError, match="insufficient verified evidence"):
+        integration.handle_answer(
+            SimpleNamespace(step_id="answer-synthesis"),
+            SimpleNamespace(job_id="job-no-evidence-answer", query="unrelated query"),
+            SimpleNamespace(plan_id="test-plan"),
+        )

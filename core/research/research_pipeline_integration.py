@@ -401,6 +401,18 @@ class ResearchPipelineIntegration:
                 "evidence extraction must complete before answer synthesis"
             )
 
+        # Research answers must be grounded in evidence acquired for this job.
+        # Do not fall back to unrelated previously stored knowledge when this
+        # job produced no persisted evidence.
+        if (
+            not isinstance(context.verification, dict)
+            or context.verification.get("status") != "verified"
+            or context.verification.get("evidence_count", 0) <= 0
+        ):
+            raise RuntimeError(
+                "answer synthesis blocked: insufficient verified evidence"
+            )
+
         evidence_items = []
         sources = []
 
@@ -419,6 +431,11 @@ class ResearchPipelineIntegration:
 
                 if source is not None:
                     sources.append(source)
+
+        if not evidence_items:
+            raise RuntimeError(
+                "answer synthesis blocked: persisted evidence could not be loaded"
+            )
 
         unique_sources = {
             source.source_id: source
