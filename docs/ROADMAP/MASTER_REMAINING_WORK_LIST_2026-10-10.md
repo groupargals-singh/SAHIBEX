@@ -172,3 +172,9 @@ Work in priority order. For each fix: reproduce → patch → focused regression
 - Live Google News RSS discovery returned some AI headlines that did not clearly address safety/security. Added a conservative lexical relevance filter for AI safety/security queries: requires both AI-related and safety/security/risk-related terms. General non-AI-security queries are not forced through this filter.
 - Live direct backend probe after filtering: English AI safety/security query returned 3 relevant leads; Hindi query returned 2 leads. This is still discovery-only; publisher article content has not yet been acquired and verified, so no verified answer is claimed.
 - Focused RSS/search tests: **13 passed**. Full regression is being rerun against this latest change before committing.
+
+## Live verification after RSS fallback + relevance filter
+- Restarted the media bridge from current source and rechecked health: local model ONLINE, web search ACTIVE, supervisor ONLINE, bridge HTTP HEALTHY.
+- Re-ran authenticated `/voice` quality smoke: curated Hindi sky answer PASS (`STRUCTURALLY_VALID`); India capital/history curated answer PASS (`STRUCTURALLY_VALID`); AI-security research returns `NOT_EXECUTED` with three topical source leads clearly labelled unverified. Smoke exits nonzero because the research task did not produce a verified answer. This is intentional and must remain visible as an open quality gap.
+- Google News RSS discovery now works in the live research route, but publisher-page retrieval and multi-source claim corroboration are still not integrated to completion. Do not report live research as finished.
+- Full regression: **1555 passed, 0 failed**; compileall and diff checks passed before the latest commit. Latest source commit pushed: `2d95604`; working tree clean after commit.
