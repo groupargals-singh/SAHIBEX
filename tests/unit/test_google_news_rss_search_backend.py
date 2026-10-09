@@ -38,3 +38,24 @@ def test_google_news_rss_backend_uses_fixed_host_and_marks_results_discovery_onl
         "https://news.google.com/rss/search?"
     )
     assert "AI+safety+report" in provider.request.metadata["url"]
+
+
+def test_ai_security_query_filters_unrelated_ai_headlines():
+    assert GoogleNewsRSSSearchBackend._is_relevant_for_query(
+        "AI security latest news",
+        "Anthropic and OpenAI sound the alarm on AI safety",
+        "Companies discuss safety and control risks",
+    )
+    assert not GoogleNewsRSSSearchBackend._is_relevant_for_query(
+        "AI security latest news",
+        "New AI video generator launches",
+        "A creative video model was released",
+    )
+
+
+def test_general_queries_are_not_forced_through_ai_security_filter():
+    assert GoogleNewsRSSSearchBackend._is_relevant_for_query(
+        "latest India education news",
+        "New education policy announced",
+        "Government education update",
+    )

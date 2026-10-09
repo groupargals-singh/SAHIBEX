@@ -167,3 +167,8 @@ Work in priority order. For each fix: reproduce → patch → focused regression
 - User-facing failure messages can now include those leads while explicitly labeling them unverified. Added unit tests for fallback backend, result metadata, lead preservation, and localized failure handling.
 - Focused suite: **34 passed**. Full repository regression after this integration: **1553 passed, 0 failed** in 118.44 seconds. Compileall and `git diff --check`: PASS.
 - Next verification step: restart the bridge and run the real authenticated research smoke. Expected safe outcome if the feed provides only aggregator URLs is `NOT_EXECUTED` plus useful leads, not a verified answer. The research synthesis blocker remains open until publisher pages are safely acquired and corroborated.
+
+## Engineering continuation — relevance filter for RSS leads
+- Live Google News RSS discovery returned some AI headlines that did not clearly address safety/security. Added a conservative lexical relevance filter for AI safety/security queries: requires both AI-related and safety/security/risk-related terms. General non-AI-security queries are not forced through this filter.
+- Live direct backend probe after filtering: English AI safety/security query returned 3 relevant leads; Hindi query returned 2 leads. This is still discovery-only; publisher article content has not yet been acquired and verified, so no verified answer is claimed.
+- Focused RSS/search tests: **13 passed**. Full regression is being rerun against this latest change before committing.
