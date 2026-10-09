@@ -405,3 +405,10 @@ Resolve the Android Termux API compatibility/service issue before attempting cam
 - Live quality smoke: sky-blue explanation returned `success=true`; India capital/history returned `success=true`; current AI-security research returned `success=false`, `NOT_VERIFIED`, with three source leads. This is a useful safety result, not a successful research answer: grounded live research remains open until the system can corroborate relevant claims across trustworthy, independent sources and produce a verified synthesis.
 - Runtime health at check time: local Qwen3 model ONLINE, web search ACTIVE, supervisor ONLINE, Android media bridge HTTP HEALTHY. These checks do not prove physical phone microphone/TTS acceptance.
 - No self-update authority was loosened. Any autonomous code proposal must remain sandboxed, regression-tested, audited, rollback-capable, and subject to the existing permission/approval gates; the repository test suite alone does not prove production self-improvement readiness.
+
+## Follow-up — language-matched research failure messages
+
+- Re-ran `scripts/sahibex_quality_smoke.py`: curated Hindi science and capital/history responses succeeded, but the live AI-security query remained `NOT_VERIFIED` (correctly blocked). The failure message was incorrectly English for a Hindi question.
+- Added a conservative Devanagari-script check for the insufficient-evidence explanation. Hindi questions now receive a Hindi explanation that explicitly says source links are leads, not verified conclusions; English questions retain English messaging. Added regression tests for both languages and source-link preservation.
+- Focused tests: **15 passed** across research integrity and Master Brain research/learning flow suites; compileall and `git diff --check` passed.
+- Open critical issue: live research still does not reliably corroborate independent sources and produce a verified answer. This localization fix improves usability but does not close the research-quality gate.

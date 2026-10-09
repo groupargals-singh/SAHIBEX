@@ -105,3 +105,22 @@ def test_unverified_research_can_return_only_public_source_leads():
     )
     leads = MotherResearchIntegration._source_leads(context)
     assert leads == ["- Example source — https://example.com/article"]
+
+
+def test_insufficient_evidence_message_is_hindi_for_hindi_query():
+    message = MotherResearchIntegration._insufficient_evidence_message(
+        "आज AI सुरक्षा में क्या नया है?",
+        ["- आधिकारिक स्रोत — https://example.com/report"],
+    )
+    assert "पर्याप्त प्रमाण सत्यापित नहीं" in message
+    assert "सत्यापित निष्कर्ष नहीं" in message
+    assert "https://example.com/report" in message
+    assert "I couldn't verify" not in message
+
+
+def test_insufficient_evidence_message_remains_english_for_english_query():
+    message = MotherResearchIntegration._insufficient_evidence_message(
+        "What is new in AI security?",
+        [],
+    )
+    assert "I couldn't verify enough reliable evidence" in message

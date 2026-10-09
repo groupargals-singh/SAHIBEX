@@ -327,6 +327,27 @@ class MotherResearchIntegration:
         return leads
 
     @staticmethod
+    def _insufficient_evidence_message(query: str, source_leads: list[str]) -> str:
+        """Explain verification failure in the user's script/language where recognized."""
+        is_hindi = any("\u0900" <= char <= "\u097f" for char in query)
+        if is_hindi:
+            answer = (
+                "इस सवाल का भरोसेमंद जवाब देने के लिए पर्याप्त प्रमाण सत्यापित नहीं हो सके। "
+                "नीचे दिए गए लिंक केवल आगे जाँचने के स्रोत हैं, सत्यापित निष्कर्ष नहीं।"
+            )
+            if source_leads:
+                answer += "\nजाँच के लिए मिले स्रोत:\n" + "\n".join(source_leads)
+            return answer
+
+        answer = (
+            "I couldn't verify enough reliable evidence to answer this query. "
+            "The links below are research leads, not verified conclusions."
+        )
+        if source_leads:
+            answer += "\nSources found for review:\n" + "\n".join(source_leads)
+        return answer
+
+    @staticmethod
     def _answer_text_and_verification(
         pipeline_result,
     ) -> tuple[str, str]:
@@ -546,14 +567,8 @@ class MotherResearchIntegration:
             # research answer; fail closed with a clear user-facing status.
             answer_verified = verification_status == "VERIFIED"
             if not answer_verified:
-                answer = (
-                    "I couldn't verify enough reliable evidence to answer "
-                    "this query. The links below are research leads, not "
-                    "verified conclusions."
-                )
                 source_leads = self._source_leads(context)
-                if source_leads:
-                    answer += "\nSources found for review:\n" + "\n".join(source_leads)
+                answer = self._insufficient_evidence_message(query, source_leads)
 
             return MotherResearchResult(
                 success=answer_verified,
