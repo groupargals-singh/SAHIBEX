@@ -98,7 +98,11 @@ class ResearchExtractor:
         for character in normalized:
             current.append(character)
 
-            if character in ".!?":
+            # Hindi and several other Indic languages use danda (।) and
+            # double danda (॥) as sentence terminators. Treat them as
+            # boundaries too; otherwise an entire Hindi page can collapse
+            # into one oversized finding and weaken evidence granularity.
+            if character in ".!?।॥":
                 sentence = "".join(current).strip()
 
                 if sentence:

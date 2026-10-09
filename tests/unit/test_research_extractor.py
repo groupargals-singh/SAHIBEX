@@ -36,6 +36,19 @@ def main() -> None:
         "Verification should happen before knowledge is trusted."
     )
 
+    # Hindi danda punctuation must preserve sentence-level evidence.
+    hindi_document = ResearchDocument(
+        document_id="doc-extractor-hindi",
+        source_id="src-extractor-001",
+        title="Hindi Sentence Boundary Test",
+        content="पहला वाक्य सही है। दूसरा वाक्य अलग है॥ तीसरा वाक्य भी अलग है!",
+    )
+    hindi_findings = extractor.extract(hindi_document)
+    assert len(hindi_findings) == 3
+    assert hindi_findings[0].claim == "पहला वाक्य सही है।"
+    assert hindi_findings[1].claim == "दूसरा वाक्य अलग है॥"
+    assert hindi_findings[2].claim == "तीसरा वाक्य भी अलग है!"
+
     # Whitespace normalization must not create empty findings.
     whitespace_document = ResearchDocument(
         document_id="doc-extractor-002",
