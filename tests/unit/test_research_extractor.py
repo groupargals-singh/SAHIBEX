@@ -49,6 +49,27 @@ def main() -> None:
     assert len(whitespace_findings) == 1
     assert whitespace_findings[0].claim == "One valid statement."
 
+    # Hostile/overlong pages must not amplify into unbounded finding writes.
+    dense_document = ResearchDocument(
+        document_id="doc-extractor-dense",
+        source_id="src-extractor-001",
+        title="Dense Page Test",
+        content=("Sentence one. " * 5_000),
+    )
+    dense_findings = extractor.extract(dense_document)
+    assert len(dense_findings) == extractor.MAX_FINDINGS
+    assert all(item.truncated for item in dense_findings)
+
+    oversized_document = ResearchDocument(
+        document_id="doc-extractor-oversized",
+        source_id="src-extractor-001",
+        title="Oversized Page Test",
+        content=("Valid statement. " * 20_000),
+    )
+    oversized_findings = extractor.extract(oversized_document)
+    assert len(oversized_findings) <= extractor.MAX_FINDINGS
+    assert all(item.truncated for item in oversized_findings)
+
     print("SAHIBEX RESEARCH EXTRACTOR TEST")
     print("[PASS] deterministic sentence extraction")
     print("[PASS] claim/evidence preservation")

@@ -18,6 +18,7 @@ class ExtractedFinding:
     claim: str
     evidence_text: str
     confidence: float
+    truncated: bool = False
 
 
 class ResearchExtractor:
@@ -28,11 +29,18 @@ class ResearchExtractor:
     create knowledge, or mark anything as verified.
     """
 
+    # Public web pages can be very large or sentence-dense. Bound extraction
+    # work so a single page cannot create tens of thousands of SQLite writes.
+    MAX_CONTENT_CHARS = 200_000
+    MAX_FINDINGS = 100
+
     def extract(self, document: ResearchDocument) -> List[ExtractedFinding]:
         if not isinstance(document, ResearchDocument):
             raise TypeError("document must be a ResearchDocument")
 
-        content = document.content.strip()
+        original_content = document.content
+        content_truncated = len(original_content) > self.MAX_CONTENT_CHARS
+        content = original_content[:self.MAX_CONTENT_CHARS].strip()
 
         if not content:
             return []
@@ -43,7 +51,13 @@ class ResearchExtractor:
         # sentences as candidate claims. This gives the research core
         # a deterministic extraction boundary without pretending that
         # semantic truth has already been established.
-        sentences = self._split_sentences(content)
+        sentences = self._split_sentences(
+            content,
+            max_sentences=self.MAX_FINDINGS,
+        )
+        extraction_truncated = (
+            content_truncated or len(sentences) >= self.MAX_FINDINGS
+        )
 
         for sentence in sentences:
             normalized = sentence.strip()
@@ -56,13 +70,18 @@ class ResearchExtractor:
                     claim=normalized,
                     evidence_text=normalized,
                     confidence=0.50,
+                    truncated=extraction_truncated,
                 )
             )
 
         return findings
 
     @staticmethod
-    def _split_sentences(content: str) -> List[str]:
+    def _split_sentences(
+        content: str,
+        *,
+        max_sentences: int = 100,
+    ) -> List[str]:
         """
         Split simple prose deterministically.
 
@@ -84,12 +103,14 @@ class ResearchExtractor:
 
                 if sentence:
                     sentences.append(sentence)
+                    if len(sentences) >= max_sentences:
+                        return sentences
 
                 current = []
 
         remainder = "".join(current).strip()
 
-        if remainder:
+        if remainder and len(sentences) < max_sentences:
             sentences.append(remainder)
 
         return sentences

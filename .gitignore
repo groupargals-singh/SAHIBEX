@@ -26,8 +26,10 @@ data/captures/
 data/quarantine/
 android_companion/build-media/
 *.db
+*.db-*
 *.sqlite
 *.sqlite3
+*.sqlite-*
 
 # Logs
 *.log

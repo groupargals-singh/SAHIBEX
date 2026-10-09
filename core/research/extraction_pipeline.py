@@ -226,6 +226,7 @@ class ResearchExtractionPipeline:
             metadata={
                 "extraction": True,
                 "extractor": "ResearchExtractor",
+                "truncated": extracted.truncated,
             },
         )
 
