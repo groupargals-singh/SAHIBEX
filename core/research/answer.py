@@ -131,9 +131,23 @@ class ResearchAnswerSynthesizer:
 
         confidence = self._calculate_confidence(selected)
 
-        verified = all(
-            knowledge.verified
-            for knowledge in selected
+        quality_status = str(
+            getattr(
+                getattr(aggregation, "answer", None),
+                "overall_status",
+                "",
+            )
+        ).upper()
+        quality_supports_answer = quality_status in {
+            "SUPPORTED",
+            "MULTI_SOURCE_SUPPORTED",
+            # Compatibility for older aggregation fixtures without a
+            # quality-aware status. Production aggregation uses the statuses
+            # above; an unknown status must not be promoted to verified.
+        }
+        verified = (
+            all(knowledge.verified for knowledge in selected)
+            and quality_supports_answer
         )
 
         status = self._determine_status(
@@ -190,6 +204,29 @@ class ResearchAnswerSynthesizer:
 
         if aggregation.resolved_conflict_count > 0:
             return "CONFLICT_RESOLVED"
+
+        quality_status = str(
+            getattr(
+                getattr(aggregation, "answer", None),
+                "overall_status",
+                "",
+            )
+        ).upper()
+        quality_status_mapping = {
+            "STALE": "STALE",
+            "LOW_CONFIDENCE": "LOW_CONFIDENCE",
+            "UNCERTAIN": "UNCERTAIN",
+            "CONFLICTED": "CONFLICT_UNRESOLVED",
+            "UNVERIFIED": "UNVERIFIED",
+        }
+        if quality_status in quality_status_mapping:
+            return quality_status_mapping[quality_status]
+
+        if quality_status not in {
+            "SUPPORTED",
+            "MULTI_SOURCE_SUPPORTED",
+        }:
+            return "UNVERIFIED"
 
         if all(
             knowledge.verified

@@ -201,6 +201,36 @@ def main() -> None:
             "read_file should return expected content.",
         )
 
+        # Natural-language requests must bind their path argument
+        # deterministically before handler execution.
+        result = invoker.invoke(
+            "read file app/main.py",
+        )
+
+        check(
+            result.success is True,
+            "read_file should bind a natural-language path.",
+        )
+
+        check(
+            result.result["path"] == "app/main.py",
+            "Natural-language read_file path binding is incorrect.",
+        )
+
+        result = invoker.invoke(
+            "list directory app",
+        )
+
+        check(
+            result.success is True,
+            "list_directory should bind a natural-language path.",
+        )
+
+        check(
+            result.result["path"] == "app",
+            "Natural-language list_directory path binding is incorrect.",
+        )
+
         # -------------------------------------------------
         # 5. search_local_files invocation
         # -------------------------------------------------

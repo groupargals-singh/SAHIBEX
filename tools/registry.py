@@ -321,16 +321,46 @@ def build_default_registry(
     )
 
     if include_protected:
-        # Protected computer/UI control is opt-in. Permission remains the
-        # responsibility of ToolPermissionGateway.
+        # Protected tools are opt-in at the registry layer. Permission remains
+        # the responsibility of ToolPermissionGateway.
         from tools.computer_control_tool import ComputerControlTool
+        from tools.protected_command import ProtectedCommandTool
+        from tools.protected_files import ProtectedFilesystemTools
+
         computer_tool = ComputerControlTool(
             evidence_recorder=evidence_recorder,
         )
+        protected_files = ProtectedFilesystemTools(project_root)
+        protected_command = ProtectedCommandTool(project_root)
+
         registry.register(
             name="computer_control",
             description="Control Android UI: click, swipe, type text, press keys, screenshot.",
             handler=computer_tool.execute,
+            read_only=False,
+            requires_confirmation=True,
+            protected_action=ActionType.RUN_COMMAND,
+        )
+        registry.register(
+            name="write_file",
+            description="Write or overwrite a project file after explicit confirmation.",
+            handler=protected_files.write_file,
+            read_only=False,
+            requires_confirmation=True,
+            protected_action=ActionType.WRITE_FILE,
+        )
+        registry.register(
+            name="delete_file",
+            description="Delete a project file after explicit confirmation.",
+            handler=protected_files.delete_file,
+            read_only=False,
+            requires_confirmation=True,
+            protected_action=ActionType.DELETE_FILE,
+        )
+        registry.register(
+            name="run_command",
+            description="Execute a command inside the SAHIBEX project root after explicit confirmation.",
+            handler=protected_command.execute,
             read_only=False,
             requires_confirmation=True,
             protected_action=ActionType.RUN_COMMAND,

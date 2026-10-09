@@ -84,6 +84,7 @@ def test_phase11_master_brain_runtime_protected_action_gate() -> None:
         "VERIFIED",
         "VERIFICATION_FAILED",
         "NOT_EXECUTED",
+        "QUALITY_REJECTED",
     }
 
 

@@ -164,15 +164,26 @@ class VerificationEngine:
             action in self.CONFIRMATION_REQUIRED
         )
 
-        if should_require_confirmation == confirmation_required:
+        confirmation_state_consistent = (
+            (
+                should_require_confirmation
+                and confirmation_required == (not permission_allowed)
+            )
+            or (
+                not should_require_confirmation
+                and not confirmation_required
+            )
+        )
+
+        if confirmation_state_consistent:
             passed += 1
             reasons.append(
-                "Confirmation requirement matches policy."
+                "Confirmation requirement matches policy state."
             )
         else:
             failed += 1
             reasons.append(
-                "Confirmation requirement conflicts with policy."
+                "Confirmation requirement conflicts with policy state."
             )
 
         # --------------------------------------------------
@@ -184,11 +195,16 @@ class VerificationEngine:
             RiskLevel.CRITICAL,
         }
 
-        if dangerous and permission_allowed:
+        if (
+            dangerous
+            and permission_allowed
+            and should_require_confirmation
+            and confirmation_required
+        ):
             failed += 1
             reasons.append(
-                "Dangerous action is allowed without "
-                "a safe confirmation state."
+                "Dangerous action is allowed while confirmation "
+                "is still pending."
             )
         else:
             passed += 1

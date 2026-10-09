@@ -91,7 +91,6 @@ class SpecialistBrain:
         },
         BrainStatus.READY: {
             BrainStatus.ACTIVE,
-            BrainStatus.PAUSED,
             BrainStatus.DISABLED,
             BrainStatus.FAILED,
         },

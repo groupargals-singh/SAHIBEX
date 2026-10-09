@@ -255,6 +255,10 @@ class BrainRegistry:
                 "brain_id must be a string."
             )
 
+        brain = self.get(brain_id)
+        if brain is not None and brain.brain_role == BrainRole.MOTHER_BRAIN:
+            raise ValueError("Cannot remove the constitutional Mother Brain root.")
+
         # Prevent removing a brain while descendants still
         # depend on its hierarchy identity.
         children = self.get_children(brain_id)

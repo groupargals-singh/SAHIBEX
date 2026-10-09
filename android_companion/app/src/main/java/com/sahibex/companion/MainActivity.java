@@ -5,6 +5,9 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.speech.RecognizerIntent;
+import android.speech.tts.TextToSpeech;
+import java.util.Locale;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -30,10 +33,22 @@ public final class MainActivity extends Activity {
     private Button tapTarget;
     private EditText typeTarget;
     private final AtomicBoolean tapTriggered = new AtomicBoolean(false);
+    private static final int VOICE_REQUEST_CODE = 5107;
+    private EditText mediaTokenInput;
+    private TextView mediaStatus;
+    private TextToSpeech textToSpeech;
+    private volatile boolean ttsReady = false;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         SharedPreferences p = getSharedPreferences("sahibex", MODE_PRIVATE);
+        textToSpeech = new TextToSpeech(this, result -> {
+            if (result == TextToSpeech.SUCCESS && textToSpeech != null) {
+                int languageResult = textToSpeech.setLanguage(Locale.getDefault());
+                ttsReady = languageResult != TextToSpeech.LANG_MISSING_DATA
+                    && languageResult != TextToSpeech.LANG_NOT_SUPPORTED;
+            }
+        });
         String token = p.getString("token", null);
         if (token == null) {
             byte[] b = new byte[32];
@@ -82,7 +97,40 @@ public final class MainActivity extends Activity {
         status.setText("\nStatus: ready");
         status.setTextSize(16);
 
+        TextView mediaInfo = new TextView(this);
+        mediaInfo.setText("\nSAHIBEX LIVE VOICE BRIDGE\nPaste the pairing token from Termux file: data/android_companion_media_token");
+        mediaInfo.setTextSize(14);
+        mediaTokenInput = new EditText(this);
+        mediaTokenInput.setSingleLine(true);
+        mediaTokenInput.setHint("SAHIBEX media pairing token");
+        mediaTokenInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+            | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        mediaTokenInput.setText(p.getString("media_token", ""));
+        Button saveMediaToken = new Button(this);
+        saveMediaToken.setText("Save Voice Pairing Token");
+        saveMediaToken.setOnClickListener(v -> {
+            String mediaToken = mediaTokenInput.getText().toString().trim();
+            if (mediaToken.length() < 40) {
+                mediaStatus.setText("Pairing token invalid; paste the full token from Termux.");
+                return;
+            }
+            getSharedPreferences("sahibex", MODE_PRIVATE).edit()
+                .putString("media_token", mediaToken).apply();
+            mediaStatus.setText("Pairing token saved locally. Voice requests remain permission-gated.");
+        });
+        Button voiceInput = new Button(this);
+        voiceInput.setText("Speak to SAHIBEX");
+        voiceInput.setOnClickListener(v -> startVoiceRequest());
+        mediaStatus = new TextView(this);
+        mediaStatus.setText("Voice bridge: waiting for pairing and microphone action.");
+        mediaStatus.setTextSize(14);
+
         root.addView(info);
+        root.addView(mediaInfo);
+        root.addView(mediaTokenInput);
+        root.addView(saveMediaToken);
+        root.addView(voiceInput);
+        root.addView(mediaStatus);
         root.addView(settings);
         root.addView(screenshot);
         root.addView(fullTest);
@@ -195,6 +243,118 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> status.setText("\nStatus: FAIL\n" + failure));
             }
         }).start();
+    }
+
+    private void startVoiceRequest() {
+        String token = getSharedPreferences("sahibex", MODE_PRIVATE)
+            .getString("media_token", "");
+        if (token.length() < 40) {
+            mediaStatus.setText("Save the Termux pairing token first.");
+            return;
+        }
+        try {
+            Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+            // Prefer Hindi (India) so Hindi/Hinglish speech is not misread as English.
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN");
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "hi-IN");
+            intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
+            intent.putExtra(RecognizerIntent.EXTRA_PROMPT,
+                "Hindi/Hinglish mein dheere aur saaf boliye: Speak slowly and clearly");
+            startActivityForResult(intent, VOICE_REQUEST_CODE);
+            mediaStatus.setText("Listening through Android speech recognition...");
+        } catch (Exception e) {
+            mediaStatus.setText("Speech recognition unavailable: " + e.getClass().getSimpleName());
+        }
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != VOICE_REQUEST_CODE) return;
+        if (resultCode != RESULT_OK || data == null) {
+            mediaStatus.setText("Voice input cancelled or no speech recognized.");
+            return;
+        }
+        java.util.ArrayList<String> matches = data.getStringArrayListExtra(
+            RecognizerIntent.EXTRA_RESULTS);
+        if (matches == null || matches.isEmpty()) {
+            mediaStatus.setText("No usable speech transcript was returned.");
+            return;
+        }
+        // Speech recognizers often return several alternatives. Let the user correct
+        // recognition before any command reaches SAHIBEX.
+        java.util.ArrayList<String> clean = new java.util.ArrayList<>();
+        for (String item : matches) {
+            if (item != null && !item.trim().isEmpty() && !clean.contains(item.trim())) {
+                clean.add(item.trim());
+            }
+        }
+        if (clean.isEmpty()) {
+            mediaStatus.setText("No usable speech transcript was returned.");
+            return;
+        }
+        String[] choices = clean.toArray(new String[0]);
+        new AlertDialog.Builder(this)
+            .setTitle("SAHIBEX heard — choose the correct words")
+            .setItems(choices, (dialog, which) -> sendVoiceTranscript(choices[which]))
+            .setNegativeButton("Cancel", (dialog, which) ->
+                mediaStatus.setText("Voice request cancelled. Nothing was sent."))
+            .show();
+    }
+
+    private void sendVoiceTranscript(final String transcript) {
+        final String token = getSharedPreferences("sahibex", MODE_PRIVATE)
+            .getString("media_token", "");
+        mediaStatus.setText("Sending selected words to the local SAHIBEX brain...");
+        new Thread(() -> {
+            HttpURLConnection connection = null;
+            try {
+                JSONObject request = new JSONObject().put("text", transcript);
+                byte[] body = request.toString().getBytes(StandardCharsets.UTF_8);
+                connection = (HttpURLConnection) new URL(
+                    "http://127.0.0.1:38742/voice").openConnection();
+                connection.setRequestMethod("POST");
+                connection.setConnectTimeout(3000);
+                connection.setReadTimeout(180000);
+                connection.setDoOutput(true);
+                connection.setRequestProperty("Authorization", "Bearer " + token);
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                connection.setFixedLengthStreamingMode(body.length);
+                try (OutputStream out = connection.getOutputStream()) { out.write(body); }
+                int code = connection.getResponseCode();
+                InputStream responseStream = code >= 400
+                    ? connection.getErrorStream() : connection.getInputStream();
+                String responseText = readAll(responseStream);
+                JSONObject response = responseText.isEmpty()
+                    ? new JSONObject() : new JSONObject(responseText);
+                String answer = response.optString("message",
+                    response.optString("error", "SAHIBEX returned no response."));
+                String display = "You said: " + transcript + "\n\nSAHIBEX: " + answer
+                    + "\n\nHTTP: " + code + " | Verification: "
+                    + response.optString("verification_status", "unknown");
+                runOnUiThread(() -> {
+                    mediaStatus.setText(display);
+                    if (code == 200 && ttsReady && textToSpeech != null && !answer.trim().isEmpty()) {
+                        textToSpeech.speak(answer, TextToSpeech.QUEUE_FLUSH, null, "sahibex-voice-response");
+                    }
+                });
+            } catch (Throwable e) {
+                String error = "Voice bridge failed: " + e.getClass().getSimpleName()
+                    + ". Ensure the SAHIBEX media bridge is running in Termux.";
+                runOnUiThread(() -> mediaStatus.setText(error));
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+        }).start();
+    }
+
+    @Override protected void onDestroy() {
+        if (textToSpeech != null) {
+            textToSpeech.stop();
+            textToSpeech.shutdown();
+        }
+        super.onDestroy();
     }
 
     private JSONObject bridgeCall(String token, String action, JSONObject payload) throws Exception {

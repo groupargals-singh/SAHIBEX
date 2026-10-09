@@ -21,6 +21,7 @@ class LifecycleOperation(str, Enum):
     AUTHORIZE_BIRTH = "authorize_birth"
     CREATE = "create"
     VERIFY = "verify"
+    MARK_READY = "mark_ready"
     ACTIVATE = "activate"
     PAUSE = "pause"
     RESUME = "resume"
@@ -66,9 +67,47 @@ class ChildLifecycleBoundary:
     It does not create, activate, execute, or retire a real Child.
     """
 
-    VERSION = "1.0"
+    VERSION = "1.1"
 
     # Valid lifecycle transitions.
+    OPERATION_TRANSITIONS = {
+        LifecycleOperation.AUTHORIZE_BIRTH: {
+            (ChildLifecycleState.PROPOSED, ChildLifecycleState.BIRTH_AUTHORIZED),
+        },
+        LifecycleOperation.CREATE: {
+            (ChildLifecycleState.BIRTH_AUTHORIZED, ChildLifecycleState.CREATED),
+        },
+        LifecycleOperation.VERIFY: {
+            (ChildLifecycleState.CREATED, ChildLifecycleState.VERIFIED),
+            (ChildLifecycleState.RECOVERY, ChildLifecycleState.VERIFIED),
+        },
+        LifecycleOperation.MARK_READY: {
+            (ChildLifecycleState.VERIFIED, ChildLifecycleState.READY),
+        },
+        LifecycleOperation.ACTIVATE: {
+            (ChildLifecycleState.READY, ChildLifecycleState.ACTIVE),
+        },
+        LifecycleOperation.PAUSE: {
+            (ChildLifecycleState.ACTIVE, ChildLifecycleState.PAUSED),
+        },
+        LifecycleOperation.RESUME: {
+            (ChildLifecycleState.PAUSED, ChildLifecycleState.READY),
+        },
+        LifecycleOperation.START_RECOVERY: {
+            (ChildLifecycleState.ACTIVE, ChildLifecycleState.RECOVERY),
+            (ChildLifecycleState.PAUSED, ChildLifecycleState.RECOVERY),
+        },
+        LifecycleOperation.COMPLETE_RECOVERY: {
+            (ChildLifecycleState.RECOVERY, ChildLifecycleState.VERIFIED),
+        },
+        LifecycleOperation.RETIRE: {
+            (ChildLifecycleState.READY, ChildLifecycleState.RETIRED),
+            (ChildLifecycleState.PAUSED, ChildLifecycleState.RETIRED),
+            (ChildLifecycleState.RECOVERY, ChildLifecycleState.RETIRED),
+        },
+        LifecycleOperation.REACTIVATE: set(),
+    }
+
     VALID_TRANSITIONS = {
         (
             ChildLifecycleState.PROPOSED,
@@ -141,6 +180,7 @@ class ChildLifecycleBoundary:
     INFORMATION_OPERATIONS = {
         LifecycleOperation.PROPOSE,
         LifecycleOperation.VERIFY,
+        LifecycleOperation.MARK_READY,
     }
 
     EXTERNAL_ACTORS = {
@@ -201,6 +241,40 @@ class ChildLifecycleBoundary:
                 reason="child_worker_cannot_control_child_lifecycle",
             )
 
+        # A proposal records intent without moving lifecycle state.
+        if operation == LifecycleOperation.PROPOSE:
+            if (
+                from_state == ChildLifecycleState.PROPOSED
+                and to_state == ChildLifecycleState.PROPOSED
+            ):
+                return LifecycleTransitionResult(
+                    allowed=True,
+                    decision=LifecycleDecision.ALLOW,
+                    from_state=from_state,
+                    to_state=to_state,
+                    authority_granted=False,
+                    reason="lifecycle_proposal_recorded",
+                )
+            return LifecycleTransitionResult(
+                allowed=False,
+                decision=LifecycleDecision.DENY,
+                from_state=from_state,
+                to_state=to_state,
+                authority_granted=False,
+                reason="proposal_cannot_change_lifecycle_state",
+            )
+
+        allowed_pairs = cls.OPERATION_TRANSITIONS.get(operation)
+        if allowed_pairs is None or (from_state, to_state) not in allowed_pairs:
+            return LifecycleTransitionResult(
+                allowed=False,
+                decision=LifecycleDecision.DENY,
+                from_state=from_state,
+                to_state=to_state,
+                authority_granted=False,
+                reason="operation_does_not_match_lifecycle_transition",
+            )
+
         # Every transition must be explicitly defined.
         if not cls.is_valid_transition(from_state, to_state):
             return LifecycleTransitionResult(
@@ -223,18 +297,41 @@ class ChildLifecycleBoundary:
                 reason="retired_child_cannot_transition",
             )
 
+        # Creation is a protected lifecycle transition. It requires both
+        # Mother approval and explicit Human approval for the birth record.
+        if operation == LifecycleOperation.CREATE:
+            if not mother_approved or not human_approved or not authorization_valid:
+                return LifecycleTransitionResult(
+                    allowed=False,
+                    decision=LifecycleDecision.REQUIRE_HUMAN_AUTHORITY,
+                    from_state=from_state,
+                    to_state=to_state,
+                    authority_granted=False,
+                    reason="mother_and_human_approval_with_valid_authorization_required",
+                )
+            return LifecycleTransitionResult(
+                allowed=True,
+                decision=LifecycleDecision.REQUIRE_HUMAN_AUTHORITY,
+                from_state=from_state,
+                to_state=to_state,
+                authority_granted=True,
+                reason="mother_and_human_birth_authorization_valid",
+            )
+
         # Proposals and verification are cognitive/information stages.
         if operation in cls.INFORMATION_OPERATIONS:
-            if operation == LifecycleOperation.VERIFY:
-                if not verification_passed:
-                    return LifecycleTransitionResult(
-                        allowed=False,
-                        decision=LifecycleDecision.DENY,
-                        from_state=from_state,
-                        to_state=to_state,
-                        authority_granted=False,
-                        reason="verification_required",
-                    )
+            if operation in {
+                LifecycleOperation.VERIFY,
+                LifecycleOperation.MARK_READY,
+            } and not verification_passed:
+                return LifecycleTransitionResult(
+                    allowed=False,
+                    decision=LifecycleDecision.DENY,
+                    from_state=from_state,
+                    to_state=to_state,
+                    authority_granted=False,
+                    reason="verification_required",
+                )
 
             return LifecycleTransitionResult(
                 allowed=True,

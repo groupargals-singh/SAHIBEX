@@ -52,6 +52,14 @@ def main() -> None:
     assert child.brain.brain_role == BrainRole.CHILD_BRAIN
     assert child.brain.parent_brain_id == root.brain_id
     assert child.runtime_state.value == "ready"
+    assert child.brain.trust_status.value == "unverified"
+    manager.verify_trust(
+        child.brain.brain_id,
+        evidence="independent phase-9 boundary test passed",
+        mother_approved=True,
+        human_approved=True,
+        verification_passed=True,
+    )
     assert child.brain.trust_status.value == "verified"
     assert child.memory.memory_is_child_isolated()
     assert child.memory.can_access_mother_private_memory() is False
@@ -84,9 +92,18 @@ def main() -> None:
     )
     assert result.success is True
     assert manager.performance(child.brain.brain_id).completed == 1
+    assert manager.performance(child.brain.brain_id).verified == 0
+
+    # A successful handler run is not itself independent verification.
+    manager.record_performance(
+        child.brain.brain_id,
+        success=True,
+        verified=True,
+    )
+    assert manager.performance(child.brain.brain_id).verified == 1
 
     # 5. Activation is a real lifecycle state and active children can work.
-    manager.activate(child.brain.brain_id, mother_approved=True)
+    manager.activate(child.brain.brain_id, mother_approved=True, human_approved=True)
     assert child.runtime_state.value == "active"
     assert child.brain.status == BrainStatus.ACTIVE
     result = manager.dispatch(
@@ -110,7 +127,11 @@ def main() -> None:
 
     # 7. Resume requires fresh verification.
     try:
-        manager.resume(child.brain.brain_id, mother_approved=True)
+        manager.resume(
+            child.brain.brain_id,
+            mother_approved=True,
+            human_approved=True,
+        )
     except PermissionError:
         pass
     else:
@@ -119,7 +140,9 @@ def main() -> None:
     manager.resume(
         child.brain.brain_id,
         mother_approved=True,
+        human_approved=True,
         verification_passed=True,
+        verification_evidence="fresh post-pause verification passed in unit test",
     )
     assert child.runtime_state.value == "ready"
     assert child.brain.status == BrainStatus.READY
@@ -158,6 +181,7 @@ def main() -> None:
         manager.activate(
             replacement.brain.brain_id,
             mother_approved=True,
+            human_approved=True,
         )
     except ValueError:
         pass
@@ -177,6 +201,127 @@ def main() -> None:
         assert profiles[name]
 
     print("SAHIBEX PHASE 9 SPECIALIST CHILD BRAIN: PASS")
+
+
+def test_dispatch_enforces_required_specialist_capability():
+    manager = SpecialistChildBrainManager()
+    child = manager.create_child(
+        name="Restricted Coding Child",
+        description="coding role with intentionally restricted capabilities",
+        specialization="coding",
+        capabilities={BrainCapability.THINK, BrainCapability.READ},
+        mother_approved=True,
+        human_approved=True,
+    )
+    called = {"value": False}
+
+    def handler(request, metadata):
+        called["value"] = True
+        return "should not execute"
+
+    manager.register_handler(child.brain.brain_id, handler)
+    result = manager.dispatch(child.brain.brain_id, "write a program")
+
+    assert result.success is False
+    assert "required capability" in result.error
+    assert called["value"] is False
+    assert manager.performance(child.brain.brain_id).failed == 0
+
+
+def test_failed_replacement_keeps_predecessor_ready():
+    manager = SpecialistChildBrainManager()
+    child = manager.create_child(
+        name="Original Child",
+        description="working predecessor",
+        specialization="research",
+        mother_approved=True,
+        human_approved=True,
+    )
+
+    try:
+        manager.replace(
+            child.brain.brain_id,
+            name="",
+            description="invalid replacement",
+            specialization="research",
+            mother_approved=True,
+            human_approved=True,
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("invalid replacement unexpectedly succeeded")
+
+    assert child.runtime_state.value == "ready"
+    assert child.brain.status == BrainStatus.READY
+    assert manager.get(child.brain.brain_id) is child
+    assert len(manager.list_children()) == 1
+
+
+def test_activation_requires_explicit_human_approval():
+    manager = SpecialistChildBrainManager()
+    child = manager.create_child(
+        name="Activation Gate Child",
+        description="tests explicit human approval for activation",
+        specialization="research",
+        mother_approved=True,
+        human_approved=True,
+    )
+    try:
+        manager.activate(child.brain.brain_id, mother_approved=True)
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError("activation without human approval was allowed")
+
+
+def test_human_can_pause_child_when_verification_is_failing():
+    manager = SpecialistChildBrainManager()
+    child = manager.create_child(
+        name="Emergency Pause Child",
+        description="tests fail-safe pause",
+        specialization="research",
+        mother_approved=True,
+        human_approved=True,
+    )
+    paused = manager.suspend(
+        child.brain.brain_id,
+        human_approved=True,
+        reason="emergency stop during verification failure",
+    )
+    assert paused.runtime_state.value == "paused"
+    assert paused.brain.status == BrainStatus.READY
+
+
+def test_ready_child_can_suspend_and_resume_without_becoming_terminal():
+    manager = SpecialistChildBrainManager()
+    child = manager.create_child(
+        name="Ready Child",
+        description="tests safe pause/resume from READY",
+        specialization="research",
+        mother_approved=True,
+        human_approved=True,
+    )
+
+    manager.suspend(
+        child.brain.brain_id,
+        mother_approved=True,
+        reason="pause before first activation",
+    )
+    assert child.runtime_state.value == "paused"
+    assert child.brain.status == BrainStatus.READY
+    assert child.brain.trust_status.value == "suspended"
+
+    manager.resume(
+        child.brain.brain_id,
+        mother_approved=True,
+        human_approved=True,
+        verification_passed=True,
+        verification_evidence="fresh post-pause verification passed in unit test",
+    )
+    assert child.runtime_state.value == "ready"
+    assert child.brain.status == BrainStatus.READY
+    assert child.brain.trust_status.value == "verified"
 
 
 def test_phase9_specialist_child_brain():

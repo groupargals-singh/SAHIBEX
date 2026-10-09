@@ -118,6 +118,14 @@ class SpecialistChildBrainManager:
         }),
     }
 
+    REQUIRED_CAPABILITY_BY_SPECIALIZATION: dict[str, BrainCapability] = {
+        "research": BrainCapability.RESEARCH,
+        "coding": BrainCapability.CODE,
+        "trading": BrainCapability.ANALYZE,
+        "business": BrainCapability.PLAN,
+        "computer-control": BrainCapability.PLAN,
+    }
+
     def __init__(self, *, registry: BrainRegistry | None = None) -> None:
         self.registry = registry or BrainRegistry()
         self._ensure_mother_identity()
@@ -199,10 +207,8 @@ class SpecialistChildBrainManager:
             parent_brain_id=parent.brain_id,
         )
 
-        self.registry.register(brain)
-
-        # Birth is committed only after identity, isolation and authority
-        # boundaries have been materialized in this runtime record.
+        # Build the runtime record and pass through every declared lifecycle
+        # state. Do not jump CREATED -> READY or register a partially born child.
         memory = ChildMemoryRuntime(
             child_brain_id=brain.brain_id,
             memory_namespace=brain.memory_namespace,
@@ -214,14 +220,33 @@ class SpecialistChildBrainManager:
             core=ChildBrainCore(),
             communication=ChildCommunicationRuntime(),
         )
-        self._records[brain.brain_id] = record
 
-        brain.set_trust_status(
-            BrainTrustStatus.VERIFIED,
-            evidence="Phase-9 child birth identity and boundary verification passed",
+        # Birth lifecycle verification does not itself establish trust.
+        # Trust stays UNVERIFIED until a separate evidence-backed approval.
+        verified = self._runtime.transition(
+            record.runtime_state,
+            ChildRuntimeState.VERIFIED,
+            authority_approved=True,
+            verification_passed=True,
         )
+        if not verified.allowed:
+            raise ValueError(verified.reason)
+        record.runtime_state = ChildRuntimeState.VERIFIED
+
+        ready = self._runtime.transition(
+            record.runtime_state,
+            ChildRuntimeState.READY,
+            authority_approved=True,
+            verification_passed=True,
+        )
+        if not ready.allowed:
+            raise ValueError(ready.reason)
         brain.transition_to(BrainStatus.READY)
         record.runtime_state = ChildRuntimeState.READY
+
+        # Register only after birth verification and the full lifecycle sequence.
+        self.registry.register(brain)
+        self._records[brain.brain_id] = record
         return record
 
     def get(self, brain_id: str) -> SpecialistChildRecord | None:
@@ -237,16 +262,44 @@ class SpecialistChildBrainManager:
             if r.brain.specialization.strip().lower() == normalized
         ]
 
+    def verify_trust(
+        self,
+        brain_id: str,
+        *,
+        evidence: str,
+        mother_approved: bool = False,
+        human_approved: bool = False,
+        verification_passed: bool = False,
+    ) -> SpecialistChildRecord:
+        record = self._require(brain_id)
+        self._require_not_retired(record)
+        if not (mother_approved and human_approved):
+            raise PermissionError("Trust verification requires Mother and human approval.")
+        if not verification_passed:
+            raise PermissionError("Independent trust verification must pass.")
+        if not isinstance(evidence, str) or not evidence.strip():
+            raise ValueError("Explicit trust evidence is required.")
+        if record.runtime_state != ChildRuntimeState.READY:
+            raise ValueError("Trust verification requires a READY child.")
+        if record.brain.trust_status == BrainTrustStatus.VERIFIED:
+            raise ValueError("Trust is already verified; suspend/revoke before re-verification.")
+        record.brain.set_trust_status(
+            BrainTrustStatus.VERIFIED,
+            evidence=evidence.strip(),
+        )
+        return record
+
     def activate(
         self,
         brain_id: str,
         *,
         mother_approved: bool = False,
+        human_approved: bool = False,
     ) -> SpecialistChildRecord:
         record = self._require(brain_id)
         self._require_not_retired(record)
-        if not mother_approved:
-            raise PermissionError("Child activation requires Mother approval.")
+        if not (mother_approved and human_approved):
+            raise PermissionError("Child activation requires Mother and human approval.")
         if record.brain.trust_status != BrainTrustStatus.VERIFIED:
             raise PermissionError("Verified trust is required before activation.")
         if record.runtime_state != ChildRuntimeState.READY:
@@ -268,12 +321,13 @@ class SpecialistChildBrainManager:
         brain_id: str,
         *,
         mother_approved: bool = False,
-        reason: str = "suspended by Mother",
+        human_approved: bool = False,
+        reason: str = "suspended by Mother or Human",
     ) -> SpecialistChildRecord:
         record = self._require(brain_id)
         self._require_not_retired(record)
-        if not mother_approved:
-            raise PermissionError("Child suspension requires Mother approval.")
+        if not (mother_approved or human_approved):
+            raise PermissionError("Child suspension requires Mother or human approval.")
         if record.runtime_state not in {
             ChildRuntimeState.READY,
             ChildRuntimeState.ACTIVE,
@@ -283,14 +337,14 @@ class SpecialistChildBrainManager:
             record.runtime_state,
             ChildRuntimeState.PAUSED,
             authority_approved=True,
-            verification_passed=True,
+            verification_passed=False,
         )
         if not decision.allowed:
             raise ValueError(decision.reason)
         if record.brain.status == BrainStatus.ACTIVE:
             record.brain.transition_to(BrainStatus.PAUSED)
-        elif record.brain.status == BrainStatus.READY:
-            record.brain.transition_to(BrainStatus.DISABLED)
+        # A READY brain is already non-executing. Keep its identity READY
+        # while the manager runtime state is PAUSED so it can be safely resumed.
         record.brain.set_trust_status(
             BrainTrustStatus.SUSPENDED,
             evidence=reason,
@@ -303,14 +357,18 @@ class SpecialistChildBrainManager:
         brain_id: str,
         *,
         mother_approved: bool = False,
+        human_approved: bool = False,
         verification_passed: bool = False,
+        verification_evidence: str | None = None,
     ) -> SpecialistChildRecord:
         record = self._require(brain_id)
         self._require_not_retired(record)
-        if not mother_approved:
-            raise PermissionError("Child resume requires Mother approval.")
+        if not (mother_approved and human_approved):
+            raise PermissionError("Child resume requires Mother and human approval.")
         if not verification_passed:
             raise PermissionError("Fresh verification is required before resume.")
+        if not isinstance(verification_evidence, str) or not verification_evidence.strip():
+            raise ValueError("Explicit post-suspension verification evidence is required.")
         if record.runtime_state != ChildRuntimeState.PAUSED:
             raise ValueError("Only a paused child can be resumed.")
         decision = self._runtime.transition(
@@ -322,11 +380,21 @@ class SpecialistChildBrainManager:
         if not decision.allowed:
             raise ValueError(decision.reason)
         record.brain.set_trust_status(
-            BrainTrustStatus.VERIFIED,
-            evidence="Fresh post-suspension verification passed",
+            BrainTrustStatus.UNVERIFIED,
+            evidence="Previous trust invalidated by suspension; awaiting explicit verification.",
         )
-        record.brain.transition_to(BrainStatus.READY)
+        if record.brain.status in {BrainStatus.PAUSED, BrainStatus.FAILED}:
+            record.brain.transition_to(BrainStatus.READY)
+        elif record.brain.status != BrainStatus.READY:
+            raise ValueError("Child identity is not in a resumable brain status.")
         record.runtime_state = ChildRuntimeState.READY
+        self.verify_trust(
+            brain_id,
+            evidence=verification_evidence.strip(),
+            mother_approved=mother_approved,
+            human_approved=human_approved,
+            verification_passed=True,
+        )
         return record
 
     def retire(
@@ -379,7 +447,8 @@ class SpecialistChildBrainManager:
             ChildRuntimeState.PAUSED,
         }:
             raise ValueError("Child must be READY or PAUSED before replacement.")
-        self.retire(brain_id, human_approved=True)
+        # Create and verify the replacement before retiring the old child.
+        # A malformed replacement must never destroy the working predecessor.
         replacement = self.create_child(
             name=name,
             description=description,
@@ -389,6 +458,14 @@ class SpecialistChildBrainManager:
             human_approved=True,
             parent_brain_id=old.brain.parent_brain_id,
         )
+        try:
+            self.retire(brain_id, human_approved=True)
+        except Exception:
+            # Roll back the newly registered replacement if predecessor
+            # retirement fails; the old child remains the active record.
+            self._records.pop(replacement.brain.brain_id, None)
+            self.registry.remove(replacement.brain.brain_id)
+            raise
         replacement.predecessor_brain_id = old.brain.brain_id
         replacement.trust_lineage_id = old.trust_lineage_id
         return replacement
@@ -432,6 +509,22 @@ class SpecialistChildBrainManager:
                 result=None,
                 error="Child is not in READY/ACTIVE brain status.",
             )
+        specialization_key = record.brain.specialization.strip().lower()
+        required_capability = self.REQUIRED_CAPABILITY_BY_SPECIALIZATION.get(
+            specialization_key,
+            BrainCapability.THINK,
+        )
+        if not record.brain.has_capability(required_capability):
+            return SpecialistDispatchResult(
+                success=False,
+                brain_id=brain_id,
+                request=request,
+                result=None,
+                error=(
+                    "Child lacks required capability for specialization: "
+                    + required_capability.value
+                ),
+            )
         result = self.dispatcher.dispatch(
             request=request,
             specialization=record.brain.specialization,
@@ -439,8 +532,10 @@ class SpecialistChildBrainManager:
         )
         record.performance.last_success = result.success
         if result.success:
+            # Dispatch success means the handler ran, not that its answer
+            # was independently verified. Verified counts are recorded only
+            # through record_performance(..., verified=True).
             record.performance.completed += 1
-            record.performance.verified += 1
         else:
             record.performance.failed += 1
             record.performance.last_error = result.error

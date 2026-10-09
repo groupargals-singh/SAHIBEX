@@ -56,6 +56,10 @@ def print_status(brain: MasterBrain) -> None:
     print("Constitution         : ACTIVE")
     print("Permission Engine    : ONLINE")
     print("Verification Engine  : ONLINE")
+    roles = brain.internal_brain_team.roles()
+    executable_roles = sum(1 for role in roles if role.handler_registered)
+    print(f"Internal Brain Roles : {len(roles)} defined; {executable_roles} handlers connected")
+    print("Independent Child    : NOT BORN (future DNA/spec only)")
     print("Protected Actions    : CONTROLLED")
     print("User Authority       : FINAL")
     print("============================================================")
@@ -65,6 +69,9 @@ def print_status(brain: MasterBrain) -> None:
 def main() -> None:
     # Production runtime uses the self-hosted local cognitive engine by default.
     os.environ.setdefault("SAHIBEX_MODEL_PROVIDER", "local")
+    # User-authorized live research backend. Network permission is still
+    # enforced by the research acquisition gate for every network action.
+    os.environ.setdefault("SAHIBEX_SEARCH_BACKEND", "duckduckgo_html")
     brain = MasterBrain()
 
     print(BANNER)

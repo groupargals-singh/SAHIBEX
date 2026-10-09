@@ -102,9 +102,13 @@ def test_basic_end_to_end():
         "knowledge ID preserved through pipeline",
     )
 
+    quality_supports_answer = result.aggregation.answer.overall_status in {
+        "SUPPORTED",
+        "MULTI_SOURCE_SUPPORTED",
+    }
     check(
-        result.answer.verified is True,
-        "verified status preserved through pipeline",
+        result.answer.verified is quality_supports_answer,
+        "verified status follows quality-aware evidence assessment",
     )
 
     check(

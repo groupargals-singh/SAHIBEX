@@ -39,7 +39,7 @@ from core.research.storage import ResearchStorage
 
 
 class FakeProvider(ResearchAcquisitionProvider):
-    provider_name = "web"
+    provider_name = "direct_web"
     requires_network = False
 
     def acquire(
@@ -278,12 +278,12 @@ def main() -> None:
             == "VERIFIED"
         )
 
-        assert answer_result.answer.verified is True
+        # The quality-aware synthesizer flags this synthetic source as stale
+        # (it has no publication date or independent source history). The
+        # simpler answer adapter must preserve that conservative status.
+        assert answer_result.answer.verified is False
 
-        assert (
-            answer_result.answer.status
-            == "VERIFIED"
-        )
+        assert answer_result.answer.status == "STALE"
 
         assert answer_result.answer.confidence > 0.0
 

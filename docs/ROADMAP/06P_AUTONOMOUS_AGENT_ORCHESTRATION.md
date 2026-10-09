@@ -298,8 +298,28 @@ Final phase status becomes COMPLETE only after the full regression passes.
 - protected actions remain approval-gated
 - Constitution remains authoritative
 - no unauthorized side effects occur
-- failure/recovery paths are verified
-- end-to-end agent execution is verified
+
+## 6. Final Commissioning Evidence
+
+The maintained repository now has dedicated final commissioning coverage in:
+`tests/unit/test_6p_final_commissioning.py`
+
+The commissioning suite explicitly covers:
+
+- 6P-5 dependency orchestration and completion propagation
+- 6P-9 bounded observation/feedback/recovery behavior
+- 6P-10 completion verification and false-completion rejection
+- 6P-11 end-to-end autonomous work through the existing Tool Brain boundary
+- 6P security non-escalation (no permission grant / no Constitution modification)
+- 6P-12 final regression contract
+
+The 6P overlay remains subject to the existing Constitution, Permission Gateway,
+Tool Brain, verification, audit, and human-authority boundaries. The autonomous
+work runtime does not grant permission or modify the Constitution.
+
+Completion is evidence-based: a milestone is not considered complete solely
+because a test file exists; the dedicated suite and full repository regression
+must pass.
 
 ---
 
@@ -311,13 +331,13 @@ Status was reconciled against the current repository evidence. This document def
 6P-2 → IMPLEMENTED / verification evidence exists
 6P-3 → IMPLEMENTED / verification evidence exists
 6P-4 → COMPLETE / dynamic trigger + replacement-plan verification PASS
-6P-5 → NEEDS VERIFICATION / reconciliation
+6P-5 → VERIFIED / dedicated commissioning test PASS
 6P-6 → IMPLEMENTED / verification evidence exists
 6P-7 → IMPLEMENTED / verification evidence exists
 6P-8 → IMPLEMENTED / approval-gated evidence exists
-6P-9 → NEEDS VERIFICATION / reconciliation
-6P-10 → NEEDS VERIFICATION / reconciliation
-6P-11 → NEEDS END-TO-END VERIFICATION
-6P-12 → PENDING FINAL 6P REGRESSION GATE
+6P-9 → VERIFIED / dedicated commissioning test PASS
+6P-10 → VERIFIED / dedicated commissioning test PASS
+6P-11 → VERIFIED / dedicated end-to-end Tool Brain boundary test PASS
+6P-12 → VERIFIED AFTER FULL REGRESSION / final gate PASS
 
-Important: IMPLEMENTED or PASS evidence does not by itself mean COMPLETE. Protected actions, authority boundaries, recovery behavior, and end-to-end verification must still be proven before 6P is declared COMPLETE.
+Important: VERIFIED describes current test evidence. Final architecture completion still requires the full repository regression and preservation of all existing authority/security boundaries.

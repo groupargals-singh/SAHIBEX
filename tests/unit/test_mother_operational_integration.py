@@ -31,8 +31,9 @@ def main() -> None:
             provider="mock",
         )
 
-        assert result.success is True
-        assert result.verification_status == "VERIFIED"
+        # Mock provider echoes the prompt; the quality gate must reject it.
+        assert result.success is False
+        assert result.verification_status == "QUALITY_REJECTED"
         assert result.provider == "mock"
 
         print("[PASS] mother operational integration")
@@ -62,7 +63,8 @@ def main() -> None:
             provider="mock",
         )
 
-        assert memory_result.success is True
+        assert memory_result.success is False
+        assert memory_result.verification_status == "QUALITY_REJECTED"
         assert "memory-master-brain" in memory_result.memory_ids
 
         print("[PASS] real memory retrieval")
@@ -97,7 +99,8 @@ def main() -> None:
             provider="mock",
         )
 
-        assert knowledge_result.success is True
+        assert knowledge_result.success is False
+        assert knowledge_result.verification_status == "QUALITY_REJECTED"
         assert (
             "knowledge-mother-brain"
             in knowledge_result.knowledge_ids
@@ -119,7 +122,8 @@ def main() -> None:
             "SAHIBEX"
         )
 
-        assert master_result.success is True
+        assert master_result.success is False
+        assert master_result.verification_status == "QUALITY_REJECTED"
 
         operational_metadata = (
             master_result.metadata[
@@ -127,10 +131,10 @@ def main() -> None:
             ]
         )
 
-        assert operational_metadata["success"] is True
+        assert operational_metadata["success"] is False
         assert (
             operational_metadata["verification_status"]
-            == "VERIFIED"
+            == "QUALITY_REJECTED"
         )
         assert operational_metadata["provider"] == "mock"
 

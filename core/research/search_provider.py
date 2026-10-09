@@ -113,6 +113,23 @@ class SearchProviderBackend:
         raise NotImplementedError
 
 
+class UnavailableSearchBackend(SearchProviderBackend):
+    """Explicit fail-closed backend used when no search credential is configured."""
+
+    backend_name = "unconfigured_search"
+
+    def search(
+        self,
+        query: str,
+        *,
+        max_results: int,
+    ) -> list[SearchResult]:
+        raise RuntimeError(
+            "No live search provider is configured. "
+            "Configure an approved search provider before network research."
+        )
+
+
 class FunctionSearchBackend(SearchProviderBackend):
     """
     Adapter around a normal Python function.

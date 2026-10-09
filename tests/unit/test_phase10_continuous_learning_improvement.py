@@ -184,7 +184,9 @@ def test_phase10_continuous_learning_improvement() -> None:
     assert hasattr(main_brain, "continuous_learning")
     assert main_brain.continuous_learning.experience.count() >= 1
     assert main_brain.continuous_learning.analyze_outcomes().experience_count >= 1
-    assert result.success is True
+    # A prompt-echoing mock response must not be accepted as a real answer.
+    assert result.success is False
+    assert result.verification_status == "QUALITY_REJECTED"
 
 
 if __name__ == "__main__":

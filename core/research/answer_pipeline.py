@@ -112,6 +112,37 @@ class ResearchAnswerPipeline:
 
         return candidates
 
+    def _evidence_knowledge(
+        self,
+        evidence_items: Iterable[Evidence],
+    ) -> List[KnowledgeCandidate]:
+        """Return knowledge explicitly linked to the supplied evidence."""
+        ids = []
+        seen = set()
+        for evidence in evidence_items:
+            knowledge_id = (evidence.metadata or {}).get("knowledge_id")
+            if isinstance(knowledge_id, str) and knowledge_id and knowledge_id not in seen:
+                seen.add(knowledge_id)
+                ids.append(knowledge_id)
+
+        candidates: List[KnowledgeCandidate] = []
+        storage = getattr(self.query_engine, "storage", None)
+        for knowledge_id in ids:
+            knowledge = self.query_engine.engine.knowledge.get(knowledge_id)
+            if knowledge is None and storage is not None:
+                knowledge = storage.get_knowledge(knowledge_id)
+            if knowledge is None:
+                continue
+            candidates.append(
+                KnowledgeCandidate(
+                    knowledge_id=knowledge.knowledge_id,
+                    statement=knowledge.statement,
+                    confidence=knowledge.confidence,
+                    verified=knowledge.verified,
+                )
+            )
+        return candidates
+
     @staticmethod
     def _selected_knowledge(
         knowledge_items: Iterable[KnowledgeCandidate],
@@ -186,6 +217,7 @@ class ResearchAnswerPipeline:
         limit: int = 10,
         evidence_items: Iterable[Evidence] = (),
         sources: Iterable[ResearchSource] = (),
+        focus_on_provided_evidence: bool = False,
     ) -> ResearchAnswerPipelineResult:
         """
         Execute the complete auditable research pipeline.
@@ -212,11 +244,20 @@ class ResearchAnswerPipeline:
         # STEP 1: Query / Retrieval
         # ---------------------------------------------------------
 
-        query_result = self.query_engine.search(
-            query,
-            verified_only=verified_only,
-            limit=limit,
-        )
+        if focus_on_provided_evidence and evidence_list:
+            focused = self._evidence_knowledge(evidence_list)
+            query_result = ResearchQueryResult(
+                query=query,
+                matches=focused,
+                verified_only=verified_only,
+                total_matches=len(focused),
+            )
+        else:
+            query_result = self.query_engine.search(
+                query,
+                verified_only=verified_only,
+                limit=limit,
+            )
 
         # ---------------------------------------------------------
         # STEP 2: Convert retrieval matches to knowledge objects

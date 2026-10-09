@@ -132,7 +132,7 @@ class OperationalVerificationRecovery:
                 result=None,
             )
 
-        if result.verification_status != "VERIFIED":
+        if result.verification_status not in {"VERIFIED", "GENERATED"}:
             return OperationalVerificationResult(
                 success=False,
                 verified=False,
@@ -183,16 +183,22 @@ class OperationalVerificationRecovery:
                 result=None,
             )
 
+        # GENERATED means the response passed structural checks only;
+        # it has not been independently checked for factual correctness.
+        is_independently_verified = result.verification_status == "VERIFIED"
         return OperationalVerificationResult(
             success=True,
-            verified=True,
-            verification_status="VERIFIED",
+            verified=is_independently_verified,
+            verification_status=(
+                "VERIFIED" if is_independently_verified else "STRUCTURALLY_VALID"
+            ),
             recovery_status="SUCCESS",
             attempts=1,
             retryable=False,
             reason=(
-                "Operational reasoning result passed "
-                "verification checks."
+                "Operational reasoning result passed structural checks."
+                if not is_independently_verified
+                else "Operational reasoning result passed verification checks."
             ),
             result=result.model_response,
         )

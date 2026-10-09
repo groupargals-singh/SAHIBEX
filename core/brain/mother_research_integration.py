@@ -302,6 +302,67 @@ class MotherResearchIntegration:
             ),
         }
 
+    @staticmethod
+    def _answer_text_and_verification(
+        pipeline_result,
+    ) -> tuple[str, str]:
+        """Extract user-facing answer text without inventing verification."""
+        synthesized_answer = getattr(
+            pipeline_result,
+            "answer",
+            None,
+        )
+        answer_text = getattr(
+            synthesized_answer,
+            "answer",
+            None,
+        )
+        if not isinstance(answer_text, str):
+            answer_text = getattr(
+                pipeline_result,
+                "result",
+                synthesized_answer
+                if isinstance(synthesized_answer, str)
+                else "",
+            )
+        answer = answer_text.strip() if isinstance(answer_text, str) else ""
+
+        explicit_status = getattr(
+            pipeline_result,
+            "verification_status",
+            None,
+        )
+        if isinstance(explicit_status, str) and explicit_status:
+            return answer, explicit_status
+
+        answer_verified = getattr(
+            synthesized_answer,
+            "verified",
+            None,
+        )
+        answer_status = getattr(
+            synthesized_answer,
+            "status",
+            None,
+        )
+        if answer_verified is True and answer_status == "VERIFIED":
+            verification_status = "VERIFIED"
+        elif answer_verified is False or answer_status in {
+            "UNVERIFIED",
+            "NO_RESULT",
+            "CONFLICT_UNRESOLVED",
+            "PARTIALLY_RESOLVED",
+            "CONFLICT_RESOLVED",
+            "STALE",
+            "LOW_CONFIDENCE",
+            "UNCERTAIN",
+            "CONFLICTED",
+        }:
+            verification_status = "NOT_VERIFIED"
+        else:
+            verification_status = "UNKNOWN"
+        return answer, verification_status
+
     def research(
         self,
         *,
@@ -371,23 +432,10 @@ class MotherResearchIntegration:
             }
 
             if context.answer is not None:
-                answer = str(
-                    getattr(
-                        context.answer,
-                        "answer",
-                        getattr(
-                            context.answer,
-                            "result",
-                            "",
-                        ),
-                    )
-                )
-
-                verification_status = str(
-                    getattr(
-                        context.answer,
-                        "verification_status",
-                        "VERIFIED",
+                # Do not stringify nested answer objects or infer verification.
+                answer, verification_status = (
+                    self._answer_text_and_verification(
+                        context.answer
                     )
                 )
 
@@ -404,6 +452,10 @@ class MotherResearchIntegration:
                 )
 
             if execution.status != "completed":
+                if context.answer is None:
+                    # A permission-gated/failed acquisition did not produce an
+                    # answer to verify; distinguish that from unknown truth.
+                    verification_status = "NOT_EXECUTED"
                 return MotherResearchResult(
                     success=False,
                     query=query,

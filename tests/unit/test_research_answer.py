@@ -1,4 +1,6 @@
 from core.research.answer import ResearchAnswerSynthesizer
+from core.research.answer_synthesis import QualityAwareAnswer
+from core.research.answer_traceability import AnswerTraceabilityResult
 from core.research.aggregator import (
     AggregatedKnowledge,
     ResearchAggregationResult,
@@ -38,6 +40,28 @@ def make_aggregation(
         resolved_conflict_count=resolved_conflict_count,
         unresolved_conflict_count=unresolved_conflict_count,
         resolved_knowledge_ids=[],
+        agreement_assessments=[],
+        conflict_intelligence=[],
+        freshness_assessments=[],
+        confidence_assessments=[],
+        source_ranking_assessments=[],
+        answer=QualityAwareAnswer(
+            answer="",
+            claims=(),
+            supported_claims=(),
+            uncertain_claims=(),
+            conflicted_claims=(),
+            stale_claims=(),
+            overall_status=("SUPPORTED" if status in {"VERIFIED", "CONFLICT_RESOLVED", "PARTIALLY_RESOLVED"} else status),
+            overall_confidence=overall_confidence,
+        ),
+        answer_traceability=AnswerTraceabilityResult(
+            answer_id="test-answer",
+            traces=(),
+            traceable_claim_count=0,
+            incomplete_claim_count=0,
+            trace_complete=False,
+        ),
     )
 
 

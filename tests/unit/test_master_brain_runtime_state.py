@@ -10,7 +10,7 @@ def main() -> None:
     # ---------------------------------------------------------
 
     result = brain.process(
-        "Explain SAHIBEX architecture."
+        "Why does the sky appear blue?"
     )
 
     assert result.success is True
@@ -24,7 +24,7 @@ def main() -> None:
         MotherRuntimeState.COMPLETED.value
     )
     assert state["request"] == (
-        "Explain SAHIBEX architecture."
+        "Why does the sky appear blue?"
     )
     assert state["intent"] == "explain"
     assert state["permission_allowed"] is True
@@ -37,7 +37,7 @@ def main() -> None:
         "delete this file"
     )
 
-    assert blocked.success is True
+    assert blocked.success is False
     blocked_state = brain.runtime_state.snapshot()
 
     assert blocked_state["state"] == (

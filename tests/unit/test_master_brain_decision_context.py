@@ -13,7 +13,11 @@ def test_master_brain_combined_decision_context() -> None:
         "Explain SAHIBEX architecture."
     )
 
-    assert result.success is True
+    # The default mock provider intentionally echoes its prompt; the
+    # answer-quality gate must reject it while preserving diagnostics.
+    assert result.success is False
+    assert result.verification_status == "QUALITY_REJECTED"
+    assert result.metadata["failure_stage"] == "mother_operational"
     assert result.intent == "explain"
 
     context = result.metadata[
@@ -24,7 +28,7 @@ def test_master_brain_combined_decision_context() -> None:
         "Explain SAHIBEX architecture."
     )
     assert context["intent"] == "explain"
-    assert "conversation_summary" in context
+    assert "conversation" in context
     assert "memory_count" in context
     assert "knowledge_count" in context
     assert "memory_ids" in context

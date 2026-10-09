@@ -138,6 +138,10 @@ class ResearchExtractionPipeline:
                 source=source,
             )
 
+            # Persist the canonical structural evidence-strength score
+            # used by ResearchEngine verification. This remains a
+            # structural evidence score, not a truth claim.
+            evidence.strength = strength_assessment.strength_score
             evidence.metadata["evidence_strength"] = {
                 "strength_score": strength_assessment.strength_score,
                 "directness_score": (

@@ -218,6 +218,27 @@ class ResearchPipelineIntegration:
 
         source_type = step.source_types[0]
 
+        # A generic web research job has no URL yet; use search discovery
+        # first only when a real search backend is configured. An explicit
+        # fail-closed search backend must not hijack local/test providers.
+        search_available = False
+        engine = self.acquisition_pipeline.acquisition_engine
+        if "search" in engine.providers():
+            search_provider = engine.get_provider("search")
+            backend = getattr(search_provider, "backend", None)
+            search_available = (
+                getattr(backend, "backend_name", "")
+                != "unconfigured_search"
+            )
+
+        if (
+            source_type == "web"
+            and search_available
+            and not job.metadata.get("url")
+            and not job.metadata.get("urls")
+        ):
+            source_type = "search"
+
         request = AcquisitionRequest(
             query=job.query,
             source_type=source_type,
@@ -227,13 +248,47 @@ class ResearchPipelineIntegration:
             request
         )
 
-        result = self.acquisition_pipeline.acquire_and_ingest(
-            request,
-            provider_name=provider_name,
-            confirmation=bool(
-                job.metadata.get("network_confirmation", False)
-            ),
-        )
+        confirmation = bool(job.metadata.get("network_confirmation", False))
+
+        # Search is discovery-only. Once NETWORK_ACCESS is approved,
+        # immediately fetch the discovered public sources through the
+        # hardened direct-web provider so downstream extraction and
+        # verification operate on source content rather than snippets.
+        if provider_name == "search":
+            search_result = self.acquisition_pipeline.acquire_and_ingest(
+                request,
+                provider_name="search",
+                confirmation=confirmation,
+            )
+            urls = [
+                source.locator
+                for source in search_result.acquisition.sources
+                if source.locator
+            ][:3]
+            if not urls:
+                raise RuntimeError("search provider returned no source URLs")
+
+            direct_request = AcquisitionRequest(
+                query=job.query,
+                source_type="web",
+                max_sources=len(urls),
+                metadata={"urls": urls},
+            )
+            result = self.acquisition_pipeline.acquire_and_ingest(
+                direct_request,
+                provider_name="direct_web",
+                confirmation=confirmation,
+            )
+            result.acquisition.metadata["search_discovery_count"] = len(urls)
+            result.acquisition.metadata["search_backend"] = (
+                search_result.acquisition.metadata.get("backend")
+            )
+        else:
+            result = self.acquisition_pipeline.acquire_and_ingest(
+                request,
+                provider_name=provider_name,
+                confirmation=confirmation,
+            )
 
         context.acquisition = result.acquisition
         context.ingestion = result.ingested
@@ -368,6 +423,7 @@ class ResearchPipelineIntegration:
             verified_only=True,
             evidence_items=evidence_items,
             sources=list(unique_sources.values()),
+            focus_on_provided_evidence=True,
         )
 
         context.answer = answer

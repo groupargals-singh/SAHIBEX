@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
+
+from security.audit.child_self_improvement_audit_store import (
+    ChildSelfImprovementAuditStore,
+)
 
 
 class AuditEvent(str, Enum):
@@ -51,15 +56,79 @@ class AuditIntegrationResult:
     provenance_complete: bool
 
 
+@dataclass(frozen=True)
+class PersistedAuditIntegrationResult:
+    validation: AuditIntegrationResult
+    persistence: dict[str, Any]
+    chain_valid: bool
+
+
 class ChildSelfImprovementAuditIntegration:
     """
     Post-upgrade audit and provenance integration boundary.
 
-    This layer records/validates audit intent only.
+    Validation is side-effect free. The explicit record() method persists
+    accepted and blocked audit decisions to an append-only hash-chain store.
     It does not execute upgrades or grant authority.
     """
 
-    VERSION = "1.0"
+    VERSION = "1.1"
+
+    def __init__(
+        self,
+        *,
+        store: ChildSelfImprovementAuditStore | None = None,
+    ) -> None:
+        if store is not None and not isinstance(
+            store, ChildSelfImprovementAuditStore
+        ):
+            raise TypeError("store must be ChildSelfImprovementAuditStore or None")
+        self.store = store
+
+    def record(
+        self,
+        request: AuditIntegrationRequest,
+    ) -> PersistedAuditIntegrationResult:
+        if self.store is None:
+            raise RuntimeError("persistent_audit_store_not_configured")
+
+        validation = self.validate(request)
+        provenance = None
+        if request.provenance is not None:
+            provenance = {
+                "actor_id": request.provenance.actor_id,
+                "actor_type": request.provenance.actor_type,
+                "source": request.provenance.source,
+                "authority_context": request.provenance.authority_context,
+                "verification_context": request.provenance.verification_context,
+                "timestamp_context": request.provenance.timestamp_context,
+            }
+        payload = {
+            "transaction_id": request.transaction_id,
+            "proposal_id": request.proposal_id,
+            "child_brain_id": request.child_brain_id,
+            "event": request.event.value,
+            "version_before": request.version_before,
+            "version_after": request.version_after,
+            "change_summary": request.change_summary,
+            "security_verified": request.security_verified,
+            "verification_passed": request.verification_passed,
+            "provenance": provenance,
+            "immutable_requested": request.immutable,
+            "decision": validation.decision.value,
+            "reason": validation.reason,
+            "audit_complete": validation.audit_complete,
+            "provenance_complete": validation.provenance_complete,
+        }
+        persistence = self.store.append(
+            audit_id=request.audit_id,
+            payload=payload,
+        )
+        return PersistedAuditIntegrationResult(
+            validation=validation,
+            persistence=persistence,
+            chain_valid=self.store.verify_chain(),
+        )
 
     def validate(
         self,

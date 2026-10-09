@@ -101,6 +101,10 @@ def test_master_brain_learning_flow() -> None:
     assert result.plan_created is True
     assert result.task_count == 3
     assert result.message
+    dispatch_trace = result.metadata["internal_brain_dispatch"]
+    assert dispatch_trace["reasoning"] == "DISPATCHED"
+    assert dispatch_trace["orchestration"] == "DISPATCHED"
+    assert dispatch_trace["learning"] == "DISPATCHED"
 
     learning_meta = result.metadata[
         "mother_learning_integration"

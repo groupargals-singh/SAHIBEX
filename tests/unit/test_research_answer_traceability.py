@@ -126,9 +126,13 @@ def test_answer_traceability_integration():
         "final answer knowledge ID preserved",
     )
 
+    quality_supports_answer = result.aggregation.answer.overall_status in {
+        "SUPPORTED",
+        "MULTI_SOURCE_SUPPORTED",
+    }
     check(
-        result.answer.verified is True,
-        "final answer verified status preserved",
+        result.answer.verified is quality_supports_answer,
+        "final answer verification follows quality-aware assessment",
     )
 
     # ---------------------------------------------------------

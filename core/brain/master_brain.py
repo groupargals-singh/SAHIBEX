@@ -14,12 +14,19 @@ from core.brain.mother_runtime_state import (
 from core.brain.mother_operational_integration import (
     MotherOperationalIntegration,
 )
+from core.brain.factual_resolver import resolve_local_fact
+from core.brain.math_resolver import resolve_math_question
+from core.brain.text_task_resolver import resolve_text_task
+from core.brain.conversation_resolver import resolve_local_conversation
+from core.brain.answer_quality import assess_answer
+from core.brain.prompt_injection_guard import PromptInjectionGuard
 from core.brain.mother_reasoning_integration import (
     MotherReasoningIntegration,
 )
 from core.brain.mother_research_integration import (
     MotherResearchIntegration,
 )
+from core.research.standing_research_consent import StandingResearchConsent
 from core.brain.permission_constitution_integration import (
     MasterPermissionConstitutionIntegration,
 )
@@ -46,6 +53,7 @@ from core.brain.tool_brain import ToolBrain
 from core.agent.autonomous_work_brain import AutonomousWorkBrain
 from core.agent_goal import AgentGoal
 from core.brain.specialist_child_manager import SpecialistChildBrainManager
+from core.brain.internal_brain_team import InternalBrainTeam
 from core.brain.continuous_learning_improvement import ContinuousLearningImprovement
 from core.brain.security_safety_brain import SecuritySafetyBrain
 from core.brain.emergency_stop import EmergencyStop
@@ -199,6 +207,10 @@ class MasterBrain:
             if permission_engine is not None
             else PermissionEngine()
         )
+        # User explicitly requested routine public internet learning without
+        # per-query prompts. This consent is deliberately scoped to search /
+        # learn and the RESEARCH action; it is not general network approval.
+        self.standing_research_consent = StandingResearchConsent()
         self.permission_gateway = (
             permission_gateway
             if permission_gateway is not None
@@ -232,6 +244,11 @@ class MasterBrain:
         # binds only the Mother identity; protected authority remains
         # with the existing Constitution/permission pipeline.
         self.specialist_child_brains = SpecialistChildBrainManager()
+
+        # SAHIBEX's own internal army/labor roles live inside the Mother
+        # runtime. This registry does not create independent Child Brains;
+        # handlers are reported executable only when genuinely registered.
+        self.internal_brain_team = InternalBrainTeam()
 
         # Phase 10: controlled continuous learning and improvement.
         # Experience is collected from real BrainResult outcomes; skill
@@ -295,6 +312,281 @@ class MasterBrain:
             permission_engine=self.permission,
         )
         self.autonomous_work_brain = AutonomousWorkBrain()
+
+        # Wire only capabilities that already have concrete, bounded runtime
+        # implementations. Other role names remain visibly unwired until a
+        # real implementation and regression tests exist.
+        self.internal_brain_team.register_handler(
+            "reading", self._internal_reading_handler
+        )
+        self.internal_brain_team.register_handler(
+            "research", self._internal_research_handler
+        )
+        self.internal_brain_team.register_handler(
+            "learning", self._internal_learning_handler
+        )
+        self.internal_brain_team.register_handler(
+            "memory", self._internal_memory_handler
+        )
+        self.internal_brain_team.register_handler(
+            "verification", self._internal_verification_handler
+        )
+        self.internal_brain_team.register_handler(
+            "security", self._internal_security_handler
+        )
+        self.internal_brain_team.register_handler(
+            "orchestration", self._internal_orchestration_handler
+        )
+        self.internal_brain_team.register_handler(
+            "reasoning", self._internal_reasoning_handler
+        )
+        self.internal_brain_team.register_handler(
+            "coding", self._internal_coding_handler
+        )
+        self.internal_brain_team.register_handler(
+            "testing", self._internal_testing_handler
+        )
+
+    @staticmethod
+    def _internal_testing_handler(request: str, context: dict):
+        """Analyze a supplied test report; test execution stays with authorized Tool Brain."""
+        reports = context.get("test_results")
+        exit_code = context.get("exit_code")
+        if not isinstance(reports, list) or not reports or len(reports) > 500:
+            return {
+                "success": False,
+                "status": "TEST_RESULTS_REQUIRED",
+                "executes_tests": False,
+                "execution_verified": False,
+            }
+        if not isinstance(exit_code, int) or isinstance(exit_code, bool):
+            return {
+                "success": False,
+                "status": "VALID_EXIT_CODE_REQUIRED",
+                "executes_tests": False,
+                "execution_verified": False,
+            }
+        normalized = []
+        for item in reports:
+            if not isinstance(item, dict):
+                return {"success": False, "status": "INVALID_TEST_REPORT", "executes_tests": False, "execution_verified": False}
+            name = item.get("name")
+            passed = item.get("passed")
+            if not isinstance(name, str) or not name.strip() or not isinstance(passed, bool):
+                return {"success": False, "status": "INVALID_TEST_REPORT", "executes_tests": False, "execution_verified": False}
+            normalized.append({"name": name.strip(), "passed": passed})
+        passed_count = sum(1 for item in normalized if item["passed"])
+        failed_count = len(normalized) - passed_count
+        consistent = (failed_count == 0 and exit_code == 0) or (failed_count > 0 and exit_code != 0)
+        if not consistent:
+            status = "INCONSISTENT_REPORT"
+        elif failed_count:
+            status = "TEST_FAILURES_REPORTED"
+        else:
+            status = "ALL_REPORTED_TESTS_PASSED"
+        return {
+            "success": consistent,
+            "status": status,
+            "reported_count": len(normalized),
+            "passed_count": passed_count,
+            "failed_count": failed_count,
+            "failed_tests": [item["name"] for item in normalized if not item["passed"]],
+            "exit_code": exit_code,
+            "executes_tests": False,
+            "execution_verified": False,
+            "report_origin": str(context.get("report_origin", "unspecified")),
+        }
+
+    def _internal_reasoning_handler(self, request: str, context: dict):
+        """Use the existing Mother reasoning adapter, then quality-check its response."""
+        intent = context.get("intent", "explain")
+        action = context.get("action", "respond")
+        allowed_intents = {"search", "learn", "create", "code", "explain", "general_request", "system_status"}
+        allowed_actions = {item.value for item in ActionType}
+        if intent not in allowed_intents:
+            intent = "general_request"
+        if action not in allowed_actions:
+            action = "respond"
+        result = self.mother_reasoning.analyze_approved_request(
+            user_input=request,
+            intent=intent,
+            action=action,
+        )
+        quality = assess_answer(request, result.reasoning_response)
+        return {
+            "success": result.success,
+            "response": result.reasoning_response,
+            "status": "STRUCTURALLY_VALID" if quality.acceptable else "QUALITY_REJECTED",
+            "quality_reasons": quality.reasons,
+            "factual_verification": False,
+            "_reasoning_result": result,
+        }
+
+    def _internal_coding_handler(self, request: str, context: dict):
+        """Generate a code draft through Mother Operational; never writes or executes it."""
+        result = self.mother_operational.process_approved_request(
+            objective=request,
+            intent="code",
+        )
+        return {
+            "success": result.success,
+            "status": result.verification_status,
+            "code_draft": result.response,
+            "provider": result.provider,
+            "memory_ids": result.memory_ids,
+            "knowledge_ids": result.knowledge_ids,
+            "writes_files": False,
+            "executes_code": False,
+            "factual_verification": False,
+            "_operational_result": result,
+        }
+
+    def _internal_orchestration_handler(self, request: str, context: dict):
+        """Create an execution-neutral task plan; never runs its tasks."""
+        requested_intent = context.get("intent", "general_request")
+        allowed_intents = {"search", "learn", "create", "code", "explain", "general_request"}
+        intent = requested_intent if requested_intent in allowed_intents else "general_request"
+        result = self._build_plan(request.strip(), intent)
+        return {
+            "success": result.success,
+            "status": "PLAN_CREATED_NOT_EXECUTED" if result.success else "PLAN_FAILED",
+            "intent": intent,
+            "goal_id": getattr(result.goal, "goal_id", None),
+            "task_count": len(result.tasks),
+            "task_ids": [task.task_id for task in result.tasks],
+            "message": result.message,
+            "execution_started": False,
+            "_plan_result": result,
+        }
+
+    @staticmethod
+    def _internal_security_handler(request: str, context: dict):
+        """Inspect untrusted text for injection indicators; never grants authority."""
+        content = context.get("content", request)
+        if not isinstance(content, str):
+            return {
+                "success": False,
+                "status": "TEXT_REQUIRED",
+                "safe_to_follow": False,
+                "grants_authority": False,
+            }
+        assessment = PromptInjectionGuard().inspect(
+            content,
+            source=str(context.get("source", "untrusted")),
+        )
+        return {
+            "success": True,
+            "status": assessment.status.value,
+            "safe_to_follow": assessment.safe_to_follow,
+            "matched_rules": assessment.matched_rules,
+            "grants_authority": False,
+            "executes_content": False,
+        }
+
+    @staticmethod
+    def _internal_verification_handler(request: str, context: dict):
+        """Run conservative answer-quality checks; this is not a fact-check."""
+        question = context.get("question", request)
+        answer = context.get("answer")
+        if not isinstance(question, str) or not isinstance(answer, str):
+            return {
+                "success": False,
+                "status": "QUESTION_AND_ANSWER_REQUIRED",
+                "factual_verification": False,
+            }
+        assessment = assess_answer(question, answer)
+        return {
+            "success": True,
+            "status": "QUALITY_ACCEPTED" if assessment.acceptable else "QUALITY_REJECTED",
+            "acceptable": assessment.acceptable,
+            "score": assessment.score,
+            "reasons": assessment.reasons,
+            "factual_verification": False,
+        }
+
+    @staticmethod
+    def _internal_reading_handler(request: str, context: dict):
+        """Extract supplied text only; never opens a path or executes content."""
+        source_text = context.get("source_text")
+        if not isinstance(source_text, str) or not source_text.strip():
+            return {
+                "success": False,
+                "status": "SOURCE_TEXT_REQUIRED",
+                "reason": "Reading Brain only processes text explicitly supplied in context.",
+            }
+        text = source_text.strip()
+        max_chars = context.get("max_chars", 12000)
+        if not isinstance(max_chars, int) or isinstance(max_chars, bool):
+            max_chars = 12000
+        max_chars = min(max(max_chars, 1), 12000)
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        return {
+            "success": True,
+            "status": "EXTRACTED_NOT_FACT_VERIFIED",
+            "request": request.strip(),
+            "character_count": len(text),
+            "line_count": len(lines),
+            "excerpt": text[:max_chars],
+            "truncated": len(text) > max_chars,
+        }
+
+    def _internal_research_handler(self, request: str, context: dict):
+        """Delegate to Mother Research; its own provider permission gates remain authoritative."""
+        result = self.research_learning_brain.research_topic(
+            request,
+            confirmation=bool(context.get("confirmation", False)),
+        )
+        return {
+            "success": result.success,
+            "operation": result.operation,
+            "verified": result.verified,
+            "persisted": result.persisted,
+            "result": result.result,
+            "error": result.error,
+        }
+
+    def _internal_learning_handler(self, request: str, context: dict):
+        """Delegate learning to the existing evidence and knowledge pipeline."""
+        result = self.research_learning_brain.learn_topic(
+            request,
+            confirmation=bool(context.get("confirmation", False)),
+        )
+        return {
+            "success": result.success,
+            "operation": result.operation,
+            "verified": result.verified,
+            "persisted": result.persisted,
+            "result": result.result,
+            "error": result.error,
+        }
+
+    def _internal_memory_handler(self, request: str, context: dict):
+        """Read-only retrieval from existing memory; never writes or deletes."""
+        matches = self.memory_brain.retrieve(request)
+        return {
+            "success": True,
+            "status": "MEMORY_RETRIEVAL_ONLY",
+            "count": len(matches),
+            "matches": matches,
+        }
+
+    def dispatch_internal_brain(
+        self,
+        role_id: str,
+        request: str,
+        context: dict | None = None,
+        *,
+        authorization_passed: bool = False,
+        verification_passed: bool = False,
+    ):
+        """Explicit internal-role entry point; callers must supply upstream gate results."""
+        return self.internal_brain_team.dispatch(
+            role_id,
+            request,
+            context,
+            authorization_passed=authorization_passed,
+            verification_passed=verification_passed,
+        )
 
     def start_lifecycle(self):
         return self.brain_lifecycle.startup()
@@ -369,6 +661,153 @@ class MasterBrain:
         # ---------------------------------------------------------
         self.runtime_state.begin(text)
 
+        # SAFE ARITHMETIC: deterministic and independent of language-model quality.
+        math_response = resolve_math_question(text)
+        if math_response is not None:
+            self.runtime_state.transition(MotherRuntimeState.UNDERSTANDING)
+            self.runtime_state.set_request_context(
+                intent="general_request", action="respond", risk="low"
+            )
+            self.runtime_state.set_authority(
+                permission_allowed=True, confirmation_required=False
+            )
+            self.runtime_state.set_verification("DETERMINISTIC_ARITHMETIC")
+            result = BrainResult(
+                success=True,
+                message=math_response.answer,
+                intent="general_request",
+                intent_confidence=1.0,
+                action="respond",
+                action_confidence=1.0,
+                risk="low",
+                permission_allowed=True,
+                confirmation_required=False,
+                authority_decision=ActionDecision.ALLOW.value,
+                plan_created=False,
+                task_count=0,
+                goal_id=None,
+                verification_status="DETERMINISTIC_ARITHMETIC",
+                metadata={
+                    "response_source": "safe_arithmetic_resolver",
+                    "expression": math_response.expression,
+                },
+            )
+            self.runtime_state.complete("safe arithmetic resolved")
+            result.metadata["mother_runtime_state"] = self.runtime_state.snapshot()
+            self._record_context(text, result)
+            return result
+
+        # FAST, CURATED FACT: resolve only exact supported questions.
+        # Compound questions must go through normal reasoning; never answer
+        # a substring while silently omitting the rest of the request.
+        local_fact = resolve_local_fact(text)
+        if local_fact is not None:
+            # Fast-path answers must still participate in the same runtime
+            # lifecycle telemetry as the full reasoning path.
+            self.runtime_state.transition(
+                MotherRuntimeState.UNDERSTANDING
+            )
+            self.runtime_state.set_request_context(
+                intent="explain",
+                action="respond",
+                risk="low",
+            )
+            self.runtime_state.set_authority(
+                permission_allowed=True,
+                confirmation_required=False,
+            )
+            self.runtime_state.set_verification(
+                "STRUCTURALLY_VALID"
+            )
+            result = BrainResult(
+                success=True,
+                message=local_fact.answer,
+                intent="explain",
+                intent_confidence=1.0,
+                action="respond",
+                action_confidence=1.0,
+                risk="low",
+                permission_allowed=True,
+                confirmation_required=False,
+                authority_decision=ActionDecision.ALLOW.value,
+                plan_created=False,
+                task_count=0,
+                goal_id=None,
+                verification_status="STRUCTURALLY_VALID",
+                metadata={
+                    "response_source": "curated_local_knowledge",
+                    "fact_id": local_fact.fact_id,
+                },
+            )
+            self.runtime_state.complete("curated local fact answered")
+            result.metadata["mother_runtime_state"] = (
+                self.runtime_state.snapshot()
+            )
+            self._record_context(text, result)
+            return result
+
+        # BASIC TEXT CONVERSATION: deterministic greetings, capability, and
+        # status replies do not depend on small-model generation quality.
+        local_conversation = resolve_local_conversation(text)
+        if local_conversation is not None:
+            self.runtime_state.transition(MotherRuntimeState.UNDERSTANDING)
+            self.runtime_state.set_request_context(
+                intent=local_conversation.intent,
+                action="respond",
+                risk="low",
+            )
+            self.runtime_state.set_authority(
+                permission_allowed=True,
+                confirmation_required=False,
+            )
+            self.runtime_state.set_verification("STRUCTURALLY_VALID")
+            result = BrainResult(
+                success=True,
+                message=local_conversation.answer,
+                intent=local_conversation.intent,
+                intent_confidence=1.0,
+                action="respond",
+                action_confidence=1.0,
+                risk="low",
+                permission_allowed=True,
+                confirmation_required=False,
+                authority_decision=ActionDecision.ALLOW.value,
+                plan_created=False,
+                task_count=0,
+                goal_id=None,
+                verification_status="STRUCTURALLY_VALID",
+                metadata={
+                    "response_source": "deterministic_text_conversation",
+                    "response_id": local_conversation.response_id,
+                },
+            )
+            self.runtime_state.complete("basic text conversation answered")
+            result.metadata["mother_runtime_state"] = self.runtime_state.snapshot()
+            self._record_context(text, result)
+            return result
+
+        # SAFE, EXACT TEXT TASKS: deterministic answers for validated common
+        # questions/examples avoid known weak small-model generations.
+        text_task = resolve_text_task(text)
+        if text_task is not None:
+            self.runtime_state.transition(MotherRuntimeState.UNDERSTANDING)
+            self.runtime_state.set_request_context(intent="explain", action="respond", risk="low")
+            self.runtime_state.set_authority(permission_allowed=True, confirmation_required=False)
+            self.runtime_state.set_verification("DETERMINISTIC_TEXT_TASK")
+            result = BrainResult(
+                success=True, message=text_task.answer, intent="explain",
+                intent_confidence=1.0, action="respond", action_confidence=1.0,
+                risk="low", permission_allowed=True, confirmation_required=False,
+                authority_decision=ActionDecision.ALLOW.value, plan_created=False,
+                task_count=0, goal_id=None,
+                verification_status="DETERMINISTIC_TEXT_TASK",
+                metadata={"response_source": "deterministic_text_task", "task_id": text_task.task_id},
+            )
+            self.runtime_state.complete("deterministic text task answered")
+            result.metadata["mother_runtime_state"] = self.runtime_state.snapshot()
+            self._record_context(text, result)
+            return result
+
         # ---------------------------------------------------------
         # INTENT
         # ---------------------------------------------------------
@@ -412,14 +851,21 @@ class MasterBrain:
             MotherRuntimeState.AUTHORIZING
         )
 
+        standing_research_allowed = self.standing_research_consent.allows(
+            intent=intent_result.intent,
+            action=action.value,
+            request=text,
+        )
+        effective_confirmation = bool(user_confirmation or standing_research_allowed)
+
         authority = self.human_approval.check(
             constitution_action,
-            user_confirmation=user_confirmation,
+            user_confirmation=effective_confirmation,
         )
 
         permission = self.permission_gateway.check(
             action,
-            confirmation=user_confirmation,
+            confirmation=effective_confirmation,
         )
 
         # ---------------------------------------------------------
@@ -648,13 +1094,36 @@ class MasterBrain:
             "mother_reasoning"
         )
 
-        reasoning_result = (
-            self.mother_reasoning.analyze_approved_request(
-                user_input=text,
-                intent=intent_result.intent,
-                action=action.value,
-            )
+        reasoning_dispatch = self.dispatch_internal_brain(
+            "reasoning",
+            text,
+            {"intent": intent_result.intent, "action": action.value},
+            authorization_passed=permission.allowed,
+            verification_passed=verification.verified,
         )
+        reasoning_result = (
+            reasoning_dispatch.result.get("_reasoning_result")
+            if reasoning_dispatch.accepted and isinstance(reasoning_dispatch.result, dict)
+            else None
+        )
+
+        if reasoning_result is None:
+            self.runtime_state.fail("Internal Reasoning Brain dispatch failed closed.")
+            result = self._blocked_result(
+                text=text,
+                intent=intent_result.intent,
+                intent_confidence=intent_result.confidence,
+                action=action,
+                action_confidence=action_confidence,
+                risk=risk.value,
+                authority_decision=authority.decision.value,
+                confirmation_required=permission.requires_confirmation,
+                message="Internal Reasoning Brain dispatch failed closed.",
+                verification_status="NOT_EXECUTED",
+                permission_allowed=permission.allowed,
+            )
+            self._record_context(text, result)
+            return result
 
         if not reasoning_result.success:
             self.runtime_state.fail(
@@ -694,10 +1163,40 @@ class MasterBrain:
         self.runtime_state.set_operation(
             "master_planner"
         )
-        plan = self._build_plan(
+        orchestration_dispatch = self.dispatch_internal_brain(
+            "orchestration",
             text,
-            intent_result.intent,
+            {"intent": intent_result.intent},
+            authorization_passed=permission.allowed,
+            verification_passed=verification.verified,
         )
+        plan = (
+            orchestration_dispatch.result.get("_plan_result")
+            if orchestration_dispatch.accepted and isinstance(orchestration_dispatch.result, dict)
+            else None
+        )
+        if plan is None:
+            self.runtime_state.fail("Internal Orchestration Brain dispatch failed closed.")
+            result = self._blocked_result(
+                text=text,
+                intent=intent_result.intent,
+                intent_confidence=intent_result.confidence,
+                action=action,
+                action_confidence=action_confidence,
+                risk=risk.value,
+                authority_decision=authority.decision.value,
+                confirmation_required=permission.requires_confirmation,
+                message="Internal Orchestration Brain dispatch failed closed.",
+                verification_status="NOT_EXECUTED",
+                permission_allowed=permission.allowed,
+            )
+            self._record_context(text, result)
+            return result
+
+        internal_role_trace = {
+            "reasoning": "DISPATCHED",
+            "orchestration": "DISPATCHED",
+        }
 
         # ---------------------------------------------------------
         # MOTHER RESEARCH / LEARNING / OPERATIONAL RUNTIME
@@ -709,27 +1208,128 @@ class MasterBrain:
         operational_result = None
         research_result = None
         learning_result = None
+        tool_result = None
+
+        # ---------------------------------------------------------
+        # PROTECTED TOOL RUNTIME
+        # ---------------------------------------------------------
+        # Once the existing Constitution + Permission + Human Approval
+        # gates have explicitly allowed a protected action, execution is
+        # delegated to Tool Brain. Tool Brain never self-authorizes.
+        if action in {
+            ActionType.WRITE_FILE,
+            ActionType.DELETE_FILE,
+            ActionType.RUN_COMMAND,
+        }:
+            self.runtime_state.set_operation("tool_brain_protected")
+            tool_result = self.tool_brain.execute(
+                text,
+                user_confirmation=user_confirmation,
+            )
+
+            if not tool_result.success:
+                self.runtime_state.fail(
+                    tool_result.error
+                    or tool_result.reason
+                    or "Protected tool execution failed."
+                )
+
+                result = self._blocked_result(
+                    text=text,
+                    intent=intent_result.intent,
+                    intent_confidence=intent_result.confidence,
+                    action=action,
+                    action_confidence=action_confidence,
+                    risk=risk.value,
+                    authority_decision=authority.decision.value,
+                    confirmation_required=tool_result.requires_confirmation,
+                    message=(
+                        tool_result.error
+                        or tool_result.reason
+                        or "Protected tool execution failed."
+                    ),
+                    verification_status="NOT_EXECUTED",
+                    permission_allowed=tool_result.allowed,
+                    plan=plan,
+                )
+                self._record_context(text, result)
+                return result
+
+        # ---------------------------------------------------------
+        # READ-ONLY TOOL RUNTIME
+        # ---------------------------------------------------------
+        # Read-only tool requests are executed through Tool Brain,
+        # rather than being answered by the language model as if the
+        # file had been inspected. Tool Brain remains the authority
+        # boundary for discovery, permission, safe execution, result
+        # verification, and recovery.
+        if (
+            intent_result.intent == "file_operation"
+            and action == ActionType.READ_FILE
+        ):
+            self.runtime_state.set_operation("tool_brain")
+            tool_result = self.tool_brain.execute(
+                text,
+                user_confirmation=user_confirmation,
+            )
+
+            if not tool_result.success:
+                self.runtime_state.fail(
+                    tool_result.error
+                    or tool_result.reason
+                    or "Tool execution failed."
+                )
+
+                result = self._blocked_result(
+                    text=text,
+                    intent=intent_result.intent,
+                    intent_confidence=intent_result.confidence,
+                    action=action,
+                    action_confidence=action_confidence,
+                    risk=risk.value,
+                    authority_decision=authority.decision.value,
+                    confirmation_required=tool_result.requires_confirmation,
+                    message=(
+                        tool_result.error
+                        or tool_result.reason
+                        or "Tool execution failed."
+                    ),
+                    verification_status="NOT_EXECUTED",
+                    permission_allowed=tool_result.allowed,
+                    plan=plan,
+                )
+                self._record_context(text, result)
+                return result
 
         # ---------------------------------------------------------
         # RESEARCH
         # ---------------------------------------------------------
-        if intent_result.intent == "search":
+        elif intent_result.intent == "search":
             self.runtime_state.set_operation(
                 "mother_research"
             )
 
+            research_dispatch = self.dispatch_internal_brain(
+                "research",
+                text,
+                {"confirmation": effective_confirmation},
+                authorization_passed=permission.allowed,
+                verification_passed=verification.verified,
+            )
+            internal_role_trace["research"] = "DISPATCHED" if research_dispatch.accepted else "BLOCKED"
             research_result = (
-                self.mother_research.research(
-                    query=text,
-                    confirmation=user_confirmation,
-                )
+                research_dispatch.result.get("result")
+                if research_dispatch.accepted and isinstance(research_dispatch.result, dict)
+                else None
             )
 
-            if not research_result.success:
-                self.runtime_state.fail(
+            if research_result is None or not research_result.success:
+                research_error = (
                     research_result.error
-                    or "Research execution failed."
-                )
+                    if research_result is not None
+                    else research_dispatch.reason
+                ) or "Research execution failed."
+                self.runtime_state.fail(research_error)
 
                 result = self._blocked_result(
                     text=text,
@@ -742,12 +1342,11 @@ class MasterBrain:
                     confirmation_required=(
                         permission.requires_confirmation
                     ),
-                    message=(
-                        research_result.error
-                        or "Research execution failed."
-                    ),
+                    message=research_error,
                     verification_status=(
                         research_result.verification_status
+                        if research_result is not None
+                        else "NOT_EXECUTED"
                     ),
                     permission_allowed=permission.allowed,
                     plan=plan,
@@ -764,18 +1363,27 @@ class MasterBrain:
                 "mother_learning"
             )
 
+            learning_dispatch = self.dispatch_internal_brain(
+                "learning",
+                text,
+                {"confirmation": effective_confirmation},
+                authorization_passed=permission.allowed,
+                verification_passed=verification.verified,
+            )
+            internal_role_trace["learning"] = "DISPATCHED" if learning_dispatch.accepted else "BLOCKED"
             learning_result = (
-                self.mother_learning.learn(
-                    topic=text,
-                    confirmation=user_confirmation,
-                )
+                learning_dispatch.result.get("result")
+                if learning_dispatch.accepted and isinstance(learning_dispatch.result, dict)
+                else None
             )
 
-            if not learning_result.success:
-                self.runtime_state.fail(
+            if learning_result is None or not learning_result.success:
+                learning_error = (
                     learning_result.error
-                    or "Learning execution failed."
-                )
+                    if learning_result is not None
+                    else learning_dispatch.reason
+                ) or "Learning execution failed."
+                self.runtime_state.fail(learning_error)
 
                 result = self._blocked_result(
                     text=text,
@@ -788,12 +1396,11 @@ class MasterBrain:
                     confirmation_required=(
                         permission.requires_confirmation
                     ),
-                    message=(
-                        learning_result.error
-                        or "Learning execution failed."
-                    ),
+                    message=learning_error,
                     verification_status=(
                         learning_result.verification_status
+                        if learning_result is not None
+                        else "NOT_EXECUTED"
                     ),
                     permission_allowed=permission.allowed,
                     plan=plan,
@@ -816,18 +1423,53 @@ class MasterBrain:
                 "mother_operational"
             )
 
-            operational_result = (
-                self.mother_operational.process_approved_request(
-                    objective=text,
-                    intent=intent_result.intent,
-                    provider=self.mother_operational.default_provider,
+            if intent_result.intent == "code":
+                coding_dispatch = self.dispatch_internal_brain(
+                    "coding",
+                    text,
+                    {},
+                    authorization_passed=permission.allowed,
+                    verification_passed=verification.verified,
                 )
-            )
+                internal_role_trace["coding"] = "DISPATCHED" if coding_dispatch.accepted else "BLOCKED"
+                operational_result = (
+                    coding_dispatch.result.get("_operational_result")
+                    if coding_dispatch.accepted and isinstance(coding_dispatch.result, dict)
+                    else None
+                )
+                if operational_result is None:
+                    self.runtime_state.fail("Internal Coding Brain dispatch failed closed.")
+                    result = self._blocked_result(
+                        text=text,
+                        intent=intent_result.intent,
+                        intent_confidence=intent_result.confidence,
+                        action=action,
+                        action_confidence=action_confidence,
+                        risk=risk.value,
+                        authority_decision=authority.decision.value,
+                        confirmation_required=permission.requires_confirmation,
+                        message="Internal Coding Brain dispatch failed closed.",
+                        verification_status="NOT_EXECUTED",
+                        permission_allowed=permission.allowed,
+                        plan=plan,
+                    )
+                    self._record_context(text, result)
+                    return result
+            else:
+                operational_result = (
+                    self.mother_operational.process_approved_request(
+                        objective=text,
+                        intent=intent_result.intent,
+                        provider=self.mother_operational.default_provider,
+                    )
+                )
 
             if not operational_result.success:
-                self.runtime_state.fail(
+                failure_message = (
                     operational_result.response
+                    or "Mother Brain operational processing failed."
                 )
+                self.runtime_state.fail(failure_message)
 
                 result = self._blocked_result(
                     text=text,
@@ -840,12 +1482,23 @@ class MasterBrain:
                     confirmation_required=(
                         permission.requires_confirmation
                     ),
-                    message=operational_result.response,
+                    message=failure_message,
                     verification_status=(
                         operational_result.verification_status
                     ),
                     permission_allowed=permission.allowed,
                     plan=plan,
+                    metadata={
+                        "failure_stage": "mother_operational",
+                        "mother_decision_context": decision_context.summary(),
+                        "mother_operational_integration": {
+                            "success": operational_result.success,
+                            "verification_status": operational_result.verification_status,
+                            "provider": operational_result.provider,
+                            "memory_ids": operational_result.memory_ids,
+                            "knowledge_ids": operational_result.knowledge_ids,
+                        },
+                    },
                 )
 
                 self._record_context(text, result)
@@ -854,7 +1507,13 @@ class MasterBrain:
         # ---------------------------------------------------------
         # FINAL RESPONSE MESSAGE
         # ---------------------------------------------------------
-        if research_result is not None:
+        if tool_result is not None:
+            tool_payload = tool_result.result
+            if isinstance(tool_payload, dict) and "content" in tool_payload:
+                message = str(tool_payload["content"])
+            else:
+                message = str(tool_payload)
+        elif research_result is not None:
             message = research_result.answer
         elif learning_result is not None:
             message = learning_result.answer
@@ -882,8 +1541,14 @@ class MasterBrain:
             plan_created=True,
             task_count=len(plan.tasks),
             goal_id=plan.goal.goal_id,
-            verification_status=verification.status,
+            # Preserve the operational response's factual-verification boundary.
+            verification_status=(
+                operational_result.verification_status
+                if operational_result is not None
+                else verification.status
+            ),
             metadata={
+                "internal_brain_dispatch": dict(internal_role_trace),
                 "authority": authority.authority.value,
                 "authority_reason": authority.reason,
                 "permission_reason": permission.reason,
@@ -973,6 +1638,28 @@ class MasterBrain:
                         operational_result.knowledge_ids
                         if operational_result is not None
                         else ()
+                    ),
+                },
+                "tool_brain_integration": {
+                    "success": (
+                        tool_result.success
+                        if tool_result is not None
+                        else False
+                    ),
+                    "tool": (
+                        tool_result.tool
+                        if tool_result is not None
+                        else None
+                    ),
+                    "allowed": (
+                        tool_result.allowed
+                        if tool_result is not None
+                        else False
+                    ),
+                    "recovery_status": (
+                        tool_result.recovery_status
+                        if tool_result is not None
+                        else "NOT_USED"
                     ),
                 },
                 "mother_research_integration": {
@@ -1453,6 +2140,7 @@ class MasterBrain:
         verification_status: str = "NOT_EXECUTED",
         permission_allowed: bool = False,
         plan: Any | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> BrainResult:
         # A blocked protected action is not a successful execution.
         # confirmation_required is status metadata, not success.
@@ -1473,6 +2161,7 @@ class MasterBrain:
             task_count=(len(plan.tasks) if plan is not None else 0),
             goal_id=(plan.goal.goal_id if plan is not None else None),
             verification_status=verification_status,
+            metadata=dict(metadata or {}),
         )
 
     def _record_context(
@@ -1497,11 +2186,20 @@ class MasterBrain:
         # A failed/blocked result becomes a learning signal; it never
         # grants permission or triggers an automatic protected update.
         try:
+            learning_outcome = result.message or ""
+            if learning_outcome.startswith(
+                "MOCK MODEL RESPONSE: Received request:"
+            ):
+                learning_outcome = (
+                    "[MOCK_RESPONSE_ECHO_SUPPRESSED]"
+                )
+            learning_outcome = learning_outcome[:16384]
+
             self.continuous_learning.record_experience(
                 task=text or "empty request",
                 context=f"intent={result.intent}; risk={result.risk}",
                 action_taken=result.action,
-                outcome=result.message,
+                outcome=learning_outcome,
                 lesson=(
                     "Successful verified interaction."
                     if result.success

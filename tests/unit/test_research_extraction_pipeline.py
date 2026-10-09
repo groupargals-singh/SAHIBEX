@@ -161,7 +161,8 @@ def main() -> None:
             )
 
             assert evidence.supports is True
-            assert evidence.strength == 0.95
+            assert evidence.strength == evidence.metadata["evidence_strength"]["strength_score"]
+            assert 0.0 <= evidence.strength <= 1.0
 
             # -------------------------------------------------
             # Knowledge creation

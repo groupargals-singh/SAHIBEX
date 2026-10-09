@@ -46,6 +46,16 @@ def main() -> None:
     assert verified.retryable is False
     assert verified.result == "Verified response."
 
+    # Generated model text may pass structural checks, but must not be
+    # falsely reported as factually verified.
+    generated = integration.verify_reasoning(
+        build_reasoning(verification_status="GENERATED")
+    )
+    assert generated.success is True
+    assert generated.verified is False
+    assert generated.verification_status == "STRUCTURALLY_VALID"
+    assert generated.result == "Verified response."
+
     # Failed reasoning must never become successful.
     failed_reasoning = integration.verify_reasoning(
         build_reasoning(success=False)

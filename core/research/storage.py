@@ -44,8 +44,12 @@ class ResearchStorage:
                 exist_ok=True,
             )
 
+        # Multiple SAHIBEX entry points can start close together on Android.
+        # Wait for a concurrent SQLite writer instead of failing immediately
+        # during schema/FTS initialization; SQLite still serializes writes.
         self._connection = sqlite3.connect(
             str(self.database_path),
+            timeout=30.0,
         )
 
         self._connection.row_factory = sqlite3.Row
@@ -221,6 +225,63 @@ class ResearchStorage:
             ON planning_tasks(parent_task_id);
             """
         )
+
+        self._connection.commit()
+        self._initialize_search_indexes()
+
+    def _initialize_search_indexes(self) -> None:
+        """Create and synchronize FTS5 indexes for persistent retrieval."""
+        self._connection.executescript(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS memory_search
+            USING fts5(memory_id UNINDEXED, searchable_text);
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_search
+            USING fts5(knowledge_id UNINDEXED, searchable_text);
+            """
+        )
+
+        memory_count = self._connection.execute(
+            "SELECT COUNT(*) AS count FROM memories"
+        ).fetchone()["count"]
+        memory_index_count = self._connection.execute(
+            "SELECT COUNT(*) AS count FROM memory_search"
+        ).fetchone()["count"]
+
+        if memory_count != memory_index_count:
+            self._connection.execute("DELETE FROM memory_search")
+            self._connection.execute(
+                """
+                INSERT INTO memory_search(memory_id, searchable_text)
+                SELECT
+                    memory_id,
+                    COALESCE(json_extract(data, '$.content'), '') || ' ' ||
+                    COALESCE(memory_type, '') || ' ' ||
+                    COALESCE(source, '') || ' ' ||
+                    COALESCE(json_extract(data, '$.tags'), '') || ' ' ||
+                    COALESCE(json_extract(data, '$.metadata'), '')
+                FROM memories
+                """
+            )
+
+        knowledge_count = self._connection.execute(
+            "SELECT COUNT(*) AS count FROM knowledge_candidates"
+        ).fetchone()["count"]
+        knowledge_index_count = self._connection.execute(
+            "SELECT COUNT(*) AS count FROM knowledge_search"
+        ).fetchone()["count"]
+
+        if knowledge_count != knowledge_index_count:
+            self._connection.execute("DELETE FROM knowledge_search")
+            self._connection.execute(
+                """
+                INSERT INTO knowledge_search(knowledge_id, searchable_text)
+                SELECT
+                    knowledge_id,
+                    COALESCE(json_extract(data, '$.statement'), '')
+                FROM knowledge_candidates
+                """
+            )
 
         self._connection.commit()
 
@@ -559,6 +620,25 @@ class ResearchStorage:
 
         self._connection.commit()
 
+        self._connection.execute(
+            "DELETE FROM knowledge_search WHERE knowledge_id = ?",
+            (knowledge.knowledge_id,),
+        )
+        self._connection.execute(
+            """
+            INSERT INTO knowledge_search(
+                knowledge_id,
+                searchable_text
+            )
+            VALUES (?, ?)
+            """,
+            (
+                knowledge.knowledge_id,
+                knowledge.statement,
+            ),
+        )
+        self._connection.commit()
+
     def get_knowledge(
         self,
         knowledge_id: str,
@@ -621,6 +701,7 @@ class ResearchStorage:
         *,
         verified_only: bool = False,
         min_confidence: float = 0.0,
+        limit: Optional[int] = None,
     ) -> list[KnowledgeCandidate]:
         """
         Retrieve persisted knowledge whose statements contain
@@ -658,13 +739,67 @@ class ResearchStorage:
                 "min_confidence must be between 0 and 1"
             )
 
-        knowledge_items = self.list_knowledge(
-            verified_only=verified_only
-        )
+        if limit is not None:
+            if not isinstance(limit, int):
+                raise TypeError("limit must be an integer")
+            if limit <= 0:
+                raise ValueError("limit must be positive")
+
+        # Use the dedicated FTS5 index so retrieval does not scan or
+        # deserialize the full persistent knowledge database.
+        fts_terms = [
+            token.replace('"', '""')
+            for token in normalized_query.split()
+            if token.strip()
+        ]
+        fts_query = " OR ".join(
+            f'"{token}"'
+            for token in fts_terms
+        ) or f'"{normalized_query.replace(chr(34), chr(34) * 2)}"'
+
+        limit_sql = ""
+        limit_params: tuple[object, ...] = ()
+        if limit is not None:
+            limit_sql = " LIMIT ?"
+            limit_params = (limit,)
+
+        if verified_only:
+            rows = self._connection.execute(
+                f"""
+                SELECT knowledge_candidates.data
+                FROM knowledge_candidates
+                JOIN knowledge_search
+                  ON knowledge_search.knowledge_id =
+                     knowledge_candidates.knowledge_id
+                WHERE knowledge_candidates.verified = 1
+                  AND knowledge_search MATCH ?
+                ORDER BY knowledge_candidates.confidence DESC
+                {limit_sql}
+                """,
+                (fts_query, *limit_params),
+            ).fetchall()
+        else:
+            rows = self._connection.execute(
+                f"""
+                SELECT knowledge_candidates.data
+                FROM knowledge_candidates
+                JOIN knowledge_search
+                  ON knowledge_search.knowledge_id =
+                     knowledge_candidates.knowledge_id
+                WHERE knowledge_search MATCH ?
+                ORDER BY knowledge_candidates.confidence DESC
+                {limit_sql}
+                """,
+                (fts_query, *limit_params),
+            ).fetchall()
 
         matches: list[KnowledgeCandidate] = []
 
-        for knowledge in knowledge_items:
+        for row in rows:
+            knowledge = KnowledgeCandidate(
+                **self._deserialize(row["data"])
+            )
+
             if knowledge.confidence < min_confidence:
                 continue
 
@@ -1660,6 +1795,34 @@ class ResearchStorage:
 
         self._connection.commit()
 
+        self._connection.execute(
+            "DELETE FROM memory_search WHERE memory_id = ?",
+            (memory.memory_id,),
+        )
+        searchable_text = " ".join(
+            [
+                memory.content,
+                memory.memory_type,
+                memory.source,
+                " ".join(memory.tags),
+                self._serialize(memory.metadata),
+            ]
+        )
+        self._connection.execute(
+            """
+            INSERT INTO memory_search(
+                memory_id,
+                searchable_text
+            )
+            VALUES (?, ?)
+            """,
+            (
+                memory.memory_id,
+                searchable_text,
+            ),
+        )
+        self._connection.commit()
+
     def get_memory(
         self,
         memory_id: str,
@@ -1763,6 +1926,7 @@ class ResearchStorage:
         memory_type: Optional[str] = None,
         min_confidence: Optional[float] = None,
         min_importance: Optional[float] = None,
+        limit: Optional[int] = None,
     ) -> list[MemoryCandidate]:
         """
         Retrieve memories using case-insensitive relevance matching.
@@ -1815,21 +1979,70 @@ class ResearchStorage:
                     "min_importance must be between 0 and 1"
                 )
 
-        rows = self._connection.execute(
-            """
-            SELECT
-                memory_id,
-                memory_type,
-                source,
-                importance,
-                confidence,
-                data
-            FROM memories
-            ORDER BY memory_id ASC
-            """
-        ).fetchall()
+        if limit is not None:
+            if not isinstance(limit, int):
+                raise TypeError("limit must be an integer")
+            if limit <= 0:
+                raise ValueError("limit must be positive")
 
         query_lower = query.casefold()
+        query_tokens = {
+            token.strip(".,!?;:()[]{}'\"")
+            for token in query_lower.split()
+            if len(token.strip(".,!?;:()[]{}'\"")) >= 4
+        }
+
+        # Use the dedicated FTS5 index so retrieval does not scan or
+        # deserialize every persistent memory on each request.
+        fts_terms = [
+            token.replace('"', '""')
+            for token in (query_tokens or {query_lower})
+            if token.strip()
+        ]
+        fts_query = " OR ".join(
+            f'"{token}"'
+            for token in fts_terms
+        ) or f'"{query_lower.replace(chr(34), chr(34) * 2)}"'
+
+        clauses = ["memory_search MATCH ?"]
+        params = [fts_query]
+
+        if memory_type is not None:
+            clauses.append("memories.memory_type = ?")
+            params.append(memory_type)
+
+        if min_confidence is not None:
+            clauses.append("memories.confidence >= ?")
+            params.append(float(min_confidence))
+
+        if min_importance is not None:
+            clauses.append("memories.importance >= ?")
+            params.append(float(min_importance))
+
+        limit_sql = ""
+        if limit is not None:
+            limit_sql = " LIMIT ?"
+            params.append(limit)
+
+        rows = self._connection.execute(
+            f"""
+            SELECT
+                memories.memory_id,
+                memories.memory_type,
+                memories.source,
+                memories.importance,
+                memories.confidence,
+                memories.data
+            FROM memories
+            JOIN memory_search
+              ON memory_search.memory_id = memories.memory_id
+            WHERE {" AND ".join(clauses)}
+            ORDER BY bm25(memory_search), memories.memory_id ASC
+            {limit_sql}
+            """,
+            tuple(params),
+        ).fetchall()
+
         results = []
 
         for row in rows:
@@ -1861,7 +2074,23 @@ class ResearchStorage:
                 str(part) for part in searchable_parts
             ).casefold()
 
-            if query_lower not in searchable_text:
+            token_matches = {
+                token
+                for token in query_tokens
+                if token in searchable_text
+            }
+
+            # Exact phrase matching remains strongest. For natural
+            # conversational questions, allow deterministic token-overlap
+            # retrieval so "what is my project name?" can recall a memory
+            # containing "my preferred project name is ...".
+            if (
+                query_lower not in searchable_text
+                and len(token_matches) < 2
+                and not any(
+                    len(token) >= 7 for token in token_matches
+                )
+            ):
                 continue
 
             relevance = 0
@@ -1878,6 +2107,8 @@ class ResearchStorage:
             for tag in memory.tags:
                 if query_lower in str(tag).casefold():
                     relevance += 30
+
+            relevance += 8 * len(token_matches)
 
             if query_lower in self._serialize(
                 memory.metadata

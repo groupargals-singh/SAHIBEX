@@ -341,6 +341,10 @@ def test_master_brain_research_flow():
         assert result.action == "research"
         assert result.plan_created is True
         assert result.task_count == 3
+        dispatch_trace = result.metadata["internal_brain_dispatch"]
+        assert dispatch_trace["reasoning"] == "DISPATCHED"
+        assert dispatch_trace["orchestration"] == "DISPATCHED"
+        assert dispatch_trace["research"] == "DISPATCHED"
 
         metadata = result.metadata[
             "mother_research_integration"
@@ -352,9 +356,11 @@ def test_master_brain_research_flow():
             "completed"
         )
 
+        # The fixture's quality-aware answer is not independently supported;
+        # stored-knowledge verification alone must not upgrade it.
         assert metadata[
             "verification_status"
-        ] == "VERIFIED"
+        ] == "NOT_VERIFIED"
 
         assert result.message
 

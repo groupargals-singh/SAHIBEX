@@ -58,11 +58,14 @@ def test_main_execution_loop_cognitive_request() -> None:
         "Explain how SAHIBEX works."
     )
 
-    assert result.success is True
-    assert result.status == "COMPLETED"
+    # With the mock provider, the echo is rejected and the loop must fail
+    # closed instead of reporting a fake successful cognitive response.
+    assert result.success is False
+    assert result.status == "BLOCKED"
     assert result.tool is None
     assert result.brain.plan_created is True
-    assert result.observation_count == 1
+    assert result.brain.verification_status == "QUALITY_REJECTED"
+    assert result.metadata["execution_skipped"] is True
     assert result.response
 
 

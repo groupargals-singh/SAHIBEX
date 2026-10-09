@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
+
+from security.audit.child_self_improvement_audit_store import (
+    ChildSelfImprovementAuditStore,
+)
 
 
 class FinalCommitDecision(str, Enum):
@@ -26,6 +30,7 @@ class FinalCommitGateState:
     authority_boundary_intact: bool
     audit_complete: bool
     provenance_complete: bool
+    human_approved: bool = False
 
 
 @dataclass(frozen=True)
@@ -53,7 +58,7 @@ class ChildSelfImprovementFinalCommitGate:
     - activates a Child
     """
 
-    VERSION = "1.0"
+    VERSION = "1.1"
 
     REQUIRED_GATES = (
         "proposal_valid",
@@ -65,6 +70,7 @@ class ChildSelfImprovementFinalCommitGate:
         "verification_passed",
         "governance_passed",
         "mother_approved",
+        "human_approved",
         "post_verification_passed",
         "soul_unchanged",
         "constitution_unchanged",
@@ -72,6 +78,104 @@ class ChildSelfImprovementFinalCommitGate:
         "audit_complete",
         "provenance_complete",
     )
+
+    def __init__(
+        self,
+        *,
+        audit_store: ChildSelfImprovementAuditStore | None = None,
+    ) -> None:
+        if audit_store is not None and not isinstance(
+            audit_store, ChildSelfImprovementAuditStore
+        ):
+            raise TypeError("audit_store must be ChildSelfImprovementAuditStore or None")
+        self.audit_store = audit_store
+
+    def evaluate_persisted(
+        self,
+        state: FinalCommitGateState,
+        *,
+        audit_id: str,
+        expected_child_brain_id: str,
+        expected_proposal_id: str,
+        expected_version_before: str,
+        expected_version_after: str,
+    ) -> FinalCommitResult:
+        """Require a chain-valid audit bound to this exact child/proposal/version."""
+        expected_binding = {
+            "child_brain_id": expected_child_brain_id,
+            "proposal_id": expected_proposal_id,
+            "version_before": expected_version_before,
+            "version_after": expected_version_after,
+        }
+        if any(
+            not isinstance(value, str) or not value.strip()
+            for value in expected_binding.values()
+        ):
+            return FinalCommitResult(
+                decision=FinalCommitDecision.BLOCK,
+                reason="complete audit context binding is required",
+                failed_gates=("audit_context_binding",),
+                requires_mother=True,
+                requires_human=True,
+            )
+        if self.audit_store is None:
+            return FinalCommitResult(
+                decision=FinalCommitDecision.BLOCK,
+                reason="persistent audit store is not configured",
+                failed_gates=("audit_record_persisted", "audit_chain_valid"),
+                requires_mother=True,
+                requires_human=True,
+            )
+        if not self.audit_store.verify_chain():
+            return FinalCommitResult(
+                decision=FinalCommitDecision.BLOCK,
+                reason="persistent audit hash chain is invalid",
+                failed_gates=("audit_chain_valid",),
+                requires_mother=True,
+                requires_human=True,
+            )
+        event = self.audit_store.get_event(audit_id)
+        if event is None:
+            return FinalCommitResult(
+                decision=FinalCommitDecision.BLOCK,
+                reason="required persistent audit record is missing",
+                failed_gates=("audit_record_persisted",),
+                requires_mother=True,
+                requires_human=True,
+            )
+        payload = event.get("payload", {})
+        if any(
+            payload.get(key) != value
+            for key, value in expected_binding.items()
+        ):
+            return FinalCommitResult(
+                decision=FinalCommitDecision.BLOCK,
+                reason="persistent audit record does not match requested commit context",
+                failed_gates=("audit_context_binding",),
+                requires_mother=True,
+                requires_human=True,
+            )
+        if (
+            payload.get("decision") != "accept"
+            or payload.get("audit_complete") is not True
+            or payload.get("provenance_complete") is not True
+        ):
+            return FinalCommitResult(
+                decision=FinalCommitDecision.BLOCK,
+                reason="persistent audit decision/provenance is not accepted",
+                failed_gates=("audit_complete", "provenance_complete"),
+                requires_mother=True,
+                requires_human=True,
+            )
+        return self.evaluate(
+            replace(
+                state,
+                audit_complete=state.audit_complete and payload["audit_complete"],
+                provenance_complete=(
+                    state.provenance_complete and payload["provenance_complete"]
+                ),
+            )
+        )
 
     def evaluate(
         self,
@@ -193,6 +297,7 @@ if __name__ == "__main__":
         verification_passed=True,
         governance_passed=True,
         mother_approved=True,
+        human_approved=True,
         post_verification_passed=True,
         soul_unchanged=True,
         constitution_unchanged=True,

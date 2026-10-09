@@ -62,8 +62,10 @@ class HighConfidenceTestExtractor:
 def main() -> None:
     research = MotherResearchIntegration()
 
+    # Explicit replacement keeps provider override intentional and test-local.
     research.acquisition_pipeline.acquisition_engine.register_provider(
-        FakeResearchProvider()
+        FakeResearchProvider(),
+        replace=True,
     )
 
     research.extraction_pipeline.extractor = (

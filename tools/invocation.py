@@ -137,9 +137,76 @@ class ToolInvoker:
             )
 
         execution_kwargs = dict(kwargs)
-        # Only protected tools receive the private marker after the
-        # PermissionGateway returns allowed=True.
+
+        # Natural-language tool requests still need deterministic
+        # argument binding before reaching the handler.  Keep this
+        # parser deliberately narrow and limited to the registered
+        # read-only filesystem tools; protected tools never receive
+        # inferred authority or execution parameters here.
+        if candidate.read_only:
+            normalized_query = discovery_query.strip()
+            query_parts = normalized_query.split(maxsplit=1)
+            argument_text = query_parts[1].strip() if len(query_parts) == 2 else ""
+            if candidate.name == "read_file" and "path" not in execution_kwargs:
+                for prefix in ("file ", "file:"):
+                    if argument_text.lower().startswith(prefix):
+                        argument_text = argument_text[len(prefix):].strip()
+                        break
+                if argument_text:
+                    execution_kwargs["path"] = argument_text
+            elif candidate.name == "file_info" and "path" not in execution_kwargs:
+                for prefix in ("information ", "info ", "for "):
+                    if argument_text.lower().startswith(prefix):
+                        argument_text = argument_text[len(prefix):].strip()
+                        break
+                if argument_text:
+                    execution_kwargs["path"] = argument_text
+            elif candidate.name == "list_directory" and "path" not in execution_kwargs:
+                for prefix in ("directory ", "directory:", "files "):
+                    if argument_text.lower().startswith(prefix):
+                        argument_text = argument_text[len(prefix):].strip()
+                        break
+                if argument_text:
+                    execution_kwargs["path"] = argument_text
+            elif candidate.name == "search_local_files" and "query" not in execution_kwargs:
+                for prefix in ("text ", "files ", "for "):
+                    if argument_text.lower().startswith(prefix):
+                        argument_text = argument_text[len(prefix):].strip()
+                        break
+                if argument_text:
+                    execution_kwargs["query"] = argument_text
+
+        # Deterministic argument binding for protected project tools.
+        # The parser only extracts explicit natural-language arguments; it
+        # never creates or upgrades permission.
         if not candidate.read_only:
+            normalized = discovery_query.strip()
+            parts = normalized.split(maxsplit=2)
+            remainder = parts[2].strip() if len(parts) == 3 else ""
+
+            if candidate.name == "delete_file" and "path" not in execution_kwargs:
+                execution_kwargs["path"] = remainder
+
+            elif candidate.name == "write_file":
+                if "path" not in execution_kwargs or "content" not in execution_kwargs:
+                    if " with " in remainder.lower():
+                        path_text, content_text = remainder.split(
+                            " with ", 1
+                        )
+                    elif " content " in remainder.lower():
+                        path_text, content_text = remainder.split(
+                            " content ", 1
+                        )
+                    else:
+                        path_text, content_text = remainder, ""
+                    if "path" not in execution_kwargs:
+                        execution_kwargs["path"] = path_text.strip()
+                    if "content" not in execution_kwargs:
+                        execution_kwargs["content"] = content_text
+
+            elif candidate.name == "run_command" and "command" not in execution_kwargs:
+                execution_kwargs["command"] = remainder
+
             execution_kwargs["_permission_granted"] = True
             execution_kwargs["_confirmation_provided"] = user_confirmation
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from uuid import uuid4
 
 from core.agent_decomposition import DecomposedGoal
@@ -179,8 +179,12 @@ class DynamicPlanningEngine:
         if not isinstance(trigger, str):
             raise TypeError("trigger must be str.")
         if trigger not in REPLAN_TRIGGERS:
-            raise ValueError(
-                "unsupported replan trigger: " + trigger
+            return ReplanningResult(
+                success=False,
+                previous_plan_id=plan.plan_id,
+                plan=None,
+                changed=False,
+                reason="Unsupported replan trigger: " + trigger,
             )
 
         if not isinstance(reason, str):
@@ -203,11 +207,34 @@ class DynamicPlanningEngine:
                 ),
             )
 
+        # Completed dependencies are satisfied. Remove them from the
+        # remaining plan instead of treating them as missing dependencies.
         remaining_goals = tuple(
-            goal for goal in plan.goals
+            replace(
+                goal,
+                dependencies=tuple(
+                    dependency
+                    for dependency in goal.dependencies
+                    if dependency not in completed
+                ),
+            )
+            for goal in plan.goals
             if goal.goal_id not in completed
         )
-        replacement_ids = {goal.goal_id for goal in replacement_goals}
+        normalized_replacements = tuple(
+            replace(
+                goal,
+                dependencies=tuple(
+                    dependency
+                    for dependency in goal.dependencies
+                    if dependency not in completed
+                ),
+            )
+            for goal in replacement_goals
+        )
+        replacement_ids = {
+            goal.goal_id for goal in normalized_replacements
+        }
         if len(replacement_ids) != len(replacement_goals):
             return ReplanningResult(
                 success=False,
@@ -217,7 +244,7 @@ class DynamicPlanningEngine:
                 reason="Replacement goals contain duplicate IDs.",
             )
 
-        combined_goals = remaining_goals + replacement_goals
+        combined_goals = remaining_goals + normalized_replacements
         combined_ids = {goal.goal_id for goal in combined_goals}
         unknown_dependencies = sorted(
             {
@@ -244,7 +271,7 @@ class DynamicPlanningEngine:
                 success=True,
                 previous_plan_id=plan.plan_id,
                 plan=None,
-                changed=bool(completed),
+                changed=False,
                 reason="All plan goals are completed.",
             )
 

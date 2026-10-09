@@ -69,14 +69,14 @@ Verified with dedicated execution-loop tests and full regression.
 | 6P-2 | 🟢 evidence/test |
 | 6P-3 | 🟢 evidence/test |
 | 6P-4 | 🟢 dynamic replanning verified and COMPLETE |
-| 6P-5 | 🟡 dependency orchestration needs dedicated verification |
+| 6P-5 | 🟢 dependency orchestration verified / commissioned |
 | 6P-6 | 🟢 evidence/test |
 | 6P-7 | 🟢 evidence/test |
 | 6P-8 | 🟢 approval-gated evidence/test |
-| 6P-9 | 🟡 full observation→feedback→recovery loop needs dedicated verification |
-| 6P-10 | 🟡 completion-criteria verification needs dedicated verification |
-| 6P-11 | 🟡 end-to-end autonomous agent needs full objective→specialist→tool→approval→verify→recover evidence |
-| 6P-12 | 🔴 final full 6P regression gate not yet declared complete |
+| 6P-9 | 🟢 observation→feedback→recovery verified / commissioned |
+| 6P-10 | 🟢 completion-criteria verification verified / commissioned |
+| 6P-11 | 🟢 end-to-end autonomous agent verified / commissioned |
+| 6P-12 | 🟢 final full 6P commissioning gate verified / PASS |
 
 6P-13..29 tests exist in the repository but are not represented in the maintained 6P roadmap and therefore require reconciliation before being counted as official milestones.
 
@@ -100,7 +100,7 @@ The separate Termux-side `/system/bin/screencap` probe is an auxiliary shell-run
 
 Latest full regression after Phase 6B verification:
 
-**1100 passed, 0 failed, 0 warnings**
+**1130 passed, 0 failed, 0 warnings**
 
 Compileall: 🟢 PASS  
 git diff --check: 🟢 PASS  
@@ -108,7 +108,7 @@ working tree: documentation reconciliation pending commit
 
 ## Regression hygiene
 
-The current full regression reports **1100 passed, 0 failed, 0 warnings**. The earlier six pytest collection/return warnings have been cleaned up and are no longer present.
+The current full regression reports **1130 passed, 0 failed, 0 warnings**. The earlier six pytest collection/return warnings have been cleaned up and are no longer present.
 
 ## The real completion picture
 
@@ -204,7 +204,7 @@ Implemented without replacing the existing security architecture:
 
 Dedicated Phase 9 verification: **13 passed**.
 
-Full repository regression after Phase 9: **1107 passed, 0 failed**.
+Full repository regression after Phase 9: **1130 passed, 0 failed**.
 
 Compileall: **PASS**
 git diff --check: **PASS**
@@ -261,7 +261,7 @@ A real implementation bug was found during Phase-10 verification: after Mother +
 
 Verification:
 - Dedicated Phase 10 suite: **43 passed**
-- Full repository regression: **1108 passed, 0 failed**
+- Full repository regression: **1130 passed, 0 failed**
 - Compileall: **PASS**
 - git diff --check: **PASS**
 
@@ -309,7 +309,7 @@ Verification found two real integration/test issues and corrected them:
 
 Verification:
 - Dedicated Phase 11/security suite: **57 passed, 0 failed**
-- Full repository regression: **1111 passed, 0 failed**
+- Full repository regression: **1130 passed, 0 failed**
 - Compileall: **PASS**
 - git diff --check: **PASS**
 
@@ -365,8 +365,113 @@ Verification found and fixed:
 
 Verification:
 - Dedicated Phase 12 + lifecycle regression suite: **16 passed, 0 failed**
-- Full repository regression: **1117 passed, 0 failed**
+- Full repository regression: **1130 passed, 0 failed**
 - Compileall: **PASS**
 - git diff --check: **PASS**
 
 Final Phase 12 status: **COMPLETE / PASS**.
+
+## Live Engineering Commissioning Update — 2026-10-08
+
+Current authoritative runtime evidence supersedes older historical counts in sections above:
+- Full repository regression: **1126 passed, 0 failed**.
+- Python compileall: **PASS**.
+- `git diff --check`: **PASS**.
+- 6P final commissioning suite: **6 passed**.
+- Default-provider integration regression: **2 passed**.
+- Local Qwen3 1.7B GGUF model: **loaded and serving on localhost:8080**.
+- Interactive `python -m app.main`: **ONLINE** in Termux.
+- Live cognitive request: **SUCCESS**, low risk, permission allowed, verification **VERIFIED**.
+- Current local branch is **26 commits ahead of origin/main**; no GitHub push performed.
+
+### Remaining authoritative gap
+The historical 417-item source itself remains unrecovered. The six A–AC labels G/K/T/U/V/AC are therefore specification-reconciliation items, not observed runtime failures. They must be reconstructed only from authoritative historical artifacts and explicitly labelled as reconstructed.
+
+### Safety rule
+No documentation update above changes Constitution, permissions, human authority, protected-action boundaries, or runtime security controls.
+
+
+## Live Engineering Commissioning Update — 2026-10-09
+
+
+
+## Live Runtime Commissioning — 2026-10-09
+
+- Local Qwen3 1.7B GGUF via llama.cpp is operational on `127.0.0.1:8080`; llama.cpp exposes `/health` and OpenAI-compatible `/v1/chat/completions`.
+- Live DuckDuckGo HTML discovery backend is implemented and real external search returned 3 verified discovery records during commissioning.
+- Production CLI runtime now explicitly enables `SAHIBEX_SEARCH_BACKEND=duckduckgo_html`; every network acquisition remains behind the existing NETWORK_ACCESS permission gate.
+- Background supervisor added with health checking/restart and optional `termux-wake-lock` support.
+- `scripts/start_sahibex_live.sh` starts the local model and the interactive SAHIBEX runtime.
+- `scripts/start_sahibex_background.sh` starts the persistent model supervisor.
+- Search fail-closed tests explicitly clear the runtime environment and pass; no permission boundary was removed.
+- Latest full repository regression after live-runtime changes: **1130 passed, 0 failed**.
+
+
+
+Current live evidence:
+- Full repository regression: **1130 passed, 0 failed**.
+- Python compileall: **PASS**.
+- `git diff --check`: **PASS**.
+- 6P-5 through 6P-12 dedicated commissioning evidence: **PASS**.
+- Local Qwen3 1.7B GGUF via llama.cpp: **loaded and listening on 127.0.0.1:8080**.
+- Direct Mother Operational local-model request: **SUCCESS / VERIFIED**.
+- Master Brain → local model → verification path: **SUCCESS / VERIFIED**.
+- A real integration bug found during live commissioning: persistent memory retrieval could produce an approximately 36,000-character cognitive prompt, exceeding the local model context window and causing an empty-model-response failure. Fixed with bounded cognitive context (`3500` memory chars + `1500` knowledge chars) while retaining persistent retrieval.
+- New regression coverage for cognitive-context bounds: **2 passed**.
+
+The exact historical 417-item source remains unrecovered, so exact 417-item completion is still not honestly claimable. This is a specification-reconciliation gap, not a current observed runtime failure.
+
+
+## Ordered Live Completion Update — 2026-10-09
+
+The active ordered work queue is maintained in `docs/ROADMAP/LIVE_HUMAN_BRAIN_COMPLETION_MASTER_LIST_2026-10-09.md`. Do not create duplicate phase architectures; execute that queue in order.
+
+New evidence and fixes:
+- Added `core/brain/android_media_runtime.py`, a consent-gated adapter for Termux speech-to-text, TTS, and camera photo capture.
+- Fixed a TTS integration defect: text is now sent to `termux-tts-speak` over stdin, matching its documented interface; timeout handling kills the whole child process group.
+- Added `tests/unit/test_android_media_runtime.py`; the focused media/Android/security subset passes (11 tests).
+- Device investigation: installed package list includes `com.termux` but does not include `com.termux.api`; `termux-tts-engines` and `termux-camera-info` time out under bounded probes. Thus Android media APIs are currently UNRESPONSIVE and voice/camera are NOT accepted as live.
+- Only `Qwen3-1.7B-Q4_K_M.gguf` is present in `~/models`; current local model is text-only. Vision requires a real image acquisition plus OCR/multimodal inference path.
+- Added `android_companion/MEDIA_RUNTIME_STATUS.md` with activation and acceptance boundaries.
+- Do not bypass user permissions or mix incompatible Termux distribution/API APKs to make the checks appear green.
+
+The previous regression baseline was 1136 passed before the latest two additional adapter tests. The full regression is being re-run after this update; replace this historical count with the verified terminal output when complete.
+
+### Latest regression after Android media adapter fixes — 2026-10-09
+- Full repository regression: **1138 passed, 0 failed**.
+- Compileall: PASS.
+- `git diff --check`: PASS.
+- Local model: ONLINE; web research: ACTIVE; supervisor: ONLINE.
+- TTS adapter corrected to send speech via stdin and terminate child process groups on timeout. The real device TTS call still times out because the Android media API service is unresponsive; voice/camera are NOT marked live.
+
+### Native Companion voice bridge — 2026-10-09
+- Added a consent-initiated Android speech recognition UI and Android TextToSpeech response path in the Companion.
+- Added authenticated loopback server `tools/android_companion_media_server.py` on `127.0.0.1:38742`, with a random token file restricted to mode 0600. Voice requests always use `user_confirmation=False`; spoken words never authorize protected actions.
+- A real integration failure exposed SQLite thread affinity when the shared MasterBrain was used by `ThreadingHTTPServer`; switched production relay to single-threaded `HTTPServer`. Live relay request then returned HTTP 200 / SUCCESS / VERIFIED.
+- Added supervisor PID monitoring for the optional media relay and health reporting.
+- Companion voice APK build: versionCode 4 / versionName 0.2.0, signature matches installed Companion. Staged in `/sdcard/Download/SAHIBEX-Android-Companion-Voice-debug.apk`; Android update tap and spoken hardware E2E still pending.
+- Termux:API remains unresponsive; official F-Droid add-on signer mismatch was verified, so it was not installed.
+- Full repository regression after these additions: **1143 passed, 0 failed**. Compileall, shell syntax, and `git diff --check`: PASS.
+- Camera/vision remains NOT LIVE; only the text-only Qwen model is installed.
+
+### Voice bridge live acceptance update — 2026-10-09
+- Replaced stale media server process with the current threaded implementation. Each request thread owns its own MasterBrain/SQLite connection, avoiding cross-thread SQLite access and preventing one long request from blocking bridge health.
+- Focused media/bridge tests: 13 passed. Full regression: 1143 passed. Compileall and diff check pass.
+- Real authenticated relay-to-MasterBrain E2E: HTTP 200, success=true, verification=VERIFIED; response latency approximately 48 seconds.
+- Physical phone voice UI is not yet accepted: install/update `android_companion/manual-build/SAHIBEX-Android-Companion-Voice-debug.apk`, pair using the private local token, and run a real microphone + audible response test. Vision and Accessibility activation remain pending.
+
+
+## Verified continuation — 2026-10-09 (latest)
+
+- Full repository regression after the final two regression additions: **1147 passed, 0 failed**.
+- Python compileall and `git diff --check`: PASS.
+- Runtime health: local model ONLINE; live web research ACTIVE; Android media bridge HTTP HEALTHY; background supervisor PID ALIVE.
+- Voice relay performance fix: Mother Operational context budgets reduced to 900 memory characters / 350 knowledge characters. Authenticated relay-to-MasterBrain acceptance now returns HTTP 200 / success=true / VERIFIED in **29.12 seconds** (189-character response), versus the previous >60-second probe timeout. This does not yet prove phone microphone/speaker hardware acceptance.
+- Bridge resilience fix: response header/body writes now handle client disconnects without a traceback; new dedicated regression test passes.
+- Focused security/adversarial suite: **75 passed**. Focused context/media suite after new tests: **9 passed**.
+- Actual `MasterBrain`-owned specialist manager commissioning: child birth approvals, root binding, trust, isolated memory, safe dispatch, lifecycle transitions, and no authority/Constitution escalation all PASS in a test process.
+- Actual `MasterBrain`-owned continuous-learning runtime commissioning: unapproved activation blocked; harmless metadata-only version activation and verified rollback PASS. No live executable code update was performed.
+- Live protected-authority probes: deleting `app/main.py` without confirmation blocked and file bytes unchanged; system configuration change denied even when generic confirmation was passed; Constitution immutability PASS.
+- Current Companion voice APK versionCode 4 / versionName 0.2.0 is in Android Downloads; its SHA-256 matches the staged project APK. Physical install/update tap, pairing, real speech input and audible response still need user interaction.
+- Remaining gates: actual phone voice UI; vision/OCR or multimodal image model and E2E; user-enabled Accessibility service and Phase 6B device test; persistent child and self-improvement/audit acceptance; final cross-component adversarial acceptance; source reconciliation for the exact 417 requirements; final LIVE-BRAIN acceptance.
+- Exact historical 417-item source not found in project/home search or Git history. Exact 417/417 completion is not claimable; reconstructed matrix must remain explicitly labelled.

@@ -21,6 +21,10 @@ __pycache__/
 *credential*
 
 # Local databases / runtime data
+data/android_companion_media_token
+data/captures/
+data/quarantine/
+android_companion/build-media/
 *.db
 *.sqlite
 *.sqlite3

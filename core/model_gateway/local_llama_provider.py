@@ -37,7 +37,9 @@ class LocalLlamaProvider(ModelProvider):
             "model": request.model or self.model,
             "messages": messages,
             "temperature": request.temperature,
-            "max_tokens": int(os.getenv("SAHIBEX_LOCAL_LLM_MAX_TOKENS", "256")),
+            # Mobile CPU inference is slow; concise by default, with an explicit
+            # environment override available for longer answers.
+            "max_tokens": int(os.getenv("SAHIBEX_LOCAL_LLM_MAX_TOKENS", "384" if "intent: code" in request.prompt.casefold() else "192" if "intent: create" in request.prompt.casefold() else "128")),
             "chat_template_kwargs": {"enable_thinking": False},
             "stream": False,
         }

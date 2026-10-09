@@ -3,6 +3,15 @@ from core.brain.child_self_improvement_final_commit_gate import (
     FinalCommitDecision,
     FinalCommitGateState,
 )
+from core.brain.child_self_improvement_audit_integration import (
+    AuditEvent,
+    AuditIntegrationRequest,
+    AuditProvenance,
+    ChildSelfImprovementAuditIntegration,
+)
+from security.audit.child_self_improvement_audit_store import (
+    ChildSelfImprovementAuditStore,
+)
 
 
 def all_gates_passed() -> FinalCommitGateState:
@@ -16,6 +25,7 @@ def all_gates_passed() -> FinalCommitGateState:
         verification_passed=True,
         governance_passed=True,
         mother_approved=True,
+        human_approved=True,
         post_verification_passed=True,
         soul_unchanged=True,
         constitution_unchanged=True,
@@ -153,6 +163,18 @@ def test_mother_approval_failure_blocks():
     assert "mother_approved" in result.failed_gates
 
 
+def test_human_approval_failure_blocks():
+    gate = ChildSelfImprovementFinalCommitGate()
+    state = FinalCommitGateState(
+        **{**all_gates_passed().__dict__, "human_approved": False}
+    )
+
+    result = gate.evaluate(state)
+
+    assert result.decision == FinalCommitDecision.BLOCK
+    assert "human_approved" in result.failed_gates
+
+
 def test_post_verification_failure_blocks():
     gate = ChildSelfImprovementFinalCommitGate()
     state = all_gates_passed()
@@ -244,6 +266,7 @@ def test_multiple_failures_reported():
         verification_passed=True,
         governance_passed=False,
         mother_approved=False,
+        human_approved=True,
         post_verification_passed=True,
         soul_unchanged=True,
         constitution_unchanged=False,
@@ -264,6 +287,96 @@ def test_multiple_failures_reported():
     assert "constitution_unchanged" in result.failed_gates
     assert "authority_boundary_intact" in result.failed_gates
     assert "provenance_complete" in result.failed_gates
+
+
+def _persist_audit(store, audit_id: str, *, security_verified: bool = True):
+    integration = ChildSelfImprovementAuditIntegration(store=store)
+    request = AuditIntegrationRequest(
+        audit_id=audit_id,
+        transaction_id=f"tx-{audit_id}",
+        proposal_id=f"proposal-{audit_id}",
+        child_brain_id="child-test-1",
+        event=AuditEvent.UPGRADE_VERIFIED,
+        version_before="1.0",
+        version_after="1.1",
+        change_summary="test-only change",
+        security_verified=security_verified,
+        verification_passed=True,
+        provenance=AuditProvenance(
+            actor_id="mother-test",
+            actor_type="sahibex_mother",
+            source="test",
+            authority_context="human_approved",
+            verification_context="post_verification_passed",
+            timestamp_context="test",
+        ),
+        immutable=True,
+    )
+    return integration.record(request)
+
+
+def _binding(audit_id: str) -> dict[str, str]:
+    return {
+        "expected_child_brain_id": "child-test-1",
+        "expected_proposal_id": f"proposal-{audit_id}",
+        "expected_version_before": "1.0",
+        "expected_version_after": "1.1",
+    }
+
+
+def test_persisted_gate_requires_real_accepted_audit_record(tmp_path):
+    store = ChildSelfImprovementAuditStore(tmp_path / "commit-audit.db")
+    gate = ChildSelfImprovementFinalCommitGate(audit_store=store)
+    state = all_gates_passed()
+
+    missing = gate.evaluate_persisted(state, audit_id="not-recorded", **_binding("not-recorded"))
+    assert missing.decision == FinalCommitDecision.BLOCK
+    assert "audit_record_persisted" in missing.failed_gates
+
+    _persist_audit(store, "accepted-audit")
+    accepted = gate.evaluate_persisted(state, audit_id="accepted-audit", **_binding("accepted-audit"))
+    assert accepted.decision == FinalCommitDecision.READY
+
+    mismatched = gate.evaluate_persisted(
+        state,
+        audit_id="accepted-audit",
+        expected_child_brain_id="child-test-1",
+        expected_proposal_id="proposal-for-another-change",
+        expected_version_before="1.0",
+        expected_version_after="1.1",
+    )
+    assert mismatched.decision == FinalCommitDecision.BLOCK
+    assert "audit_context_binding" in mismatched.failed_gates
+
+    _persist_audit(store, "blocked-audit", security_verified=False)
+    blocked = gate.evaluate_persisted(state, audit_id="blocked-audit", **_binding("blocked-audit"))
+    assert blocked.decision == FinalCommitDecision.BLOCK
+    assert "audit_complete" in blocked.failed_gates
+    store.close()
+
+
+def test_persisted_gate_blocks_if_audit_chain_is_tampered(tmp_path):
+    store = ChildSelfImprovementAuditStore(tmp_path / "tampered-audit.db")
+    _persist_audit(store, "audit-1")
+    store._connection.execute("DROP TRIGGER child_improvement_audit_no_update")
+    store._connection.execute(
+        "UPDATE child_improvement_audit_events SET payload=? WHERE audit_id=?",
+        ('{"decision":"accept","audit_complete":true,"provenance_complete":true}', "audit-1"),
+    )
+    store._connection.commit()
+
+    gate = ChildSelfImprovementFinalCommitGate(audit_store=store)
+    result = gate.evaluate_persisted(all_gates_passed(), audit_id="audit-1", **_binding("audit-1"))
+    assert result.decision == FinalCommitDecision.BLOCK
+    assert "audit_chain_valid" in result.failed_gates
+    store.close()
+
+
+def test_persisted_gate_blocks_without_store(tmp_path):
+    gate = ChildSelfImprovementFinalCommitGate()
+    result = gate.evaluate_persisted(all_gates_passed(), audit_id="audit-1", **_binding("audit-1"))
+    assert result.decision == FinalCommitDecision.BLOCK
+    assert "audit_record_persisted" in result.failed_gates
 
 
 def test_all_gates_passed_helper():

@@ -263,7 +263,8 @@ def main() -> None:
                 == acquired_source.source_id
             )
             assert evidence.supports is True
-            assert evidence.strength == 0.95
+            assert evidence.strength == evidence.metadata["evidence_strength"]["strength_score"]
+            assert 0.0 <= evidence.strength <= 1.0
 
         print("[PASS] evidence creation")
 
@@ -410,10 +411,19 @@ def main() -> None:
         assert answer_result is not None
         assert answer_result.answer is not None
         assert answer_result.answer.answer
-        assert answer_result.answer.verified is True
+        # Verification of stored knowledge alone cannot override a stale or
+        # low-confidence quality-aware answer assessment.
+        assert answer_result.answer.verified is False
+        assert answer_result.answer.status != "VERIFIED"
+        assert answer_result.aggregation.answer.overall_status in {
+            "STALE",
+            "LOW_CONFIDENCE",
+            "UNCERTAIN",
+            "UNVERIFIED",
+        }
         assert answer_result.answer.confidence >= 0.60
 
-        print("[PASS] answer synthesis")
+        print("[PASS] answer synthesis preserves quality gate")
 
         # ---------------------------------------------------------
         # 15. Answer verification

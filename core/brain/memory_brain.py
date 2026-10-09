@@ -24,6 +24,10 @@ class MemoryBrain:
     credential, tool-execution, or constitution authority.
     """
 
+    MAX_MEMORY_CONTENT_CHARS = 65536
+    MAX_CONVERSATION_USER_CHARS = 8192
+    MAX_CONVERSATION_ASSISTANT_CHARS = 16384
+
     def __init__(
         self,
         *,
@@ -48,9 +52,16 @@ class MemoryBrain:
         priority: float = 0.5,
         memory_id: str | None = None,
     ) -> MemoryWriteResult:
+        normalized_content = content.strip()
+        if len(normalized_content) > self.MAX_MEMORY_CONTENT_CHARS:
+            normalized_content = (
+                normalized_content[: self.MAX_MEMORY_CONTENT_CHARS]
+                + "\n[MEMORY_CONTENT_TRUNCATED]"
+            )
+
         memory = MemoryCandidate(
             memory_id=memory_id or f"memory-{uuid4()}",
-            content=content.strip(),
+            content=normalized_content,
             memory_type=memory_type.strip(),
             source=source.strip(),
             importance=importance,
@@ -76,10 +87,34 @@ class MemoryBrain:
         action: str,
         verification_status: str,
     ) -> MemoryWriteResult:
+        normalized_user = user_text.strip()
+        normalized_assistant = assistant_text.strip()
+
+        if normalized_user.startswith(
+            "MOCK MODEL RESPONSE: Received request:"
+        ):
+            normalized_user = (
+                "[MOCK_RESPONSE_ECHO_SUPPRESSED]"
+            )
+
+        if normalized_assistant.startswith(
+            "MOCK MODEL RESPONSE: Received request:"
+        ):
+            normalized_assistant = (
+                "[MOCK_RESPONSE_ECHO_SUPPRESSED]"
+            )
+
+        normalized_user = normalized_user[
+            : self.MAX_CONVERSATION_USER_CHARS
+        ]
+        normalized_assistant = normalized_assistant[
+            : self.MAX_CONVERSATION_ASSISTANT_CHARS
+        ]
+
         return self.remember(
             content=(
-                f"User: {user_text.strip()}\n"
-                f"SAHIBEX: {assistant_text.strip()}"
+                f"User: {normalized_user}\n"
+                f"SAHIBEX: {normalized_assistant}"
             ),
             memory_type="conversation",
             source="master_brain",

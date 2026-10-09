@@ -108,6 +108,7 @@ class OperationalMemoryKnowledgeIntegration:
         min_memory_importance: Optional[float] = None,
         verified_knowledge_only: bool = False,
         min_knowledge_confidence: float = 0.0,
+        limit: int = 32,
     ) -> OperationalMemoryKnowledgeResult:
         if not isinstance(query, str):
             raise TypeError("query must be a string.")
@@ -122,12 +123,14 @@ class OperationalMemoryKnowledgeIntegration:
             memory_type=memory_type,
             min_confidence=min_memory_confidence,
             min_importance=min_memory_importance,
+            limit=limit,
         )
 
         knowledge = self.storage.retrieve_knowledge(
             normalized_query,
             verified_only=verified_knowledge_only,
             min_confidence=min_knowledge_confidence,
+            limit=limit,
         )
 
         memory_ids = [memory.memory_id for memory in memories]
