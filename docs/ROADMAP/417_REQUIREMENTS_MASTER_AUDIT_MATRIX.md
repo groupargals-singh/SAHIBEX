@@ -119,3 +119,13 @@ This audit document does not change Constitution, permissions, authority boundar
 - Regression tests cover zero evidence, missing verified-evidence gate, and evidence with an unavailable source.
 - Focused research/security regression at this checkpoint: 26 passed; focused research answer/pipeline regression after source-traceability guard: 19 passed.
 - Full repository regression and compile validation are being rerun before this code change is committed.
+
+
+## Live runtime / research integrity continuation — 2026-10-09
+
+- Full repository regression after fail-closed research/learning changes: **1541 passed, 0 failed** in 140.48 seconds. Final source-lead helper has a separate focused result of 13 passed; rerun full regression after final changes before marking the current pass complete.
+- Local Qwen3 model and authenticated Android media bridge are healthy. Two live Hindi `/voice` requests returned correct curated answers over HTTP 200 in 0.12–0.15 seconds. Physical phone microphone/TTS UI remains pending app update/pairing.
+- Supervisor duplicate-restart defect fixed: health-first check avoids spawning duplicate media servers; restart count remained stable during a 12-second runtime check.
+- Research extraction now strips active HTML and navigation chrome, bounds work to 200,000 content characters / 100 findings, and marks extraction truncation. The final research result now fails closed unless the answer is actually `VERIFIED`; a live run completed but returned `NOT_VERIFIED`, which is treated as `insufficient_evidence`, not success. Source links may be offered as unverified research leads, not conclusions.
+- A production research answer is not yet proven. The current default sentence extractor has confidence 0.50 and the current pipeline has not demonstrated cross-source semantic corroboration for a real query. Do not mark live research as complete until a query returns a verified, relevant, source-traceable answer.
+- Companion APK staged version `6 / 0.2.2` matches the installed signing certificate and is now hash-matched in Downloads. Installed version remains `4 / 0.2.0` pending user-visible Android install confirmation.

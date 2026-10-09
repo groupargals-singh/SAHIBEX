@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from app.config import settings
@@ -303,6 +304,29 @@ class MotherResearchIntegration:
         }
 
     @staticmethod
+    def _source_leads(context, *, limit: int = 3) -> list[str]:
+        """Return bounded public HTTP(S) source leads, never verified claims."""
+        acquisition = getattr(context, "acquisition", None)
+        sources = getattr(acquisition, "sources", ())
+        leads: list[str] = []
+        seen: set[str] = set()
+        for source in sources:
+            locator = getattr(source, "locator", "")
+            title = " ".join(str(getattr(source, "title", "Source")).split())
+            if not isinstance(locator, str) or not locator.strip():
+                continue
+            parsed = urlparse(locator)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                continue
+            if locator in seen:
+                continue
+            seen.add(locator)
+            leads.append(f"- {title[:140] or 'Source'} — {locator[:500]}")
+            if len(leads) >= limit:
+                break
+        return leads
+
+    @staticmethod
     def _answer_text_and_verification(
         pipeline_result,
     ) -> tuple[str, str]:
@@ -524,8 +548,12 @@ class MotherResearchIntegration:
             if not answer_verified:
                 answer = (
                     "I couldn't verify enough reliable evidence to answer "
-                    "this query. Try a more specific question or another source."
+                    "this query. The links below are research leads, not "
+                    "verified conclusions."
                 )
+                source_leads = self._source_leads(context)
+                if source_leads:
+                    answer += "\nSources found for review:\n" + "\n".join(source_leads)
 
             return MotherResearchResult(
                 success=answer_verified,

@@ -91,3 +91,17 @@ def test_legacy_plain_string_adapter_still_works_without_false_verification():
 
     assert text == "Plain text result"
     assert status == "UNKNOWN"
+
+
+def test_unverified_research_can_return_only_public_source_leads():
+    context = SimpleNamespace(
+        acquisition=SimpleNamespace(
+            sources=[
+                SimpleNamespace(title="Example source", locator="https://example.com/article"),
+                SimpleNamespace(title="Unsafe local source", locator="file:///etc/passwd"),
+                SimpleNamespace(title="Duplicate", locator="https://example.com/article"),
+            ]
+        )
+    )
+    leads = MotherResearchIntegration._source_leads(context)
+    assert leads == ["- Example source — https://example.com/article"]
