@@ -66,12 +66,18 @@ class ResearchLearningBrain:
             query=query,
             confirmation=confirmation,
         )
+        verified = bool(
+            result.success
+            and result.verification_status == "VERIFIED"
+        )
         return ResearchLearningResult(
-            success=result.success,
+            success=verified,
             operation="research",
             result=result,
-            verified=result.verification_status == "VERIFIED",
-            persisted=bool(result.success),
+            verified=verified,
+            # A successful-looking result without the verification marker must
+            # never be reported as persisted trusted knowledge.
+            persisted=verified,
         )
 
     def learn_topic(
@@ -90,11 +96,13 @@ class ResearchLearningBrain:
             and result.verified_knowledge_count > 0
         )
         return ResearchLearningResult(
-            success=result.success,
+            success=verified,
             operation="learn",
             result=result,
             verified=verified,
-            persisted=bool(result.success and result.knowledge_count >= 0),
+            # Require at least one verified knowledge item; `>= 0` was a bug
+            # that incorrectly marked zero-item learning as persisted.
+            persisted=verified and result.verified_knowledge_count > 0,
         )
 
     def capability_contract(self) -> dict[str, bool]:

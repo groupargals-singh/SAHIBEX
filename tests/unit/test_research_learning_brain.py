@@ -86,3 +86,32 @@ def test_research_learning_brain_delegates_learning() -> None:
     assert result.success is True
     assert result.verified is True
     assert result.result.verified_knowledge_count == 2
+
+
+def test_research_learning_brain_does_not_mark_unverified_research_persisted() -> None:
+    research = MotherResearchIntegration()
+    research.research = lambda *, query, confirmation=False: MotherResearchResult(
+        success=True, query=query, status="completed", answer="unverified",
+        job_id="job-unverified", execution_id="exec-unverified",
+        verification_status="PENDING",
+    )  # type: ignore[method-assign]
+    result = ResearchLearningBrain(research=research).research_topic("latest claims")
+    assert result.success is False
+    assert result.verified is False
+    assert result.persisted is False
+
+
+def test_research_learning_brain_does_not_mark_zero_verified_learning_persisted() -> None:
+    research = MotherResearchIntegration()
+    learning = MotherLearningIntegration(research=research)
+    learning.learn = lambda *, topic, confirmation=False: MotherLearningResult(
+        success=True, topic=topic, status="completed", answer="unverified",
+        knowledge_count=0, verified_knowledge_count=0,
+        research_job_id="job-empty", research_execution_id="exec-empty",
+        verification_status="VERIFIED", learned_knowledge_ids=(),
+        verified_knowledge_ids=(),
+    )  # type: ignore[method-assign]
+    result = ResearchLearningBrain(research=research, learning=learning).learn_topic("topic")
+    assert result.success is False
+    assert result.verified is False
+    assert result.persisted is False

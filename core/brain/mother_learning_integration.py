@@ -181,16 +181,28 @@ class MotherLearningIntegration:
                 error=f"learning knowledge extraction failed: {exc}",
             )
 
+        verified_learning = bool(
+            result.verification_status == "VERIFIED"
+            and verified_knowledge_count > 0
+            and verified_knowledge_ids
+        )
         return MotherLearningResult(
-            success=True,
+            success=verified_learning,
             topic=topic,
-            status=result.status,
-            answer=result.answer,
+            status=(result.status if verified_learning else "insufficient_verified_knowledge"),
+            answer=(
+                result.answer
+                if verified_learning
+                else "Learning was not saved as trusted knowledge because no verified knowledge items were confirmed."
+            ),
             knowledge_count=knowledge_count,
             verified_knowledge_count=verified_knowledge_count,
             research_job_id=result.job_id,
-            verification_status=result.verification_status,
+            verification_status=(
+                "VERIFIED" if verified_learning else "INSUFFICIENT_VERIFIED_KNOWLEDGE"
+            ),
             research_execution_id=getattr(result, "execution_id", ""),
             learned_knowledge_ids=learned_knowledge_ids,
             verified_knowledge_ids=verified_knowledge_ids,
+            error=("no verified knowledge items available to persist" if not verified_learning else ""),
         )

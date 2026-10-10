@@ -230,3 +230,15 @@ Work in priority order. For each fix: reproduce → patch → focused regression
 - Final-source full repository regression after evidence-link preservation and current-news corroboration gate: **1586 passed, 0 failed** in 115.49 seconds. `python -m compileall -q app core security verification tools tests`: PASS; `git diff --check`: PASS.
 - Live smoke after terminating the prior bridge process and waiting for the supervisor to relaunch from current source: curated sky and India capital/history queries PASS (`STRUCTURALLY_VALID`); current AI-security research now correctly FAILS CLOSED as `NOT_VERIFIED` with three public publisher leads. Smoke exit code **1**. This is safer than the prior false `VERIFIED`, but it is not a completed live-research capability.
 - Remaining research blocker is claim-level independent corroboration: acquired sources yield many single-source extracted claims; the current answer pipeline does not yet merge semantically equivalent claims across independent publisher domains into corroborated claim groups. Do not relax the new gate. Implement and test safe cross-source claim grouping/relevance ranking before calling current research accepted.
+
+## 2026-10-10 — Verification-filter and memory gate hardening
+
+- Added strict `ResearchLearningBrain` result gating: research is reported successful/persisted only when the result is successful and explicitly `VERIFIED`.
+- Fixed the learning persistence contract bug where `knowledge_count >= 0` incorrectly marked even zero-item learning as persisted. Learning is now considered successful/persisted only with explicit `VERIFIED` status and at least one verified knowledge item.
+- Hardened `MotherLearningIntegration`: a nominally successful research response with zero verified knowledge items is returned as `insufficient_verified_knowledge`; it is not exposed as successful learning.
+- Added regression tests for unverified research and zero-verified-item learning.
+- Added tests for manual redirect resolution: valid publisher redirect, private-host rejection before follow-up request, missing `Location`, redirect loop, hop limit, invalid hop limit, and continued default rejection of automatic redirects.
+- Focused regression: **28 passed**.
+- Full repository regression: **1595 passed in 113.20s**.
+- Current live-research gap remains: RSS search output is discovery only. Real publisher-page acquisition and independent-source corroboration must both succeed before a research answer is marked verified. Physical microphone/speaker acceptance, vision/OCR, Android accessibility/device control, persistent child-brain deployment, production self-improvement gates, and historical 417-item reconciliation remain open.
+- Current source paths in code include DuckDuckGo search, Google News RSS discovery, direct publisher web acquisition, RSS/Atom feeds, document acquisition, and configured API/provider integrations. Availability depends on runtime configuration, permissions, network and source reachability; none is universally reliable.
