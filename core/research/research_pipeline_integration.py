@@ -264,11 +264,14 @@ class ResearchPipelineIntegration:
             # Preserve discovery results in job context even if publisher
             # fetching fails, so the final response can provide honest leads.
             context.acquisition = search_result.acquisition
+            # Collect enough independent publisher candidates to survive
+            # inaccessible paywalls/403s; the direct-web provider still caps
+            # actual fetches at its configured safe source limit.
             urls = [
                 source.locator
                 for source in search_result.acquisition.sources
                 if source.locator
-            ][:3]
+            ][:10]
             if not urls:
                 raise RuntimeError("search provider returned no source URLs")
 

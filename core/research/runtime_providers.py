@@ -53,7 +53,7 @@ def build_default_research_acquisition_engine(
 
     engine.register_provider(
         DirectWebResearchProvider(
-            WebProviderConfig(timeout_seconds=5.0, max_sources=5)
+            WebProviderConfig(timeout_seconds=5.0, max_sources=10)
         )
     )
     engine.register_provider(RSSAtomResearchProvider())

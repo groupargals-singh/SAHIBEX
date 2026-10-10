@@ -307,6 +307,27 @@ class SearchResearchProvider(
         expanded = " ".join(compact_tokens)
         if expanded and expanded.casefold() != query.casefold():
             variants.append(expanded)
+
+        # News discovery needs several independently phrased searches: a
+        # single literal Hindi query often yields only one accessible publisher
+        # and can be blocked during full-text acquisition. Add a small,
+        # bounded English discovery set for explicitly AI-safety/security
+        # queries; every result remains discovery-only until publisher content
+        # has been acquired and verified.
+        normalized = query.casefold()
+        is_ai_safety_query = (
+            any(term in normalized for term in ("ai", "artificial intelligence", "कृत्रिम बुद्धिमत्ता"))
+            and any(term in normalized for term in ("safety", "security", "सुरक्षा", "खतरा", "जोखिम"))
+        )
+        if is_ai_safety_query:
+            topical_variants = (
+                "AI safety latest news",
+                "AI security today",
+                "artificial intelligence safety security risks",
+            )
+            for candidate in topical_variants:
+                if candidate.casefold() not in {item.casefold() for item in variants}:
+                    variants.append(candidate)
         return variants
 
     @staticmethod

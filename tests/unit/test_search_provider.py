@@ -305,11 +305,16 @@ def test_hindi_query_expansion_preserves_original_and_discovers_english_sources(
     results = provider.search("आज AI सुरक्षा में क्या नया है?", max_results=5)
 
     assert seen_queries[0][0] == "आज AI सुरक्षा में क्या नया है?"
-    assert len(seen_queries) == 2
-    assert all(call[1] == 2 for call in seen_queries)
+    assert len(seen_queries) == 5
+    assert all(call[1] == 1 for call in seen_queries)
     assert seen_queries[1][0] == "latest AI safety security news"
     assert "safety security" in seen_queries[1][0]
-    assert len(results) == 4
+    assert [call[0] for call in seen_queries[2:]] == [
+        "AI safety latest news",
+        "AI security today",
+        "artificial intelligence safety security risks",
+    ]
+    assert len(results) == 2
     assert any("example.com/hindi" in item.url for item in results)
     assert any("example.org/report" in item.url for item in results)
     assert any(item.metadata["discovery_query"] == seen_queries[0][0] for item in results)
