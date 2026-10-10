@@ -307,6 +307,13 @@ class ResearchPipelineIntegration:
                 provider_name="direct_web",
                 confirmation=confirmation,
             )
+            if not result.acquisition.sources:
+                # Keep the original discovery result in context so the final
+                # fail-closed response can still show unverified leads.
+                raise RuntimeError(
+                    "no publisher pages passed acquisition and freshness checks; "
+                    "search results remain unverified discovery leads"
+                )
             result.acquisition.metadata["search_discovery_count"] = len(urls)
             result.acquisition.metadata["search_backend"] = (
                 search_result.acquisition.metadata.get("backend")

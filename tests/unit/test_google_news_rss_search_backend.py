@@ -59,3 +59,50 @@ def test_general_queries_are_not_forced_through_ai_security_filter():
         "New education policy announced",
         "Government education update",
     )
+
+
+def test_time_sensitive_query_requests_recent_news_window():
+    from urllib.parse import parse_qs, urlparse
+
+    provider = FakeRSSProvider()
+    backend = GoogleNewsRSSSearchBackend(provider=provider)
+    backend.search("आज AI सुरक्षा में क्या नया है?", max_results=5)
+    query = parse_qs(urlparse(provider.request.metadata["url"]).query)["q"][0]
+    assert query.endswith("when:7d")
+
+
+def test_non_time_sensitive_query_keeps_original_search_query():
+    from urllib.parse import parse_qs, urlparse
+
+    provider = FakeRSSProvider()
+    backend = GoogleNewsRSSSearchBackend(provider=provider)
+    backend.search("AI safety architecture", max_results=5)
+    query = parse_qs(urlparse(provider.request.metadata["url"]).query)["q"][0]
+    assert query == "AI safety architecture"
+
+
+def test_published_within_days_requires_a_real_recent_timezone_aware_date():
+    from datetime import datetime, timezone
+
+    now = datetime(2026, 10, 10, tzinfo=timezone.utc)
+    recent = datetime(2026, 10, 9, tzinfo=timezone.utc)
+    old = datetime(2026, 9, 30, tzinfo=timezone.utc)
+    assert GoogleNewsRSSSearchBackend._published_within_days(recent, now=now)
+    assert not GoogleNewsRSSSearchBackend._published_within_days(old, now=now)
+    assert not GoogleNewsRSSSearchBackend._published_within_days(None, now=now)
+    assert not GoogleNewsRSSSearchBackend._published_within_days("2026-10-09T00:00:00", now=now)
+
+
+def test_time_sensitive_query_discards_old_or_undated_items():
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+
+    provider = FakeRSSProvider()
+    provider.acquire = lambda request: SimpleNamespace(sources=[
+        SimpleNamespace(title="AI safety report - Publisher", locator="https://news.google.com/recent", content="AI safety risk report", publisher="Publisher", published_at=datetime(2026, 10, 9, tzinfo=timezone.utc)),
+        SimpleNamespace(title="AI safety old report - Publisher", locator="https://news.google.com/old", content="AI safety risk report", publisher="Publisher", published_at=datetime(2026, 9, 1, tzinfo=timezone.utc)),
+        SimpleNamespace(title="AI safety undated report - Publisher", locator="https://news.google.com/undated", content="AI safety risk report", publisher="Publisher", published_at=None),
+    ])
+    results = GoogleNewsRSSSearchBackend(provider=provider).search("आज AI सुरक्षा में क्या नया है?", max_results=5)
+    assert len(results) == 1
+    assert results[0].url == "https://news.google.com/recent"

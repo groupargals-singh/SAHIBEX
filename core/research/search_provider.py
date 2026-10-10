@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from typing import Callable, Optional
 from urllib.parse import urlparse
 
@@ -277,6 +278,12 @@ class SearchResearchProvider(
             ("भारत", "India"),
             ("आज", "latest current"),
             ("अभी", "latest current"),
+            ("नवीनतम", "latest"),
+            ("समाचार", "news"),
+            ("खबर", "news"),
+            ("ख़बर", "news"),
+            ("नया", ""),
+            ("नई", ""),
             ("क्या", ""),
             ("है", ""),
             ("हैं", ""),
@@ -285,10 +292,52 @@ class SearchResearchProvider(
         )
         for source, target in replacements:
             expanded = expanded.replace(source, target)
-        expanded = " ".join(expanded.split()).strip(" ?।॥,;:")
+        tokens = " ".join(expanded.split()).strip(" ?।॥,;:").split()
+        # Hindi expansions can introduce repeated synonyms (for example
+        # "latest current ... latest news updates"). Keep the first occurrence
+        # of each word so fallback engines receive a compact, useful query.
+        seen_tokens: set[str] = set()
+        compact_tokens = []
+        for token in tokens:
+            key = token.casefold()
+            if key in {"current", "updates"} or key in seen_tokens:
+                continue
+            seen_tokens.add(key)
+            compact_tokens.append(token)
+        expanded = " ".join(compact_tokens)
         if expanded and expanded.casefold() != query.casefold():
             variants.append(expanded)
         return variants
+
+    @staticmethod
+    def _is_time_sensitive_query(query: str) -> bool:
+        text = query.casefold()
+        return any(term in text for term in (
+            "today", "latest", "current", "recent", "this week", "breaking",
+            "आज", "ताज़ा", "ताजा", "नवीनतम", "हालिया", "इस सप्ताह", "अभी", "क्या नया है",
+        ))
+
+    @staticmethod
+    def _result_is_recent(result: SearchResult, *, days: int = 7) -> bool:
+        value = result.published_at
+        if isinstance(value, datetime):
+            published = value
+        elif isinstance(value, str) and value.strip():
+            raw = value.strip()
+            try:
+                normalized = raw[:-1] + "+00:00" if raw.endswith(("Z", "z")) else raw
+                published = datetime.fromisoformat(normalized)
+            except ValueError:
+                try:
+                    published = parsedate_to_datetime(raw)
+                except (TypeError, ValueError, OverflowError):
+                    return False
+        else:
+            return False
+        if published.tzinfo is None or published.utcoffset() is None:
+            return False
+        age = datetime.now(timezone.utc) - published.astimezone(timezone.utc)
+        return timedelta(0) <= age <= timedelta(days=days)
 
     @staticmethod
     def _stable_source_id(url: str) -> str:
@@ -349,32 +398,53 @@ class SearchResearchProvider(
         # sources are not missed. Each variant is discovery-only.
         discovered: list[tuple[SearchResult, str]] = []
         variants = self._query_variants(query)
+        time_sensitive = self._is_time_sensitive_query(query)
         # Reserve result capacity for each query variant. Otherwise a full
         # Hindi-result batch can crowd out all English-language primary-source
         # leads before cross-query deduplication.
         per_variant_limit = max(1, limit // len(variants))
+        backend_errors: list[Exception] = []
         for variant in variants:
+            fallback_attempted = False
             try:
                 batch = self.backend.search(
                     variant, max_results=per_variant_limit
                 )
-            except Exception:
+            except Exception as primary_error:
+                backend_errors.append(primary_error)
                 # Optional fallback is another discovery provider, not a way
-                # to bypass a challenge. It runs only after the primary backend
-                # fails and still returns unverified source leads.
+                # to bypass a challenge. A failure for one query variant must
+                # not discard leads already found or prevent later variants.
                 if self.fallback_backend is not None:
-                    batch = self.fallback_backend.search(
-                        variant, max_results=per_variant_limit
-                    )
-                elif variant == query:
+                    fallback_attempted = True
+                    try:
+                        batch = self.fallback_backend.search(
+                            variant, max_results=per_variant_limit
+                        )
+                    except Exception as fallback_error:
+                        backend_errors.append(fallback_error)
+                        continue
+                elif variant == query and not discovered:
                     raise
                 else:
                     continue
-            if not batch and self.fallback_backend is not None:
-                batch = self.fallback_backend.search(
-                    variant, max_results=per_variant_limit
-                )
+            if time_sensitive:
+                batch = [item for item in batch if self._result_is_recent(item)]
+            if not batch and self.fallback_backend is not None and not fallback_attempted:
+                fallback_attempted = True
+                try:
+                    batch = self.fallback_backend.search(
+                        variant, max_results=per_variant_limit
+                    )
+                except Exception as fallback_error:
+                    backend_errors.append(fallback_error)
+                    continue
+                if time_sensitive:
+                    batch = [item for item in batch if self._result_is_recent(item)]
             discovered.extend((item, variant) for item in batch[:limit])
+
+        if not discovered and backend_errors:
+            raise RuntimeError("all configured search backends failed or returned no usable results") from backend_errors[-1]
 
         # Normalize ranking and deduplicate across all query variants.
         normalized_results = []

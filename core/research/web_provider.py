@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 import hashlib
 import html
@@ -352,6 +352,37 @@ class DirectWebResearchProvider(
         return title[:1000]
 
     @staticmethod
+    def _extract_published_at(content: str) -> datetime | None:
+        """Extract an explicitly published timestamp from common page metadata.
+
+        Only parse publisher-supplied structured timestamps; never infer a
+        publication date from the fetch time or from unrelated page text.
+        """
+        # Only publication/creation timestamps establish recency. A modified
+        # timestamp can make an old article appear newly published, so it is
+        # deliberately excluded from this publication-date field.
+        pattern = r'<meta\b[^>]*(?:property|name)=["\'](?:article:published_time|datePublished|pubdate|date)["\'][^>]*>'
+        candidates: list[str] = []
+        for tag in re.findall(pattern, content, flags=re.IGNORECASE):
+            match = re.search(r'\bcontent=["\']([^"\']+)["\']', tag, flags=re.IGNORECASE)
+            if match:
+                candidates.append(html.unescape(match.group(1)).strip())
+        candidates.extend(re.findall(
+            r'["\'](?:datePublished|dateCreated)["\']\s*:\s*["\']([^"\']+)["\']',
+            content,
+            flags=re.IGNORECASE,
+        ))
+        for candidate in candidates:
+            try:
+                normalized = candidate[:-1] + "+00:00" if candidate.endswith(("Z", "z")) else candidate
+                parsed = datetime.fromisoformat(normalized)
+                if parsed.tzinfo is not None and parsed.utcoffset() is not None:
+                    return parsed.astimezone(timezone.utc)
+            except (TypeError, ValueError, OverflowError):
+                continue
+        return None
+
+    @staticmethod
     def _decode_content(
         payload: bytes,
         headers,
@@ -371,6 +402,19 @@ class DirectWebResearchProvider(
             "utf-8",
             errors="replace",
         )
+
+    @staticmethod
+    def _content_fragment(content: str) -> tuple[str, str]:
+        """Prefer article/main markup over the whole publisher page."""
+        for tag in ("article", "main"):
+            match = re.search(
+                rf"<{tag}\b[^>]*>.*?</{tag}\s*>",
+                content,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            if match and len(match.group(0)) >= 50:
+                return match.group(0), tag
+        return content, "full_page_fallback"
 
     @staticmethod
     def _visible_text(content: str, *, max_chars: int = 200_000) -> tuple[str, bool]:
@@ -577,6 +621,28 @@ class DirectWebResearchProvider(
             "bytes": len(payload),
         }
 
+    @staticmethod
+    def _is_time_sensitive_query(query: str) -> bool:
+        text = query.casefold()
+        return any(term in text for term in (
+            "today", "latest", "current", "recent", "this week", "breaking",
+            "आज", "ताज़ा", "ताजा", "नवीनतम", "हालिया", "इस सप्ताह", "अभी", "क्या नया है",
+        ))
+
+    @staticmethod
+    def _is_recent_publication(published_at: datetime | None, *, days: int = 7) -> bool:
+        if not isinstance(published_at, datetime):
+            return False
+        if published_at.tzinfo is None or published_at.utcoffset() is None:
+            return False
+        age = datetime.now(timezone.utc) - published_at.astimezone(timezone.utc)
+        return timedelta(0) <= age <= timedelta(days=days)
+
+    @staticmethod
+    def _is_listing_page(url: str) -> bool:
+        path = urlparse(url).path.casefold().rstrip("/")
+        return any(segment in path.split("/") for segment in ("section", "category", "categories", "tag", "topic", "topics"))
+
     # ---------------------------------------------------------
     # Acquisition contract
     # ---------------------------------------------------------
@@ -642,8 +708,10 @@ class DirectWebResearchProvider(
                 raw_content = fetched["content"]
                 title = self._extract_title(raw_content)
                 content_truncated = False
+                content_scope = "plain_text"
                 if fetched.get("content_type") in {"text/html", "application/xhtml+xml"}:
-                    content, content_truncated = self._visible_text(raw_content)
+                    selected_html, content_scope = self._content_fragment(raw_content)
+                    content, content_truncated = self._visible_text(selected_html)
                 else:
                     content = raw_content[:200_000]
                     content_truncated = len(raw_content) > 200_000
@@ -668,9 +736,20 @@ class DirectWebResearchProvider(
                     timezone.utc
                 ).isoformat()
 
+                published_at = self._extract_published_at(raw_content)
+                if self._is_time_sensitive_query(request.query):
+                    if self._is_listing_page(fetched["final_url"]):
+                        errors.append(f"listing page rejected for time-sensitive research: {fetched['final_url']}")
+                        continue
+                    if not self._is_recent_publication(published_at, days=7):
+                        errors.append(f"publisher publication date is missing or outside the 7-day window: {fetched['final_url']}")
+                        continue
                 metadata = {
                     "provider": self.provider_name,
                     "acquired_at": acquired_at,
+                    "publication_timestamp_source": (
+                        "publisher_metadata" if published_at is not None else None
+                    ),
                     "content_type": fetched[
                         "content_type"
                     ],
@@ -689,6 +768,7 @@ class DirectWebResearchProvider(
                     ],
                     "reliability": 0.5,
                     "html_sanitized": fetched.get("content_type") in {"text/html", "application/xhtml+xml"},
+                    "content_extraction_scope": content_scope,
                     "content_truncated": content_truncated,
                 }
 
@@ -701,6 +781,7 @@ class DirectWebResearchProvider(
                             "final_url"
                         ],
                         content=content,
+                        published_at=published_at,
                         metadata=metadata,
                     )
                 )

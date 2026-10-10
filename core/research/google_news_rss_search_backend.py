@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from urllib.parse import urlencode
 
 from core.research.acquisition import AcquisitionRequest
@@ -45,13 +47,49 @@ class GoogleNewsRSSSearchBackend(SearchProviderBackend):
         has_safety = any(term in text for term in safety_terms)
         return has_ai and has_safety
 
+    @staticmethod
+    def _published_within_days(value, *, days: int = 7, now: datetime | None = None) -> bool:
+        """Return True only for explicitly dated items inside the requested window."""
+        if not isinstance(days, int) or isinstance(days, bool) or days <= 0:
+            raise ValueError("days must be a positive integer")
+        if isinstance(value, datetime):
+            published = value
+        elif isinstance(value, str) and value.strip():
+            raw = value.strip()
+            try:
+                normalized = raw[:-1] + "+00:00" if raw.endswith(("Z", "z")) else raw
+                published = datetime.fromisoformat(normalized)
+            except ValueError:
+                try:
+                    published = parsedate_to_datetime(raw)
+                except (TypeError, ValueError, OverflowError):
+                    return False
+        else:
+            return False
+        if published.tzinfo is None or published.utcoffset() is None:
+            return False
+        reference = now or datetime.now(timezone.utc)
+        if reference.tzinfo is None or reference.utcoffset() is None:
+            raise ValueError("now must be timezone-aware")
+        age = reference.astimezone(timezone.utc) - published.astimezone(timezone.utc)
+        return timedelta(0) <= age <= timedelta(days=days)
+
     def search(self, query: str, *, max_results: int) -> list[SearchResult]:
         if not isinstance(query, str) or not query.strip():
             raise ValueError("query must be a non-empty string")
         if not isinstance(max_results, int) or isinstance(max_results, bool) or max_results <= 0:
             raise ValueError("max_results must be a positive integer")
 
-        params = urlencode({"q": query.strip(), "hl": "en-US", "gl": "US", "ceid": "US:en"})
+        normalized_query = query.strip()
+        query_lower = normalized_query.casefold()
+        time_sensitive = any(term in query_lower for term in (
+            "today", "latest", "current", "recent", "this week", "breaking",
+            "आज", "ताज़ा", "ताजा", "नवीनतम", "हालिया", "इस सप्ताह", "अभी",
+        ))
+        # Recency constraints belong in discovery, not in the verification
+        # threshold. Search snippets still remain unverified leads.
+        feed_query = normalized_query + (" when:7d" if time_sensitive else "")
+        params = urlencode({"q": feed_query, "hl": "en-US", "gl": "US", "ceid": "US:en"})
         feed_url = "https://news.google.com/rss/search?" + params
         result = self.provider.acquire(
             AcquisitionRequest(
@@ -67,6 +105,8 @@ class GoogleNewsRSSSearchBackend(SearchProviderBackend):
             # text snippet and never promote it to evidence or a verified fact.
             snippet = " ".join(str(source.content or "").replace("<", " ").replace(">", " ").split())[:500]
             if not self._is_relevant_for_query(query, source.title, snippet):
+                continue
+            if time_sensitive and not self._published_within_days(source.published_at, days=7):
                 continue
             items.append(
                 SearchResult(

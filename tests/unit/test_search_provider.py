@@ -284,6 +284,7 @@ def test_hindi_query_expansion_preserves_original_and_discovers_english_sources(
                     title=f"Hindi AI security {i}",
                     url=f"https://example.com/hindi-{i}",
                     snippet="Hindi discovery result",
+                    published_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
                 )
                 for i in range(max_results)
             ]
@@ -292,6 +293,7 @@ def test_hindi_query_expansion_preserves_original_and_discovers_english_sources(
                 title=f"Official AI safety report {i}",
                 url=f"https://example.org/report-{i}",
                 snippet="English primary-source lead",
+                published_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
             )
             for i in range(max_results)
         ]
@@ -305,7 +307,7 @@ def test_hindi_query_expansion_preserves_original_and_discovers_english_sources(
     assert seen_queries[0][0] == "आज AI सुरक्षा में क्या नया है?"
     assert len(seen_queries) == 2
     assert all(call[1] == 2 for call in seen_queries)
-    assert "latest news updates" in seen_queries[1][0]
+    assert seen_queries[1][0] == "latest AI safety security news"
     assert "safety security" in seen_queries[1][0]
     assert len(results) == 4
     assert any("example.com/hindi" in item.url for item in results)
@@ -330,6 +332,7 @@ def test_fallback_backend_used_when_primary_search_is_blocked():
                 title="RSS discovery lead",
                 url="https://news.google.com/rss/articles/test",
                 snippet="Discovery only",
+                published_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
                 metadata={"discovery_only": True},
             )]
 
@@ -380,3 +383,58 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def test_time_sensitive_search_discards_undated_or_old_primary_results_and_uses_recent_fallback():
+    from datetime import datetime, timezone
+    from core.research.search_provider import SearchResult, SearchProviderConfig
+
+    old = SearchResult(title="Old AI safety story", url="https://old.example/story", published_at="2026-08-01T00:00:00Z")
+    recent = SearchResult(title="Recent AI safety story", url="https://recent.example/story", published_at=datetime.now(timezone.utc).isoformat())
+    primary = FunctionSearchBackend(lambda query, limit: [old])
+    fallback = FunctionSearchBackend(lambda query, limit: [recent])
+    provider = SearchResearchProvider(primary, SearchProviderConfig(max_results=5), fallback_backend=fallback)
+    results = provider.search("latest AI safety news", max_results=5)
+    assert [item.url for item in results] == ["https://recent.example/story"]
+
+
+def test_time_sensitive_search_does_not_promote_undated_result():
+    from core.research.search_provider import SearchResult, SearchProviderConfig
+
+    backend = FunctionSearchBackend(lambda query, limit: [SearchResult(title="Undated AI safety story", url="https://unknown.example/story")])
+    provider = SearchResearchProvider(backend, SearchProviderConfig(max_results=5))
+    assert provider.search("latest AI safety news", max_results=5) == []
+
+
+
+def test_fallback_failure_for_one_query_variant_does_not_abort_later_variants():
+    from datetime import datetime, timezone
+    from core.research.search_provider import SearchProviderBackend, SearchResult, SearchProviderConfig
+
+    class AlwaysFail(SearchProviderBackend):
+        backend_name = "always_fail"
+
+        def search(self, query, *, max_results):
+            raise RuntimeError("primary provider blocked")
+
+    class VariantFallback(SearchProviderBackend):
+        backend_name = "variant_fallback"
+
+        def search(self, query, *, max_results):
+            if "सुरक्षा" in query:
+                raise RuntimeError("temporary feed failure for Hindi variant")
+            return [SearchResult(
+                title="Recent AI safety incident report",
+                url="https://www.google.com/ai-safety-report",
+                snippet="Recent report about AI safety risks",
+                published_at=datetime.now(timezone.utc).isoformat(),
+            )]
+
+    provider = SearchResearchProvider(
+        AlwaysFail(),
+        SearchProviderConfig(max_results=5),
+        fallback_backend=VariantFallback(),
+    )
+    results = provider.search("आज AI सुरक्षा में क्या नया है?", max_results=5)
+    assert len(results) == 1
+    assert results[0].url == "https://www.google.com/ai-safety-report"
