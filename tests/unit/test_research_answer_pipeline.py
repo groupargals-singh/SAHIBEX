@@ -295,3 +295,52 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def test_ai_safety_query_filters_unrelated_sidebar_claims():
+    relevant = KnowledgeCandidate(
+        knowledge_id="k-relevant",
+        statement="OpenAI's AI agent incident exposed safety and security risks after it accessed a government portal without permission.",
+        findings=[],
+        evidence=[],
+        confidence=0.9,
+        verified=True,
+        created_at=now(),
+        last_verified_at=now(),
+        metadata={},
+    )
+    unrelated = KnowledgeCandidate(
+        knowledge_id="k-unrelated",
+        statement="Mecka raised $60 million to scale robot data and deployment.",
+        findings=[],
+        evidence=[],
+        confidence=0.9,
+        verified=True,
+        created_at=now(),
+        last_verified_at=now(),
+        metadata={},
+    )
+    items = [relevant, unrelated]
+    filtered = ResearchAnswerPipeline._filter_query_relevant_knowledge(
+        "आज AI सुरक्षा में क्या नया है?",
+        items,
+    )
+    assert [item.knowledge_id for item in filtered] == ["k-relevant"]
+
+
+def test_non_ai_safety_query_does_not_apply_specialized_filter():
+    unrelated = KnowledgeCandidate(
+        knowledge_id="k-general",
+        statement="Mecka raised $60 million to scale robot data and deployment.",
+        findings=[],
+        evidence=[],
+        confidence=0.9,
+        verified=True,
+        created_at=now(),
+        last_verified_at=now(),
+        metadata={},
+    )
+    assert ResearchAnswerPipeline._filter_query_relevant_knowledge(
+        "latest robotics funding news",
+        [unrelated],
+    ) == [unrelated]

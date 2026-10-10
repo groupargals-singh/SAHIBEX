@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import re
 from typing import Iterable, List, Optional
 
 from core.research.aggregator import (
@@ -209,6 +210,52 @@ class ResearchAnswerPipeline:
 
         return contexts
 
+    @staticmethod
+    def _is_ai_safety_security_query(query: str) -> bool:
+        text = query.casefold()
+        has_ai = (
+            bool(re.search(r"\bai\b", text))
+            or "artificial intelligence" in text
+            or "कृत्रिम बुद्धिमत्ता" in text
+        )
+        has_safety = any(term in text for term in (
+            "safety", "security", "cyber", "risk", "threat", "सुरक्षा", "खतरा",
+        ))
+        return has_ai and has_safety
+
+    @staticmethod
+    def _ai_safety_claim_is_relevant(statement: str) -> bool:
+        text = statement.casefold()
+        has_ai = (
+            bool(re.search(r"\bai\b", text))
+            or any(term in text for term in (
+                "artificial intelligence", "llm", "openai", "anthropic",
+                "chatgpt", "nvidia", "ai agent", "ai model", "ai system",
+            ))
+        )
+        has_safety = any(term in text for term in (
+            "safety", "security", "cyber", "risk", "threat", "attack",
+            "attacker", "hack", "hacked", "breach", "vulnerab", "guardrail",
+            "alignment", "misalignment", "privacy", "permission",
+            "unauthorized", "unauthorised", "incident", "safe", "secure",
+            "सुरक्षा", "खतरा",
+        ))
+        return has_ai and has_safety
+
+    @classmethod
+    def _filter_query_relevant_knowledge(
+        cls,
+        query: str,
+        knowledge_items: List[KnowledgeCandidate],
+    ) -> List[KnowledgeCandidate]:
+        """Keep AI-safety answers from mixing in unrelated page/sidebar claims."""
+        if not cls._is_ai_safety_security_query(query):
+            return knowledge_items
+        return [
+            item for item in knowledge_items
+            if cls._ai_safety_claim_is_relevant(item.statement)
+        ]
+
     def run(
         self,
         query: str,
@@ -246,6 +293,7 @@ class ResearchAnswerPipeline:
 
         if focus_on_provided_evidence and evidence_list:
             focused = self._evidence_knowledge(evidence_list)
+            focused = self._filter_query_relevant_knowledge(query, focused)
             query_result = ResearchQueryResult(
                 query=query,
                 matches=focused,

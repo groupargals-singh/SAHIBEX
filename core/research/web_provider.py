@@ -93,22 +93,46 @@ class _VisibleTextParser(HTMLParser):
         "script", "style", "noscript", "svg", "template",
         "nav", "header", "footer", "aside", "form", "menu",
     }
+    _IGNORED_CLASS_HINTS = (
+        "advert", "author-bio", "authorbox", "related", "recommended",
+        "trending", "popular", "newsletter", "sidebar", "promo",
+        "social-share", "share-buttons", "tag-list", "more-stories",
+        "latest-stories", "read-more",
+    )
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
         self._ignored_depth = 0
+        self._tag_stack: list[tuple[str, bool]] = []
 
     def handle_starttag(self, tag: str, attrs) -> None:
-        if tag in self._IGNORED_TAGS:
+        attributes = {str(key).lower(): str(value or "") for key, value in attrs}
+        class_and_id = (attributes.get("class", "") + " " + attributes.get("id", "")).casefold()
+        class_ignored = any(hint in class_and_id for hint in self._IGNORED_CLASS_HINTS)
+        ignored = tag in self._IGNORED_TAGS or class_ignored
+        self._tag_stack.append((tag, ignored))
+        if ignored:
             self._ignored_depth += 1
         elif self._ignored_depth == 0 and tag in self._BLOCK_TAGS:
             self.parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in self._IGNORED_TAGS and self._ignored_depth:
-            self._ignored_depth -= 1
-        elif self._ignored_depth == 0 and tag in self._BLOCK_TAGS:
+        matched_index = None
+        for index in range(len(self._tag_stack) - 1, -1, -1):
+            if self._tag_stack[index][0] == tag:
+                matched_index = index
+                break
+        was_ignored = False
+        if matched_index is not None:
+            popped = self._tag_stack[matched_index:]
+            was_ignored = self._tag_stack[matched_index][1]
+            self._ignored_depth = max(
+                0,
+                self._ignored_depth - sum(1 for _, ignored in popped if ignored),
+            )
+            del self._tag_stack[matched_index:]
+        if not was_ignored and self._ignored_depth == 0 and tag in self._BLOCK_TAGS:
             self.parts.append("\n")
 
     def handle_data(self, data: str) -> None:
