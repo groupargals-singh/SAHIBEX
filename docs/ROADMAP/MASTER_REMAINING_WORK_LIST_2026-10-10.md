@@ -242,3 +242,12 @@ Work in priority order. For each fix: reproduce → patch → focused regression
 - Full repository regression: **1595 passed in 113.20s**.
 - Current live-research gap remains: RSS search output is discovery only. Real publisher-page acquisition and independent-source corroboration must both succeed before a research answer is marked verified. Physical microphone/speaker acceptance, vision/OCR, Android accessibility/device control, persistent child-brain deployment, production self-improvement gates, and historical 417-item reconciliation remain open.
 - Current source paths in code include DuckDuckGo search, Google News RSS discovery, direct publisher web acquisition, RSS/Atom feeds, document acquisition, and configured API/provider integrations. Availability depends on runtime configuration, permissions, network and source reachability; none is universally reliable.
+
+### Follow-up — source diversity and live research retest
+
+- `SearchResearchProvider` now asks its configured independent fallback to supplement a partial primary result batch, rather than waiting until the primary returns zero results. Results remain discovery-only; URL deduplication and explicit recency checks still apply.
+- Added a regression test for partial-result supplementation.
+- Focused regression: **38 passed**.
+- Full repository regression after this change: **1596 passed in 107.32s**; `compileall` and `git diff --check` passed.
+- Live re-test: local model, search, supervisor, and HTTP voice bridge report online. Curated factual queries pass. Live AI-safety research still returns `NOT_VERIFIED` after fetching two publisher pages (33 extracted findings, confidence about 0.686). The pages cover different stories, and extracted findings are not independently corroborated; the system correctly refuses to label them verified. This is still an open functional blocker, not a pass.
+- Diagnostic note: `logs/media_bridge.log` contains repeated `OSError: [Errno 98] Address already in use` from redundant media-bridge start attempts while the service is already bound. Health is currently HTTP healthy, but supervisor restart/start idempotency needs a separate fix and regression test.

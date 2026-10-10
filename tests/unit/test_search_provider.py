@@ -443,3 +443,22 @@ def test_fallback_failure_for_one_query_variant_does_not_abort_later_variants():
     results = provider.search("आज AI सुरक्षा में क्या नया है?", max_results=5)
     assert len(results) == 1
     assert results[0].url == "https://www.google.com/ai-safety-report"
+
+
+def test_fallback_supplements_partial_primary_results_for_source_diversity():
+    from datetime import datetime, timezone
+    from core.research.search_provider import SearchResult, SearchProviderConfig
+
+    stamp = datetime.now(timezone.utc).isoformat()
+    primary = FunctionSearchBackend(lambda query, limit: [
+        SearchResult(title="Primary publisher report", url="https://primary.example/report", published_at=stamp)
+    ])
+    fallback = FunctionSearchBackend(lambda query, limit: [
+        SearchResult(title="Independent fallback report", url="https://fallback.example/report", published_at=stamp)
+    ])
+    provider = SearchResearchProvider(primary, SearchProviderConfig(max_results=5), fallback_backend=fallback)
+    results = provider.search("latest AI safety news", max_results=5)
+    assert {item.url for item in results} == {
+        "https://primary.example/report",
+        "https://fallback.example/report",
+    }

@@ -451,17 +451,26 @@ class SearchResearchProvider(
                     continue
             if time_sensitive:
                 batch = [item for item in batch if self._result_is_recent(item)]
-            if not batch and self.fallback_backend is not None and not fallback_attempted:
+            if self.fallback_backend is not None and not fallback_attempted and len(batch) < per_variant_limit:
+                # A partial primary result set is not a reason to stop source
+                # discovery. Ask the independent fallback for the remaining
+                # capacity so downstream verification has a better chance of
+                # finding multiple publisher domains. Both result sets remain
+                # discovery-only until full text is acquired and verified.
                 fallback_attempted = True
                 try:
-                    batch = self.fallback_backend.search(
-                        variant, max_results=per_variant_limit
+                    supplemental = self.fallback_backend.search(
+                        variant, max_results=max(1, per_variant_limit - len(batch))
                     )
                 except Exception as fallback_error:
                     backend_errors.append(fallback_error)
-                    continue
+                    supplemental = []
                 if time_sensitive:
-                    batch = [item for item in batch if self._result_is_recent(item)]
+                    supplemental = [
+                        item for item in supplemental
+                        if self._result_is_recent(item)
+                    ]
+                batch = list(batch) + list(supplemental)
             discovered.extend((item, variant) for item in batch[:limit])
 
         if not discovered and backend_errors:
