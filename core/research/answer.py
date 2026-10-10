@@ -155,6 +155,30 @@ class ResearchAnswerSynthesizer:
             selected,
         )
 
+        # Current/latest research needs claim-level corroboration, not merely
+        # several unrelated fresh articles. Each selected claim must be
+        # assessed as MULTI_SOURCE_SUPPORTED by at least two distinct source
+        # records. Otherwise fail closed; a collection of single-source
+        # headlines must never be labeled a verified current-news answer.
+        if self._requires_independent_corroboration(query):
+            claim_assessments = {
+                claim.knowledge_id: claim
+                for claim in getattr(
+                    getattr(aggregation, "answer", None),
+                    "claims",
+                    (),
+                )
+            }
+            corroborated = bool(selected) and all(
+                (assessment := claim_assessments.get(item.knowledge_id)) is not None
+                and getattr(assessment, "status", "") == "MULTI_SOURCE_SUPPORTED"
+                and getattr(assessment, "source_count", 0) >= 2
+                for item in selected
+            )
+            if not corroborated:
+                verified = False
+                status = "UNVERIFIED"
+
         return ResearchAnswer(
             query=query,
             answer="\n".join(answer_lines),
@@ -167,6 +191,15 @@ class ResearchAnswerSynthesizer:
                 for knowledge in selected
             ],
         )
+
+    @staticmethod
+    def _requires_independent_corroboration(query: str) -> bool:
+        text = query.casefold()
+        return any(term in text for term in (
+            "today", "latest", "current", "recent", "this week", "breaking",
+            "आज", "ताज़ा", "ताजा", "नवीनतम", "हालिया", "इस सप्ताह", "अभी",
+            "क्या नया है", "आज क्या", "अभी क्या",
+        ))
 
     @staticmethod
     def _format_statement(

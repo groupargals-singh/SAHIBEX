@@ -101,13 +101,13 @@ class ResearchAnswerPipeline:
                 KnowledgeCandidate(
                     knowledge_id=match.knowledge_id,
                     statement=match.statement,
-                    findings=[],
-                    evidence=[],
+                    findings=list(getattr(match, "findings", ()) or ()),
+                    evidence=list(getattr(match, "evidence", ()) or ()),
                     confidence=match.confidence,
                     verified=match.verified,
-                    created_at=None,
-                    last_verified_at=None,
-                    metadata={},
+                    created_at=getattr(match, "created_at", None),
+                    last_verified_at=getattr(match, "last_verified_at", None),
+                    metadata=dict(getattr(match, "metadata", {}) or {}),
                 )
             )
 
@@ -134,12 +134,23 @@ class ResearchAnswerPipeline:
                 knowledge = storage.get_knowledge(knowledge_id)
             if knowledge is None:
                 continue
+            # Preserve the canonical relationship graph. Reconstructing a
+            # candidate with only its statement/score silently dropped the
+            # finding/evidence IDs, so freshness and source assessments could
+            # not attach to the selected claim and valid live research was
+            # mislabeled STALE. Copy the stored links; do not infer links from
+            # text or promote an unverified knowledge record.
             candidates.append(
                 KnowledgeCandidate(
                     knowledge_id=knowledge.knowledge_id,
                     statement=knowledge.statement,
+                    findings=list(getattr(knowledge, "findings", ()) or ()),
+                    evidence=list(getattr(knowledge, "evidence", ()) or ()),
                     confidence=knowledge.confidence,
                     verified=knowledge.verified,
+                    created_at=getattr(knowledge, "created_at", None),
+                    last_verified_at=getattr(knowledge, "last_verified_at", None),
+                    metadata=dict(getattr(knowledge, "metadata", {}) or {}),
                 )
             )
         return candidates

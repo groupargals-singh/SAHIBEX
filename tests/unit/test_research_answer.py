@@ -339,3 +339,56 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def test_current_research_requires_claim_level_independent_corroboration():
+    aggregation = make_aggregation(
+        [
+            AggregatedKnowledge(
+                knowledge_id="current-single-source",
+                statement="An AI security story was reported.",
+                confidence=0.95,
+                verified=True,
+            ),
+        ],
+        status="VERIFIED",
+    )
+
+    result = ResearchAnswerSynthesizer().synthesize(
+        "What is new in AI security today?",
+        aggregation,
+    )
+
+    # A high confidence score and a generic SUPPORTED aggregate are not
+    # independent-source corroboration for time-sensitive research.
+    assert result.verified is False
+    assert result.status == "UNVERIFIED"
+
+    hindi_result = ResearchAnswerSynthesizer().synthesize(
+        "आज AI सुरक्षा में क्या नया है?",
+        aggregation,
+    )
+    assert hindi_result.verified is False
+    assert hindi_result.status == "UNVERIFIED"
+
+
+def test_non_time_sensitive_research_keeps_existing_status_contract():
+    aggregation = make_aggregation(
+        [
+            AggregatedKnowledge(
+                knowledge_id="general-knowledge",
+                statement="Python is a programming language.",
+                confidence=0.95,
+                verified=True,
+            ),
+        ],
+        status="VERIFIED",
+    )
+
+    result = ResearchAnswerSynthesizer().synthesize(
+        "What is Python?",
+        aggregation,
+    )
+
+    assert result.verified is True
+    assert result.status == "VERIFIED"

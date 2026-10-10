@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from core.research.answer_pipeline import ResearchAnswerPipeline
 from core.research.engine import ResearchEngine
 from core.research.models import (
+    Evidence,
     KnowledgeCandidate,
     ResearchSource,
 )
@@ -326,6 +327,63 @@ def test_ai_safety_query_filters_unrelated_sidebar_claims():
         items,
     )
     assert [item.knowledge_id for item in filtered] == ["k-relevant"]
+
+
+def test_focused_evidence_preserves_knowledge_links_for_freshness_and_traceability():
+    engine = ResearchEngine()
+    source = ResearchSource(
+        source_id="src-live-fresh",
+        title="Current AI safety report",
+        source_type="web",
+        locator="https://publisher.example/current-ai-safety",
+        publisher="Publisher Example",
+        published_at=now(),
+        reliability=0.9,
+        accessed_at=now(),
+    )
+    engine.register_source(source)
+    evidence = Evidence(
+        evidence_id="ev-current-ai-safety",
+        finding_id="finding-current-ai-safety",
+        source_id=source.source_id,
+        evidence_text="The report describes an AI security incident and mitigation.",
+        strength=0.9,
+        metadata={"knowledge_id": "k-current-ai-safety"},
+    )
+    knowledge = KnowledgeCandidate(
+        knowledge_id="k-current-ai-safety",
+        statement="The report describes an AI security incident and mitigation.",
+        findings=[evidence.finding_id],
+        evidence=[evidence.evidence_id],
+        confidence=0.9,
+        verified=True,
+        created_at=now(),
+        last_verified_at=now(),
+        metadata={"source_id": source.source_id},
+    )
+    engine.knowledge[knowledge.knowledge_id] = knowledge
+    pipeline = ResearchAnswerPipeline(ResearchQueryEngine(engine))
+
+    result = pipeline.run(
+        "AI security incident",
+        verified_only=True,
+        evidence_items=[evidence],
+        sources=[source],
+        focus_on_provided_evidence=True,
+    )
+
+    assert result.query_result.total_matches == 1
+    assert result.aggregation.results
+    # The evidence/source links must survive both focused retrieval and
+    # candidate conversion. A single source may still fail the confidence
+    # threshold, but it must not be falsely marked stale due to lost links.
+    assert result.answer.status != "STALE"
+    assert result.aggregation.answer.claims[0].evidence_count == 1
+    assert result.aggregation.answer.claims[0].source_count == 1
+    assert result.aggregation.answer.claims[0].freshness_score >= 0.4
+    assert result.traceability.status == "TRACEABLE"
+    assert result.traceability.evidence_count == 1
+    assert result.traceability.source_count == 1
 
 
 def test_non_ai_safety_query_does_not_apply_specialized_filter():
