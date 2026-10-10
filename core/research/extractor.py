@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import List
 
 from core.research.models import ResearchDocument
+from core.research.content_filter import ResearchContentFilter
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,9 @@ class ResearchExtractor:
     MAX_CONTENT_CHARS = 200_000
     MAX_FINDINGS = 100
 
+    def __init__(self, content_filter: ResearchContentFilter | None = None) -> None:
+        self.content_filter = content_filter or ResearchContentFilter()
+
     def extract(self, document: ResearchDocument) -> List[ExtractedFinding]:
         if not isinstance(document, ResearchDocument):
             raise TypeError("document must be a ResearchDocument")
@@ -62,8 +66,10 @@ class ResearchExtractor:
         for sentence in sentences:
             normalized = sentence.strip()
 
-            if not normalized:
+            decision = self.content_filter.evaluate(normalized)
+            if not decision.accepted:
                 continue
+            normalized = decision.normalized_text
 
             findings.append(
                 ExtractedFinding(

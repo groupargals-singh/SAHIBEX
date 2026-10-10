@@ -4,6 +4,12 @@ cd "$HOME/SAHIBEX"
 mkdir -p logs data
 PID_FILE="logs/media_bridge.pid"
 LOG_FILE="logs/media_bridge.log"
+# Check the service before trusting a possibly stale PID file. A healthy
+# bridge must never be duplicated just because its recorded PID is outdated.
+if curl -fsS --max-time 2 http://127.0.0.1:38742/health >/dev/null 2>&1; then
+  echo "SAHIBEX media bridge already healthy on port 38742."
+  exit 0
+fi
 if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
   echo "SAHIBEX media bridge already running (PID $(cat "$PID_FILE"))."
   exit 0

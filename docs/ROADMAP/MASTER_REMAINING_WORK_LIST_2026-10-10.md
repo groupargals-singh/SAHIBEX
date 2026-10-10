@@ -251,3 +251,12 @@ Work in priority order. For each fix: reproduce → patch → focused regression
 - Full repository regression after this change: **1596 passed in 107.32s**; `compileall` and `git diff --check` passed.
 - Live re-test: local model, search, supervisor, and HTTP voice bridge report online. Curated factual queries pass. Live AI-safety research still returns `NOT_VERIFIED` after fetching two publisher pages (33 extracted findings, confidence about 0.686). The pages cover different stories, and extracted findings are not independently corroborated; the system correctly refuses to label them verified. This is still an open functional blocker, not a pass.
 - Diagnostic note: `logs/media_bridge.log` contains repeated `OSError: [Errno 98] Address already in use` from redundant media-bridge start attempts while the service is already bound. Health is currently HTTP healthy, but supervisor restart/start idempotency needs a separate fix and regression test.
+
+### Follow-up — content-noise filter and bridge start idempotency
+
+- Added `core/research/content_filter.py` as a dedicated conservative content filter for explicit publisher page chrome (WhatsApp/newsletter promotion, related-story navigation, cookie/legal boilerplate). It does not declare facts true and deliberately preserves short factual claims.
+- Integrated the filter before candidate findings are stored; added tests that confirm promotional boilerplate is excluded while substantive article claims remain.
+- Fixed `scripts/start_sahibex_media_bridge.sh` to check the live health endpoint before trusting the PID file or attempting a new process. Live test returned `already healthy` and `logs/media_bridge.log` stayed at 2410 lines (no duplicate start/error appended).
+- `bash -n` on the bridge start and supervisor scripts: PASS. `compileall`: PASS. `git diff --check`: PASS.
+- Full repository regression after these changes: **1601 passed in 140.09s**.
+- Live research still needs a genuine verified outcome: current broad AI safety query obtains two different publisher stories, extracts evidence, but the final answer remains `NOT_VERIFIED` because claims do not have adequate independent corroboration. Do not lower the verification threshold just to make the smoke test green.
