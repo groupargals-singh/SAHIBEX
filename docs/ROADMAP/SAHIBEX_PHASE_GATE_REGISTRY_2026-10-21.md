@@ -533,3 +533,12 @@ The user's explicit instruction is to keep all passed work and every new SAHIBEX
 - P10 remains BLOCKED: original historical 417-item numbered source was not found in repository or prior context. Existing A–AC audit matrix/roadmaps are derivatives, not the original. User's no-invention constraint is preserved; no fabricated 417 list or percentage.
 - P11 remains BLOCKED by P6/P7/P8/P10 acceptance dependencies. No P-series gate promoted.
 - Detailed evidence: logs/p6_p7_p8_p10_p11_checkpoint_20261031.md.
+
+## 2026-10-31 — P6/P7/P8 live re-verification (software PASS; device gates unchanged)
+- Replaced only the exact stale media bridge process after confirming its command line and project cwd; the previous process used system Python. The restarted bridge uses the project `.venv`; loopback health HTTP 200.
+- Authenticated local TTS `/synthesize`: HTTP 200, valid WAV, 332,666 bytes. Unauthenticated `/synthesize` and `/vision/ocr`: HTTP 401.
+- Direct local whisper.cpp ASR on the pinned 11-second English fixture: PASS; expected JFK sentence recovered, language `en`, local-offline engine.
+- Android Companion rebuilt: Gradle BUILD SUCCESSFUL; package versionCode 13 / versionName 0.3.5; APK v2 signature PASS; SHA-256 `abcc35c794f693399ebd05aadc97e0f2dbe3a7019276b590d97c889f3ccd68b1`; matching artifact copied to Downloads as `SAHIBEX-Master-Brain-0.3.5-debug.apk`. Package is installed, but no ADB device is attached.
+- Full repository regression: **2201 passed in 194.34s**, exit 0.
+- No P-series gate promotion: P6 physical mic/speaker and real Hindi/Hinglish accuracy pending; P7 semantic model/corpus absent; P8 real Accessibility/Emergency Stop device acceptance pending; P10 historical 417 source absent; P11 remains blocked. Termux was denied permission to read Android's enabled Accessibility setting; no permission was granted or altered.
+- Detailed evidence: `docs/STATUS/P6_P7_P8_LIVE_REVERIFICATION_2026-10-31.md`.
