@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 from dataclasses import asdict, is_dataclass
 from datetime import date, datetime,timezone
 from pathlib import Path
@@ -54,7 +55,14 @@ class ResearchStorage:
 
         self._connection.row_factory = sqlite3.Row
 
-        self._initialize_schema()
+        try:
+            self._initialize_schema()
+        except BaseException:
+            # Never leave a half-initialized connection alive after corrupt or
+            # incompatible database state. Propagate the original failure so
+            # callers fail closed instead of silently opening an empty store.
+            self._connection.close()
+            raise
 
     def _initialize_schema(self) -> None:
         self._connection.executescript(
@@ -166,6 +174,25 @@ class ResearchStorage:
             CREATE INDEX IF NOT EXISTS idx_verification_time
             ON knowledge_verification_records(verified_at);
 
+            CREATE TABLE IF NOT EXISTS learning_history_records (
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT NOT NULL UNIQUE,
+                topic TEXT NOT NULL,
+                success INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                verification_status TEXT NOT NULL,
+                research_job_id TEXT NOT NULL,
+                research_execution_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                data TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_learning_history_created
+            ON learning_history_records(created_at);
+
+            CREATE INDEX IF NOT EXISTS idx_learning_history_topic
+            ON learning_history_records(topic);
+
             CREATE TABLE IF NOT EXISTS memory_verification_records (
                 memory_id TEXT PRIMARY KEY,
                 status TEXT NOT NULL,
@@ -238,49 +265,84 @@ class ResearchStorage:
 
             CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_search
             USING fts5(knowledge_id UNINDEXED, searchable_text);
+
+            CREATE TABLE IF NOT EXISTS fts_index_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                dirty INTEGER NOT NULL
+            );
+            INSERT OR IGNORE INTO fts_index_state(id, dirty) VALUES (1, 1);
+
+            CREATE TRIGGER IF NOT EXISTS memories_fts_dirty_insert
+            AFTER INSERT ON memories BEGIN
+                UPDATE fts_index_state SET dirty = 1 WHERE id = 1;
+            END;
+            CREATE TRIGGER IF NOT EXISTS memories_fts_dirty_update
+            AFTER UPDATE ON memories BEGIN
+                UPDATE fts_index_state SET dirty = 1 WHERE id = 1;
+            END;
+            CREATE TRIGGER IF NOT EXISTS memories_fts_dirty_delete
+            AFTER DELETE ON memories BEGIN
+                UPDATE fts_index_state SET dirty = 1 WHERE id = 1;
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS knowledge_fts_dirty_insert
+            AFTER INSERT ON knowledge_candidates BEGIN
+                UPDATE fts_index_state SET dirty = 1 WHERE id = 1;
+            END;
+            CREATE TRIGGER IF NOT EXISTS knowledge_fts_dirty_update
+            AFTER UPDATE ON knowledge_candidates BEGIN
+                UPDATE fts_index_state SET dirty = 1 WHERE id = 1;
+            END;
+            CREATE TRIGGER IF NOT EXISTS knowledge_fts_dirty_delete
+            AFTER DELETE ON knowledge_candidates BEGIN
+                UPDATE fts_index_state SET dirty = 1 WHERE id = 1;
+            END;
+
             """
         )
 
-        memory_count = self._connection.execute(
-            "SELECT COUNT(*) AS count FROM memories"
-        ).fetchone()["count"]
-        memory_index_count = self._connection.execute(
-            "SELECT COUNT(*) AS count FROM memory_search"
-        ).fetchone()["count"]
+        # Canonical-table triggers and transactional save methods maintain this
+        # marker. Clean databases avoid a full scan on every startup; legacy or
+        # interrupted canonical/FTS states are rebuilt before exposure.
+        state = self._connection.execute(
+            "SELECT dirty FROM fts_index_state WHERE id = 1"
+        ).fetchone()
+        if state is None or state["dirty"]:
+            expected_memories = {}
+            for row in self._connection.execute(
+                "SELECT memory_id, data FROM memories"
+            ).fetchall():
+                payload = self._deserialize(row["data"])
+                expected_memories[row["memory_id"]] = " ".join(
+                    [
+                        str(payload.get("content", "")),
+                        str(payload.get("memory_type", "")),
+                        str(payload.get("source", "")),
+                        " ".join(str(tag) for tag in payload.get("tags", [])),
+                        self._serialize(payload.get("metadata", {})),
+                    ]
+                )
+            expected_knowledge = {}
+            for row in self._connection.execute(
+                "SELECT knowledge_id, data FROM knowledge_candidates"
+            ).fetchall():
+                payload = self._deserialize(row["data"])
+                expected_knowledge[row["knowledge_id"]] = str(
+                    payload.get("statement", "")
+                )
 
-        if memory_count != memory_index_count:
             self._connection.execute("DELETE FROM memory_search")
-            self._connection.execute(
-                """
-                INSERT INTO memory_search(memory_id, searchable_text)
-                SELECT
-                    memory_id,
-                    COALESCE(json_extract(data, '$.content'), '') || ' ' ||
-                    COALESCE(memory_type, '') || ' ' ||
-                    COALESCE(source, '') || ' ' ||
-                    COALESCE(json_extract(data, '$.tags'), '') || ' ' ||
-                    COALESCE(json_extract(data, '$.metadata'), '')
-                FROM memories
-                """
+            self._connection.executemany(
+                "INSERT INTO memory_search(memory_id, searchable_text) VALUES (?, ?)",
+                list(expected_memories.items()),
             )
-
-        knowledge_count = self._connection.execute(
-            "SELECT COUNT(*) AS count FROM knowledge_candidates"
-        ).fetchone()["count"]
-        knowledge_index_count = self._connection.execute(
-            "SELECT COUNT(*) AS count FROM knowledge_search"
-        ).fetchone()["count"]
-
-        if knowledge_count != knowledge_index_count:
             self._connection.execute("DELETE FROM knowledge_search")
+            self._connection.executemany(
+                "INSERT INTO knowledge_search(knowledge_id, searchable_text) VALUES (?, ?)",
+                list(expected_knowledge.items()),
+            )
             self._connection.execute(
-                """
-                INSERT INTO knowledge_search(knowledge_id, searchable_text)
-                SELECT
-                    knowledge_id,
-                    COALESCE(json_extract(data, '$.statement'), '')
-                FROM knowledge_candidates
-                """
+                "UPDATE fts_index_state SET dirty = 0 WHERE id = 1"
             )
 
         self._connection.commit()
@@ -600,44 +662,67 @@ class ResearchStorage:
     # Knowledge
     # ---------------------------------------------------------
 
+    def _save_search_indexed_record(
+        self,
+        *,
+        canonical_sql: str,
+        canonical_parameters: tuple,
+        index_table: str,
+        index_id_column: str,
+        record_id: str,
+        searchable_text: str,
+    ) -> None:
+        """Atomically persist a canonical row and its derived search row.
+
+        The connection context manager commits only on success and rolls back
+        the entire write transaction on any SQL error. Without this boundary,
+        a canonical row could remain pending after an FTS failure and be
+        committed accidentally by a later unrelated write.
+        """
+        allowed_indexes = {
+            ("memory_search", "memory_id"),
+            ("knowledge_search", "knowledge_id"),
+        }
+        if (index_table, index_id_column) not in allowed_indexes:
+            raise ValueError("Unsupported search index table.")
+
+        with self._connection:
+            self._connection.execute(
+                canonical_sql,
+                canonical_parameters,
+            )
+            self._connection.execute(
+                f"DELETE FROM {index_table} WHERE {index_id_column} = ?",
+                (record_id,),
+            )
+            self._connection.execute(
+                f"INSERT INTO {index_table}({index_id_column}, searchable_text) VALUES (?, ?)",
+                (record_id, searchable_text),
+            )
+            self._connection.execute(
+                "UPDATE fts_index_state SET dirty = 0 WHERE id = 1"
+            )
+
     def save_knowledge(
         self,
         knowledge: KnowledgeCandidate,
     ) -> None:
-        self._connection.execute(
-            """
-            INSERT OR REPLACE INTO knowledge_candidates
-            (knowledge_id, verified, confidence, data)
-            VALUES (?, ?, ?, ?)
-            """,
-            (
+        self._save_search_indexed_record(
+            canonical_sql=(
+                "INSERT OR REPLACE INTO knowledge_candidates "
+                "(knowledge_id, verified, confidence, data) VALUES (?, ?, ?, ?)"
+            ),
+            canonical_parameters=(
                 knowledge.knowledge_id,
                 int(knowledge.verified),
                 knowledge.confidence,
                 self._serialize(knowledge),
             ),
+            index_table="knowledge_search",
+            index_id_column="knowledge_id",
+            record_id=knowledge.knowledge_id,
+            searchable_text=knowledge.statement,
         )
-
-        self._connection.commit()
-
-        self._connection.execute(
-            "DELETE FROM knowledge_search WHERE knowledge_id = ?",
-            (knowledge.knowledge_id,),
-        )
-        self._connection.execute(
-            """
-            INSERT INTO knowledge_search(
-                knowledge_id,
-                searchable_text
-            )
-            VALUES (?, ?)
-            """,
-            (
-                knowledge.knowledge_id,
-                knowledge.statement,
-            ),
-        )
-        self._connection.commit()
 
     def get_knowledge(
         self,
@@ -757,11 +842,11 @@ class ResearchStorage:
             for token in fts_terms
         ) or f'"{normalized_query.replace(chr(34), chr(34) * 2)}"'
 
+        # Apply the result limit after relevance filtering. Limiting the FTS
+        # prefilter first can let high-confidence but irrelevant candidates
+        # crowd out the actually relevant claim.
         limit_sql = ""
         limit_params: tuple[object, ...] = ()
-        if limit is not None:
-            limit_sql = " LIMIT ?"
-            limit_params = (limit,)
 
         if verified_only:
             rows = self._connection.execute(
@@ -793,7 +878,44 @@ class ResearchStorage:
                 (fts_query, *limit_params),
             ).fetchall()
 
+        # SQLite's FTS unicode tokenizer can fail to index/search some
+        # Indic-script tokens consistently on device builds. For non-ASCII
+        # queries, scan persisted candidates and apply the same strict
+        # token-overlap relevance gate below rather than trusting FTS hits.
+        if any(ord(character) > 127 for character in normalized_query):
+            if verified_only:
+                rows = self._connection.execute(
+                    """
+                    SELECT data FROM knowledge_candidates
+                    WHERE verified = 1
+                    ORDER BY confidence DESC
+                    """
+                ).fetchall()
+            else:
+                rows = self._connection.execute(
+                    "SELECT data FROM knowledge_candidates ORDER BY confidence DESC"
+                ).fetchall()
+
         matches: list[KnowledgeCandidate] = []
+        punctuation = ".,!?;:()[]{}'\"।॥"
+        query_tokens = {
+            token.strip(punctuation)
+            for token in normalized_query.split()
+            if token.strip(punctuation)
+        }
+        stop_words = {
+            "a", "an", "and", "are", "as", "at", "be", "by", "for",
+            "from", "how", "in", "is", "it", "of", "on", "or", "the",
+            "to", "was", "what", "when", "where", "which", "who", "why",
+            "hai", "hain", "ka", "ki", "ke", "ko", "kya", "mein", "me",
+            "se", "aur", "kaun", "kab", "kahan", "kyon", "hai", "tha",
+            "thi", "the", "कौन", "कौनसा", "कौनसी", "क्या", "कहाँ",
+            "कब", "क्यों", "कैसे", "बताओ", "बताइए", "कृपया",
+        }
+        significant_query_tokens = {
+            token for token in query_tokens
+            if len(token) >= 3 and token not in stop_words
+        }
 
         for row in rows:
             knowledge = KnowledgeCandidate(
@@ -804,11 +926,31 @@ class ResearchStorage:
                 continue
 
             normalized_statement = " ".join(
-                knowledge.statement.lower().strip().split()
+                knowledge.statement.casefold().strip().split()
             )
+            statement_tokens = {
+                token.strip(punctuation)
+                for token in normalized_statement.split()
+                if token.strip(punctuation)
+            }
 
-            if normalized_query in normalized_statement:
-                matches.append(knowledge)
+            # Exact phrase matches remain strongest. Natural-language queries
+            # can also retrieve semantically relevant candidates by requiring
+            # enough significant token overlap; a single shared generic word
+            # cannot pull in unrelated knowledge. The FTS index is only a
+            # candidate prefilter, never the final relevance decision.
+            if normalized_query not in normalized_statement:
+                if not significant_query_tokens:
+                    continue
+                overlap = significant_query_tokens & statement_tokens
+                required_overlap = max(
+                    1,
+                    (len(significant_query_tokens) * 2 + 2) // 3,
+                )
+                if len(overlap) < required_overlap:
+                    continue
+
+            matches.append(knowledge)
 
         matches.sort(
             key=lambda knowledge: (
@@ -816,6 +958,8 @@ class ResearchStorage:
                 knowledge.knowledge_id,
             )
         )
+        if limit is not None:
+            matches = matches[:limit]
 
         return matches
 
@@ -1453,16 +1597,10 @@ class ResearchStorage:
                 "metadata must be a dictionary"
             )
 
-        event_id = (
-            f"knowledge-verification:"
-            f"{knowledge_id}:"
-            f"{verified_at.isoformat()}:"
-            f"{status}"
-        )
-
+        event_id = f"knowledge-verification:{uuid.uuid4().hex}"
         self._connection.execute(
             """
-            INSERT OR REPLACE INTO knowledge_verification_records (
+            INSERT INTO knowledge_verification_records (
                 event_id,
                 knowledge_id,
                 status,
@@ -1582,7 +1720,125 @@ class ResearchStorage:
             "history": history,
         }
 
-       # ---------------------------------------------------------
+    # ---------------------------------------------------------
+    # Learning History
+    # ---------------------------------------------------------
+
+    def record_learning_history(
+        self,
+        *,
+        topic: str,
+        success: bool,
+        status: str,
+        verification_status: str,
+        research_job_id: str = "",
+        research_execution_id: str = "",
+        learned_knowledge_ids: tuple[str, ...] | list[str] = (),
+        verified_knowledge_ids: tuple[str, ...] | list[str] = (),
+        error: str = "",
+        answer: str = "",
+        created_at: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Persist one learning attempt, including rejected/failed attempts."""
+        if not isinstance(topic, str) or not topic.strip():
+            raise ValueError("topic cannot be empty")
+        if not isinstance(success, bool):
+            raise ValueError("success must be a boolean")
+        for field_name, value in (
+            ("status", status),
+            ("verification_status", verification_status),
+            ("research_job_id", research_job_id),
+            ("research_execution_id", research_execution_id),
+            ("error", error),
+            ("answer", answer),
+        ):
+            if not isinstance(value, str):
+                raise ValueError(f"{field_name} must be a string")
+        if not isinstance(learned_knowledge_ids, (tuple, list)):
+            raise ValueError("learned_knowledge_ids must be a list or tuple")
+        if not isinstance(verified_knowledge_ids, (tuple, list)):
+            raise ValueError("verified_knowledge_ids must be a list or tuple")
+        if created_at is None:
+            created_at = datetime.now(timezone.utc)
+        if not isinstance(created_at, datetime) or created_at.utcoffset() is None:
+            raise ValueError("created_at must be a timezone-aware datetime")
+
+        event_id = f"learning-history:{uuid.uuid4().hex}"
+        record: dict[str, Any] = {
+            "event_id": event_id,
+            "topic": topic.strip(),
+            "success": success,
+            "status": status,
+            "verification_status": verification_status,
+            "research_job_id": research_job_id,
+            "research_execution_id": research_execution_id,
+            "learned_knowledge_ids": tuple(learned_knowledge_ids),
+            "verified_knowledge_ids": tuple(verified_knowledge_ids),
+            "error": error,
+            "answer": answer,
+            "created_at": created_at,
+        }
+        self._connection.execute(
+            """
+            INSERT INTO learning_history_records (
+                event_id, topic, success, status, verification_status,
+                research_job_id, research_execution_id, created_at, data
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_id,
+                record["topic"],
+                int(success),
+                status,
+                verification_status,
+                research_job_id,
+                research_execution_id,
+                created_at.isoformat(),
+                self._serialize(record),
+            ),
+        )
+        self._connection.commit()
+        return record
+
+    def learning_history(
+        self,
+        *,
+        topic: str | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return durable learning attempts in insertion order."""
+        if topic is not None and (not isinstance(topic, str) or not topic.strip()):
+            raise ValueError("topic must be a non-empty string when supplied")
+        if limit is not None and (not isinstance(limit, int) or isinstance(limit, bool) or limit < 1):
+            raise ValueError("limit must be a positive integer")
+
+        sql = "SELECT data FROM learning_history_records"
+        parameters: list[Any] = []
+        if topic is not None:
+            sql += " WHERE topic = ?"
+            parameters.append(topic.strip())
+        sql += " ORDER BY sequence ASC"
+        if limit is not None:
+            sql += " LIMIT ?"
+            parameters.append(limit)
+
+        rows = self._connection.execute(sql, parameters).fetchall()
+        history = [self._deserialize(row["data"]) for row in rows]
+        for record in history:
+            for field_name in (
+                "learned_knowledge_ids",
+                "verified_knowledge_ids",
+            ):
+                record[field_name] = tuple(record.get(field_name, ()))
+        return history
+
+    def learning_history_count(self) -> int:
+        row = self._connection.execute(
+            "SELECT COUNT(*) AS count FROM learning_history_records"
+        ).fetchone()
+        return int(row["count"])
+
+    # ---------------------------------------------------------
     # Memory Verification
     # ---------------------------------------------------------
 
@@ -1770,35 +2026,6 @@ class ResearchStorage:
                 "memory must be a MemoryCandidate"
             )
 
-        self._connection.execute(
-            """
-            INSERT OR REPLACE INTO memories
-            (
-                memory_id,
-                memory_type,
-                source,
-                importance,
-                confidence,
-                data
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                memory.memory_id,
-                memory.memory_type,
-                memory.source,
-                memory.importance,
-                memory.confidence,
-                self._serialize(memory),
-            ),
-        )
-
-        self._connection.commit()
-
-        self._connection.execute(
-            "DELETE FROM memory_search WHERE memory_id = ?",
-            (memory.memory_id,),
-        )
         searchable_text = " ".join(
             [
                 memory.content,
@@ -1808,20 +2035,25 @@ class ResearchStorage:
                 self._serialize(memory.metadata),
             ]
         )
-        self._connection.execute(
-            """
-            INSERT INTO memory_search(
-                memory_id,
-                searchable_text
-            )
-            VALUES (?, ?)
-            """,
-            (
-                memory.memory_id,
-                searchable_text,
+        self._save_search_indexed_record(
+            canonical_sql=(
+                "INSERT OR REPLACE INTO memories "
+                "(memory_id, memory_type, source, importance, confidence, data) "
+                "VALUES (?, ?, ?, ?, ?, ?)"
             ),
+            canonical_parameters=(
+                memory.memory_id,
+                memory.memory_type,
+                memory.source,
+                memory.importance,
+                memory.confidence,
+                self._serialize(memory),
+            ),
+            index_table="memory_search",
+            index_id_column="memory_id",
+            record_id=memory.memory_id,
+            searchable_text=searchable_text,
         )
-        self._connection.commit()
 
     def get_memory(
         self,
@@ -1927,6 +2159,10 @@ class ResearchStorage:
         min_confidence: Optional[float] = None,
         min_importance: Optional[float] = None,
         limit: Optional[int] = None,
+        user_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        child_brain_id: Optional[str] = None,
+        memory_namespace: Optional[str] = None,
     ) -> list[MemoryCandidate]:
         """
         Retrieve memories using case-insensitive relevance matching.
@@ -1937,6 +2173,10 @@ class ResearchStorage:
         - source
         - tags
         - serialized metadata
+
+        Scope-bound memories require exact matching user/task/child/namespace
+        context. Omitting a scope filter never exposes a record that carries
+        that scope, which prevents accidental cross-context recall.
 
         Results are deterministic and ranked by:
         1. relevance score
@@ -1980,10 +2220,22 @@ class ResearchStorage:
                 )
 
         if limit is not None:
-            if not isinstance(limit, int):
+            if not isinstance(limit, int) or isinstance(limit, bool):
                 raise TypeError("limit must be an integer")
             if limit <= 0:
                 raise ValueError("limit must be positive")
+
+        requested_scope = {
+            "user_id": user_id,
+            "task_id": task_id,
+            "child_brain_id": child_brain_id,
+            "memory_namespace": memory_namespace,
+        }
+        for scope_name, scope_value in requested_scope.items():
+            if scope_value is not None and (
+                not isinstance(scope_value, str) or not scope_value.strip()
+            ):
+                raise ValueError(f"{scope_name} must be a non-empty string when supplied")
 
         query_lower = query.casefold()
         query_tokens = {
@@ -2062,6 +2314,55 @@ class ResearchStorage:
                 **self._deserialize(row["data"])
             )
 
+            # Scope metadata may be stored flat for legacy callers or under a
+            # dedicated "scope" object. Any malformed or unmatched stored
+            # scope fails closed; unscoped legacy/global memories remain usable.
+            metadata = memory.metadata if isinstance(memory.metadata, dict) else {}
+            nested_scope = metadata.get("scope", {})
+            if "scope" in metadata and not isinstance(nested_scope, dict):
+                continue
+            stored_scope = {
+                "user_id": metadata.get("user_id", nested_scope.get("user_id")),
+                "task_id": metadata.get("task_id", nested_scope.get("task_id")),
+                "child_brain_id": metadata.get(
+                    "child_brain_id",
+                    metadata.get(
+                        "child_id",
+                        nested_scope.get("child_brain_id", nested_scope.get("child_id")),
+                    ),
+                ),
+                "memory_namespace": metadata.get(
+                    "memory_namespace", nested_scope.get("memory_namespace")
+                ),
+            }
+            has_stored_scope = any(value is not None for value in stored_scope.values())
+            has_incomplete_requested_scope = any(
+                value is None for value in requested_scope.values()
+            )
+            scope_matches = not (
+                has_stored_scope and has_incomplete_requested_scope
+            )
+            for scope_name, stored_value in stored_scope.items():
+                if not scope_matches:
+                    break
+                requested_value = requested_scope[scope_name]
+                # Scope matching is exact in both directions. A scoped request
+                # must never inherit an unscoped/partially scoped legacy record,
+                # and an unscoped request must never see a scoped record.
+                if stored_value is None and requested_value is None:
+                    continue
+                if (
+                    not isinstance(stored_value, str)
+                    or not stored_value.strip()
+                    or not isinstance(requested_value, str)
+                    or not requested_value.strip()
+                    or requested_value != stored_value
+                ):
+                    scope_matches = False
+                    break
+            if not scope_matches:
+                continue
+
             searchable_parts = [
                 memory.content,
                 memory.memory_type,
@@ -2084,13 +2385,10 @@ class ResearchStorage:
             # conversational questions, allow deterministic token-overlap
             # retrieval so "what is my project name?" can recall a memory
             # containing "my preferred project name is ...".
-            if (
-                query_lower not in searchable_text
-                and len(token_matches) < 2
-                and not any(
-                    len(token) >= 7 for token in token_matches
-                )
-            ):
+            if query_lower not in searchable_text and len(token_matches) < 2:
+                # A single long keyword (for example, a project name) must
+                # not make an otherwise unrelated multi-word query relevant.
+                # Single-term queries still pass through the exact-match path.
                 continue
 
             relevance = 0
@@ -2409,7 +2707,7 @@ class ResearchStorage:
 
         return {
             "action": "PROPOSAL_ONLY",
-            "status": "VERIFIED",
+            "status": "PROPOSAL_ONLY",
             "memory_a_id": memory_a_id,
             "memory_b_id": memory_b_id,
             "selected_memory_id": selected_memory_id,

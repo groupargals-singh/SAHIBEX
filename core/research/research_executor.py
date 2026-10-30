@@ -108,6 +108,21 @@ class ResearchExecutor:
 
         try:
             for step in plan.steps:
+                # Cancellation is cooperative: check before every stage so a
+                # cancelled job cannot continue into later acquisition,
+                # extraction, verification, or answer-synthesis handlers.
+                if job.status == ResearchJobStatus.CANCELLED:
+                    result.cancel()
+                    result.metadata["cancelled_before_step"] = step.step_id
+                    return result
+
+                if job.status != ResearchJobStatus.RUNNING:
+                    result.fail(
+                        f"research job left running state before step: {step.step_id}",
+                        failed_step=step.step_id,
+                    )
+                    return result
+
                 handler = self._step_handlers.get(step.step_id)
 
                 if handler is None:
@@ -127,6 +142,20 @@ class ResearchExecutor:
                     result.output[step.step_id] = output
 
                 result.record_step(step.step_id)
+
+                # A handler may cooperatively cancel the job while running.
+                # Preserve its completed output, then stop before any next step.
+                if job.status == ResearchJobStatus.CANCELLED:
+                    result.cancel()
+                    result.metadata["cancelled_after_step"] = step.step_id
+                    return result
+
+                if job.status != ResearchJobStatus.RUNNING:
+                    result.fail(
+                        f"research job left running state after step: {step.step_id}",
+                        failed_step=step.step_id,
+                    )
+                    return result
 
             result.complete(output=result.output)
             return result

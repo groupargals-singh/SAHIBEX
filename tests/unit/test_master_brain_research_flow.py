@@ -4,9 +4,15 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 
+import pytest
+
 from core.brain.master_brain import MasterBrain
+from core.brain.mother_operational_integration import (
+    MotherOperationalIntegration,
+)
 from core.brain.mother_research_integration import (
     MotherResearchIntegration,
+    MotherResearchResult,
 )
 from core.research.acquisition import (
     AcquisitionResult,
@@ -332,6 +338,17 @@ def test_master_brain_research_flow():
             mother_research=mother_research
         )
 
+        # Injecting a custom research store must not split the Main Brain's
+        # read/write path: research, operational retrieval, Memory Brain and
+        # Knowledge Brain must all observe the same persistent database.
+        assert brain.mother_research.storage is mother_research.storage
+        assert brain.mother_operational.storage is mother_research.storage
+        assert brain.mother_operational.memory_knowledge.storage is (
+            mother_research.storage
+        )
+        assert brain.memory_brain.storage is mother_research.storage
+        assert brain.knowledge_brain.storage is mother_research.storage
+
         result = brain.process(
             "Search for SAHIBEX research integration."
         )
@@ -363,12 +380,209 @@ def test_master_brain_research_flow():
         )
 
 
+def test_master_brain_preserves_research_verification_status(monkeypatch) -> None:
+    research = MotherResearchIntegration()
+    brain = MasterBrain(mother_research=research)
+    verified_result = MotherResearchResult(
+        success=True,
+        query="Search for a verified routing test.",
+        status="completed",
+        answer="Verified research answer.",
+        job_id="verified-job-1",
+        execution_id="verified-execution-1",
+        verification_status="VERIFIED",
+    )
+    monkeypatch.setattr(
+        brain.research_learning_brain,
+        "research_topic",
+        lambda query, confirmation=False: SimpleNamespace(
+            success=True,
+            operation="research",
+            verified=True,
+            persisted=True,
+            result=verified_result,
+            error="",
+        ),
+    )
+
+    result = brain.process("Search for a verified routing test.")
+
+    assert result.success is True
+    assert result.intent == "search"
+    assert result.message == "Verified research answer."
+    assert result.verification_status == "VERIFIED"
+    assert (
+        result.metadata["mother_research_integration"]["verification_status"]
+        == "VERIFIED"
+    )
+
+
+def test_master_brain_preserves_learning_verification_status(monkeypatch) -> None:
+    from core.brain.mother_learning_integration import MotherLearningResult
+
+    research = MotherResearchIntegration()
+    brain = MasterBrain(mother_research=research)
+    verified_result = MotherLearningResult(
+        success=True,
+        topic="verified routing test",
+        status="completed",
+        answer="Verified learning answer.",
+        knowledge_count=1,
+        verified_knowledge_count=1,
+        research_job_id="learning-job-1",
+        verification_status="VERIFIED",
+        research_execution_id="learning-execution-1",
+        verified_knowledge_ids=("knowledge-verified-1",),
+    )
+    monkeypatch.setattr(
+        brain.research_learning_brain,
+        "learn_topic",
+        lambda topic, confirmation=False: SimpleNamespace(
+            success=True,
+            operation="learn",
+            verified=True,
+            persisted=True,
+            result=verified_result,
+            error="",
+        ),
+    )
+
+    result = brain.process(
+        "I want to learn about a verified routing test.",
+        user_confirmation=True,
+    )
+
+    assert result.success is True
+    assert result.intent == "learn"
+    assert result.message == "Verified learning answer."
+    assert result.verification_status == "VERIFIED"
+    assert (
+        result.metadata["mother_learning_integration"]["verification_status"]
+        == "VERIFIED"
+    )
+
+
+def test_master_brain_rejects_unverified_research_even_if_inner_success(monkeypatch) -> None:
+    research = MotherResearchIntegration()
+    brain = MasterBrain(mother_research=research)
+    unverified_result = MotherResearchResult(
+        success=True,
+        query="Search for unverified routing test.",
+        status="completed",
+        answer="UNVERIFIED CLAIM MUST NOT BE SHOWN",
+        job_id="unverified-job-1",
+        execution_id="unverified-execution-1",
+        verification_status="NOT_VERIFIED",
+    )
+    monkeypatch.setattr(
+        brain.research_learning_brain,
+        "research_topic",
+        lambda query, confirmation=False: SimpleNamespace(
+            success=False,
+            operation="research",
+            verified=False,
+            persisted=False,
+            result=unverified_result,
+            error="",
+        ),
+    )
+
+    result = brain.process("Search for unverified routing test.")
+
+    assert result.success is False
+    assert result.verification_status == "NOT_VERIFIED"
+    assert "UNVERIFIED CLAIM MUST NOT BE SHOWN" not in result.message
+    assert "couldn't verify" in result.message.casefold()
+    assert result.metadata["mother_research_integration"]["success"] is False
+
+
+def test_master_brain_rejects_unverified_learning_even_if_inner_success(monkeypatch) -> None:
+    from core.brain.mother_learning_integration import MotherLearningResult
+
+    research = MotherResearchIntegration()
+    brain = MasterBrain(mother_research=research)
+    unverified_result = MotherLearningResult(
+        success=True,
+        topic="unverified routing test",
+        status="completed",
+        answer="UNVERIFIED LEARNING CLAIM MUST NOT BE SHOWN",
+        knowledge_count=1,
+        verified_knowledge_count=0,
+        research_job_id="unverified-learning-job-1",
+        verification_status="NOT_VERIFIED",
+        research_execution_id="unverified-learning-execution-1",
+    )
+    monkeypatch.setattr(
+        brain.research_learning_brain,
+        "learn_topic",
+        lambda topic, confirmation=False: SimpleNamespace(
+            success=False,
+            operation="learn",
+            verified=False,
+            persisted=False,
+            result=unverified_result,
+            error="",
+        ),
+    )
+
+    result = brain.process(
+        "I want to learn about unverified routing test.",
+        user_confirmation=True,
+    )
+
+    assert result.success is False
+    assert result.verification_status == "NOT_VERIFIED"
+    assert "UNVERIFIED LEARNING CLAIM MUST NOT BE SHOWN" not in result.message
+    assert "couldn't verify" in result.message.casefold()
+    assert result.metadata["mother_learning_integration"]["success"] is False
+
+
+def test_master_brain_rejects_split_explicit_storage() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        research = build_research_integration(root / "research.db")
+        operational = MotherOperationalIntegration(
+            storage=ResearchStorage(root / "operational.db")
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="share one persistent database",
+        ):
+            MasterBrain(
+                mother_research=research,
+                mother_operational=operational,
+            )
+
+
+def test_master_brain_rejects_learning_from_other_research_instance() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        research = build_research_integration(root / "research.db")
+        other_research = build_research_integration(root / "other-research.db")
+        from core.brain.mother_learning_integration import (
+            MotherLearningIntegration,
+        )
+
+        learning = MotherLearningIntegration(research=other_research)
+        with pytest.raises(
+            ValueError,
+            match="same mother_research integration instance",
+        ):
+            MasterBrain(
+                mother_research=research,
+                mother_learning=learning,
+            )
+
+
 def main():
     test_conflict_metadata_no_conflict()
     test_conflict_metadata_resolved()
     test_conflict_metadata_unresolved()
     test_unresolved_conflict_is_not_verified_fact()
     test_master_brain_research_flow()
+    test_master_brain_rejects_split_explicit_storage()
+    test_master_brain_rejects_learning_from_other_research_instance()
 
     print(
         "SAHIBEX MASTER BRAIN RESEARCH "

@@ -19,3 +19,16 @@ APK: `manual-build/SAHIBEX-Android-Companion-Voice-debug.apk`. It is signed with
 The voice relay's real localhost E2E smoke test returned HTTP 200 / SUCCESS / VERIFIED using the local model. This validates the Termux server route, not yet physical microphone/TTS operation in the updated Android UI. User must approve the Android app update and grant any requested permissions.
 
 The old Termux:API CLI path remains unresponsive on this phone. The official F-Droid Termux:API APK has a different signing certificate from the installed Termux app and must not be installed over this setup. The native Companion bridge is the safe alternative. Camera capture and image understanding are still not implemented in this v0.2.2 Companion; vision remains pending.
+
+
+## SAHIBEX Brain Frontend v0.3.2 (2026-10-29)
+
+- Dark Master Brain screen, animated neural-core visualization, chat transcript, typing composer, Send, VOICE and CAM controls; custom brain launcher icon.
+- Typing and voice use the authenticated local `/voice` endpoint; protected actions remain subject to Master Brain permission checks. Pairing, emergency-stop and device-test controls remain.
+- Front-camera preview and generic local frame-difference motion meter. A deliberate `ANALYZE CURRENT FRAME (LOCAL OCR)` action sends one still to the new authenticated `/vision/ocr` endpoint. Requests and images are bounded; OCR images are held in a private temporary directory and removed after processing. Text is explicitly untrusted. OCR only—not semantic scene understanding, identity recognition, pose or gesture understanding.
+- Build output: `manual-build/SAHIBEX-Frontend-v1.5-debug.apk` (versionCode 10, versionName 0.3.2). Full repository regression: 2172 passed; Java, D8, AAPT2 and APK signature checks passed.
+- Physical-device and live-bridge acceptance remains pending. True 3D avatar, simultaneous face-to-face voice/video and lip-sync remain future work; no P6/P7/P8 gate is promoted.
+
+## Latest voice build (2026-10-29)
+- `manual-build/SAHIBEX-Frontend-v1.6-debug.apk`, version 0.3.3 / versionCode 11, SHA-256 `ad494426d1ea97062906e5dd4cf094208238d44feddb5307b89a4749345d22ad`.
+- Local neural output is peak-normalized with headroom. Automatic Android TTS fallback is disabled; synthesis/playback failure is surfaced rather than switching to another voice. Physical device listening and custom-voice acceptance remain pending.

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from email.message import Message
+import time
 from urllib.error import HTTPError
 from urllib.parse import urlparse
 from unittest.mock import Mock
 
 import pytest
 
+import core.research.web_provider as web_provider
 from core.research.web_provider import DirectWebResearchProvider, WebProviderConfig
 
 
@@ -54,6 +56,23 @@ def provider_with(outcomes):
             raise ValueError("private or reserved host")
     provider._validate_url = validate
     return provider
+
+
+def test_hostname_resolution_timeout_fails_closed_without_blocking(monkeypatch):
+    monkeypatch.setattr(web_provider, "_DNS_LOOKUP_TIMEOUT_SECONDS", 0.02)
+
+    def stalled_getaddrinfo(*args, **kwargs):
+        time.sleep(0.2)
+        return [(None, None, None, None, ("93.184.216.34", 0))]
+
+    monkeypatch.setattr(web_provider.socket, "getaddrinfo", stalled_getaddrinfo)
+    provider = DirectWebResearchProvider(WebProviderConfig(timeout_seconds=1))
+
+    started = time.monotonic()
+    with pytest.raises(ValueError, match="hostname resolution timed out"):
+        provider._validate_hostname("example.com")
+
+    assert time.monotonic() - started < 0.15
 
 
 def test_resolves_valid_redirect_without_enabling_automatic_redirects():

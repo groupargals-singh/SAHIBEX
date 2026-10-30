@@ -5,15 +5,23 @@ from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 import hashlib
 import html
+from email.utils import parsedate_to_datetime
+import errno
+import http.client
 import ipaddress
+import queue
 import re
 import socket
+import threading
 from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
 from urllib.request import (
     Request,
     HTTPRedirectHandler,
+    HTTPHandler,
+    HTTPSHandler,
+    ProxyHandler,
     build_opener,
 )
 
@@ -24,6 +32,47 @@ from core.research.acquisition import (
     AcquiredSource,
     ResearchAcquisitionProvider,
 )
+
+
+_DNS_LOOKUP_TIMEOUT_SECONDS = 5.0
+_DNS_LOOKUP_SLOTS = threading.BoundedSemaphore(4)
+
+
+def _bounded_getaddrinfo(hostname: str):
+    """Run OS DNS lookup with a hard caller deadline and bounded daemon workers."""
+    if not _DNS_LOOKUP_SLOTS.acquire(blocking=False):
+        raise TimeoutError("hostname resolution capacity is exhausted")
+
+    result_queue: queue.Queue[tuple[str, object]] = queue.Queue(maxsize=1)
+
+    def resolve() -> None:
+        try:
+            result_queue.put(("ok", socket.getaddrinfo(
+                hostname,
+                None,
+                type=socket.SOCK_STREAM,
+            )))
+        except Exception as exc:
+            result_queue.put(("error", exc))
+        finally:
+            # A timed-out OS resolver retains its slot until the actual lookup
+            # returns, preventing repeated requests from spawning unbounded work.
+            _DNS_LOOKUP_SLOTS.release()
+
+    threading.Thread(
+        target=resolve,
+        name="sahibex-dns-resolution",
+        daemon=True,
+    ).start()
+
+    try:
+        status, value = result_queue.get(timeout=_DNS_LOOKUP_TIMEOUT_SECONDS)
+    except queue.Empty as exc:
+        raise TimeoutError("hostname resolution timed out") from exc
+
+    if status == "error":
+        raise value
+    return value
 
 
 @dataclass(frozen=True)
@@ -77,6 +126,85 @@ class _NoRedirectHandler(HTTPRedirectHandler):
         newurl,
     ):
         return None
+
+
+def _connect_public_socket(host: str, port: int, timeout: float, source_address=None):
+    """Resolve at connect time, reject mixed/private answers, then connect to the numeric sockaddr.
+
+    Connecting to the numeric address returned by this exact lookup closes the
+    validation/connect DNS-rebinding gap. Proxies are disabled by the provider;
+    each redirect hop is separately validated before it is requested.
+    """
+    addresses = _bounded_getaddrinfo(host)
+    if not addresses:
+        raise OSError("hostname has no resolved address")
+
+    candidates = []
+    for family, socktype, proto, _canonname, sockaddr in addresses:
+        address = sockaddr[0]
+        try:
+            unsafe = DirectWebResearchProvider._is_unsafe_ip(address)
+        except ValueError as exc:
+            raise OSError("resolver returned an invalid IP address") from exc
+        if unsafe:
+            raise OSError("connection blocked: hostname resolved to a private or reserved IP")
+        numeric_sockaddr = (address, port, *sockaddr[2:]) if family == socket.AF_INET6 else (address, port)
+        candidates.append((family, socktype, proto, numeric_sockaddr))
+
+    last_error = None
+    for family, socktype, proto, sockaddr in candidates:
+        sock = socket.socket(family, socktype, proto)
+        try:
+            sock.settimeout(timeout)
+            if source_address is not None:
+                sock.bind(source_address)
+            sock.connect(sockaddr)
+            return sock
+        except OSError as exc:
+            last_error = exc
+            sock.close()
+    if last_error is not None:
+        raise last_error
+    raise OSError("no usable public address was resolved")
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    def connect(self):
+        if self._tunnel_host:
+            raise OSError("proxy tunnels are disabled for secure research acquisition")
+        self.sock = _connect_public_socket(self.host, self.port, self.timeout, self.source_address)
+        try:
+            self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError as exc:
+            if exc.errno != errno.ENOPROTOOPT:
+                raise
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    def connect(self):
+        if self._tunnel_host:
+            raise OSError("proxy tunnels are disabled for secure research acquisition")
+        self.sock = _connect_public_socket(self.host, self.port, self.timeout, self.source_address)
+        try:
+            self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError as exc:
+            if exc.errno != errno.ENOPROTOOPT:
+                raise
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host)
+
+
+class _PinnedHTTPHandler(HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_PinnedHTTPConnection, req)
+
+
+class _PinnedHTTPSHandler(HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(
+            _PinnedHTTPSConnection,
+            req,
+            context=self._context,
+        )
 
 
 class _VisibleTextParser(HTMLParser):
@@ -165,6 +293,11 @@ class DirectWebResearchProvider(
     provider_name = "direct_web"
     requires_network = True
 
+    # All research needs a minimally useful body; current-news claims require
+    # a higher floor plus explicit recent publication provenance.
+    MIN_ARTICLE_CHARS = 80
+    MIN_TIME_SENSITIVE_ARTICLE_CHARS = 160
+
     ALLOWED_CONTENT_TYPES = {
         "text/html",
         "text/plain",
@@ -187,8 +320,13 @@ class DirectWebResearchProvider(
                 "secure direct web provider"
             )
 
+        # Disable environment proxies so every socket is created by the
+        # connect-time DNS/IP pinning handlers below, not by an untrusted proxy.
         self._opener = build_opener(
-            _NoRedirectHandler()
+            ProxyHandler({}),
+            _NoRedirectHandler(),
+            _PinnedHTTPHandler(),
+            _PinnedHTTPSHandler(),
         )
 
     # ---------------------------------------------------------
@@ -300,14 +438,14 @@ class DirectWebResearchProvider(
             return
 
         try:
-            addresses = socket.getaddrinfo(
-                hostname,
-                None,
-                type=socket.SOCK_STREAM,
-            )
+            addresses = _bounded_getaddrinfo(hostname)
         except socket.gaierror as exc:
             raise ValueError(
                 f"hostname resolution failed: {hostname}"
+            ) from exc
+        except TimeoutError as exc:
+            raise ValueError(
+                f"hostname resolution timed out: {hostname}"
             ) from exc
 
         if not addresses:
@@ -654,6 +792,24 @@ class DirectWebResearchProvider(
         ))
 
     @staticmethod
+    def _parse_discovery_publication_timestamp(value: object) -> datetime | None:
+        """Parse an explicit timezone-aware timestamp from a trusted discovery record."""
+        if not isinstance(value, str) or not value.strip():
+            return None
+        raw = value.strip()
+        try:
+            normalized = raw[:-1] + "+00:00" if raw.endswith(("Z", "z")) else raw
+            parsed = datetime.fromisoformat(normalized)
+        except (TypeError, ValueError, OverflowError):
+            try:
+                parsed = parsedate_to_datetime(raw)
+            except (TypeError, ValueError, OverflowError):
+                return None
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            return None
+        return parsed.astimezone(timezone.utc)
+
+    @staticmethod
     def _is_recent_publication(published_at: datetime | None, *, days: int = 7) -> bool:
         if not isinstance(published_at, datetime):
             return False
@@ -761,19 +917,52 @@ class DirectWebResearchProvider(
                 ).isoformat()
 
                 published_at = self._extract_published_at(raw_content)
-                if self._is_time_sensitive_query(request.query):
+                publication_timestamp_source = "publisher_metadata" if published_at is not None else None
+                time_sensitive = self._is_time_sensitive_query(request.query)
+                if time_sensitive:
                     if self._is_listing_page(fetched["final_url"]):
                         errors.append(f"listing page rejected for time-sensitive research: {fetched['final_url']}")
                         continue
+                    if published_at is None:
+                        discovery_map = request.metadata.get("discovery_metadata_by_url", {})
+                        discovery_metadata = discovery_map.get(raw_url) or discovery_map.get(fetched["final_url"])
+                        if isinstance(discovery_metadata, dict):
+                            discovery_backend = discovery_metadata.get("backend")
+                            discovery_only = discovery_metadata.get("discovery_only")
+                            if discovery_backend in {"google_news_rss", "bing_news_rss", "brave_search"} and discovery_only is True:
+                                published_at = self._parse_discovery_publication_timestamp(
+                                    discovery_metadata.get("published_at")
+                                )
+                                if published_at is not None:
+                                    publication_timestamp_source = "rss_discovery_metadata"
                     if not self._is_recent_publication(published_at, days=7):
                         errors.append(f"publisher publication date is missing or outside the 7-day window: {fetched['final_url']}")
                         continue
+                    if len(content.strip()) < self.MIN_ARTICLE_CHARS:
+                        errors.append(
+                            "article body too short for research "
+                            f"({len(content.strip())} chars): {fetched['final_url']}"
+                        )
+                        continue
+                    # For time-sensitive research, reject title-only pages,
+                    # consent shells, and near-empty publisher responses before
+                    # ingestion. They must not inflate independent-source counts.
+                    if len(content.strip()) < self.MIN_TIME_SENSITIVE_ARTICLE_CHARS:
+                        errors.append(
+                            "article body too short for time-sensitive research "
+                            f"({len(content.strip())} chars): {fetched['final_url']}"
+                        )
+                        continue
+                elif len(content.strip()) < self.MIN_ARTICLE_CHARS:
+                    errors.append(
+                        "article body too short for research "
+                        f"({len(content.strip())} chars): {fetched['final_url']}"
+                    )
+                    continue
                 metadata = {
                     "provider": self.provider_name,
                     "acquired_at": acquired_at,
-                    "publication_timestamp_source": (
-                        "publisher_metadata" if published_at is not None else None
-                    ),
+                    "publication_timestamp_source": publication_timestamp_source,
                     "content_type": fetched[
                         "content_type"
                     ],

@@ -30,7 +30,7 @@ def test_master_brain_answers_arithmetic_without_model():
 def test_resolves_english_arithmetic_with_output_instruction():
     result = resolve_math_question("What is 2 + 2? Answer with only the number.")
     assert result is not None
-    assert result.answer == "उत्तर: 4"
+    assert result.answer == "Answer: 4"
     assert result.expression == "2 + 2"
 
 
@@ -38,3 +38,19 @@ def test_resolves_hindi_arithmetic_with_output_instruction():
     result = resolve_math_question("2 + 2, केवल संख्या में उत्तर दें।")
     assert result is not None
     assert result.answer == "उत्तर: 4"
+
+
+def test_resolves_spoken_english_plus_question():
+    result = resolve_math_question("Reply briefly: what is 2 plus 2?")
+    assert result is not None
+    assert result.answer == "Answer: 4"
+
+
+def test_resolves_spoken_hindi_number_words():
+    result = resolve_math_question("हिंदी में संक्षेप में बताओ: दो और दो कितने होते हैं?")
+    assert result is not None
+    assert result.answer == "उत्तर: 4"
+
+
+def test_spoken_arithmetic_does_not_accept_unrelated_prose():
+    assert resolve_math_question("What is 2 plus 2 and explain the economy?") is None

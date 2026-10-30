@@ -27,6 +27,8 @@ class ActionClassifier:
             r"\berase\b",
             r"\bdestroy\b",
             r"\buninstall\b",
+            r"डिलीट|हटा दो|हटाओ|मिटा दो|मिटाओ",
+            r"\b(?:hata do|hatao|mita do|mitao|delete karo)\b",
         ],
 
         ActionType.WRITE_FILE: [
@@ -36,6 +38,8 @@ class ActionClassifier:
             r"\bedit\b",
             r"\bupdate file\b",
             r"\boverwrite\b",
+            r"फाइल लिखो|फ़ाइल लिखो|फाइल में बदलाव|फ़ाइल में बदलाव|फाइल बदलो|फ़ाइल बदलो|फाइल सेव|फ़ाइल सेव",
+            r"\b(?:file likh do|file badlo|file mein badlav|file save karo)\b",
         ],
 
         ActionType.READ_FILE: [
@@ -53,6 +57,8 @@ class ActionClassifier:
             r"\brun\b",
             r"\bshell\b",
             r"\bterminal\b",
+            r"कमांड चलाओ|कमांड चला दो|आदेश चलाओ|टर्मिनल पर चलाओ",
+            r"\b(?:command chalao|command chala do)\b",
         ],
 
         ActionType.CREDENTIAL_USE: [
@@ -62,6 +68,7 @@ class ActionClassifier:
             r"\bsecret\b",
             r"\bcredential\b",
             r"\baccess token\b",
+            r"पासवर्ड|गुप्त कुंजी|क्रेडेंशियल",
         ],
 
         ActionType.SYSTEM_CHANGE: [
@@ -70,6 +77,8 @@ class ActionClassifier:
             r"\binstall system\b",
             r"\bconfigure system\b",
             r"\bchange configuration\b",
+            r"सिस्टम की सेटिंग बदलो|सिस्टम सेटिंग बदलो|सिस्टम कॉन्फ़िगरेशन बदलो|सिस्टम की सेटिंग बदल दो",
+            r"\b(?:system settings badal do|system setting badlo)\b",
         ],
 
         ActionType.NETWORK_ACCESS: [
@@ -79,6 +88,8 @@ class ActionClassifier:
             r"\bupload\b",
             r"\bhttp\b",
             r"\bhttps\b",
+            r"अपलोड करो|डाउनलोड करो|नेटवर्क से कनेक्ट|इंटरनेट से कनेक्ट",
+            r"\b(?:network se connect|internet se connect|upload karo|download karo)\b",
         ],
 
         ActionType.FINANCIAL_ACTION: [
@@ -88,6 +99,8 @@ class ActionClassifier:
             r"\bpay\b",
             r"\bbuy\b",
             r"\bsell\b",
+            r"पैसे भेजो|पैसे ट्रांसफर|भुगतान करो|पेमेंट करो|खरीदो|बेचो",
+            r"\b(?:paise bhejo|paise transfer|bhugtan karo|payment karo)\b",
         ],
     }
 

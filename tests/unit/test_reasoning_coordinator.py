@@ -107,3 +107,46 @@ def test_operational_reasoning_uses_structured_reasoning() -> None:
     assert result.model_response.startswith("MOCK MODEL RESPONSE:")
     assert result.verification_status == "VERIFIED"
     assert "Structured reasoning control signals" in result.model_response
+
+
+def test_missing_information_blocks_verified_even_when_numeric_uncertainty_is_low() -> None:
+    engine = ReasoningCoordinator()
+    result = engine.assess(
+        goal="Assess a claim with missing information.",
+        confidence=0.95,
+        quality_score=0.95,
+        missing_information=True,
+    )
+
+    assert result.uncertainty < 0.60
+    assert result.verified is False
+    assert result.corrected is True
+
+
+def test_ambiguous_input_blocks_verified_even_when_numeric_uncertainty_is_low() -> None:
+    engine = ReasoningCoordinator()
+    result = engine.assess(
+        goal="Assess an ambiguous claim.",
+        confidence=0.95,
+        quality_score=0.95,
+        ambiguous=True,
+    )
+
+    assert result.uncertainty < 0.60
+    assert result.verified is False
+
+
+def test_reverify_cannot_promote_unverified_assessment_without_new_evidence() -> None:
+    engine = ReasoningCoordinator()
+    result = engine.assess(
+        goal="Assess an unverified candidate.",
+        confidence=0.95,
+        quality_score=0.95,
+        missing_information=True,
+    )
+
+    rechecked = engine.verify(result)
+
+    assert rechecked.verified is False
+    assert rechecked.needs_verification is True
+    assert rechecked.reasoning_id == result.reasoning_id

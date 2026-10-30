@@ -11,6 +11,65 @@ from core.research.models import (
 from core.research.pipeline import ResearchIngestionPipeline
 
 
+def test_pipeline_rejects_forged_cross_source_evidence(tmp_path: Path) -> None:
+    import pytest
+
+    source_a = ResearchSource(
+        source_id="source-a",
+        title="Publisher A",
+        source_type="web",
+        locator="https://a.example/article",
+        publisher="Publisher A",
+        reliability=0.9,
+    )
+    source_b = ResearchSource(
+        source_id="source-b",
+        title="Publisher B",
+        source_type="web",
+        locator="https://b.example/article",
+        publisher="Publisher B",
+        reliability=0.9,
+    )
+    document_a = ResearchDocument(
+        document_id="document-a",
+        source_id="source-a",
+        title="Publisher A article",
+        content="A claim reported by publisher A.",
+    )
+    document_b = ResearchDocument(
+        document_id="document-b",
+        source_id="source-b",
+        title="Publisher B article",
+        content="Different content from publisher B.",
+    )
+
+    with ResearchIngestionPipeline(tmp_path / "provenance.db") as pipeline:
+        pipeline.ingest(source_a, document_a)
+        pipeline.ingest(source_b, document_b)
+        pipeline.add_finding(
+            ResearchFinding(
+                finding_id="finding-a",
+                document_id="document-a",
+                claim="A claim reported by publisher A.",
+                confidence=0.8,
+            )
+        )
+        forged = Evidence(
+            evidence_id="forged-evidence",
+            finding_id="finding-a",
+            source_id="source-b",
+            evidence_text="A claim reported by publisher A.",
+            supports=True,
+            strength=0.99,
+        )
+
+        with pytest.raises(ValueError, match="does not match the finding document source"):
+            pipeline.add_evidence(forged)
+
+        assert pipeline.engine.evidence.get("forged-evidence") is None
+        assert pipeline.storage.get_evidence("forged-evidence") is None
+
+
 def main() -> None:
     with TemporaryDirectory() as temp_dir:
         database_path = Path(temp_dir) / "research.db"
@@ -121,7 +180,9 @@ def main() -> None:
             )
 
             assert knowledge is not None
-            assert knowledge.verified is True
+            assert knowledge.verified is False
+            assert knowledge.metadata["verification_status"] == "UNVERIFIED"
+            assert knowledge.metadata["supporting_source_count"] == 1
 
         print("SAHIBEX RESEARCH EVIDENCE PIPELINE TEST")
         print("[PASS] finding integration")
@@ -129,8 +190,8 @@ def main() -> None:
         print("[PASS] evidence integration")
         print("[PASS] evidence persistence")
         print("[PASS] knowledge candidate creation")
-        print("[PASS] knowledge verification")
-        print("[PASS] verified knowledge persistence")
+        print("[PASS] single-source knowledge remains unverified")
+        print("[PASS] unverified knowledge persistence")
         print(
             "SAHIBEX RESEARCH EVIDENCE PIPELINE TEST: PASS"
         )

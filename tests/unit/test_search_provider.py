@@ -163,6 +163,32 @@ def test_search_results_normalized_and_deduplicated():
     )
 
 
+def test_acquisition_preserves_multi_source_engine_provenance():
+    def search_with_provenance(query: str, max_results: int):
+        return [SearchResult(
+            title="Current report",
+            url="https://publisher.example/current-report",
+            snippet="Discovery snippet only.",
+            published_at="2026-10-12T04:00:00+00:00",
+            metadata={
+                "search_backend": "google_news_rss",
+                "multi_source_engines_succeeded": ["google_news_rss", "bing_news_rss"],
+                "discovery_only": True,
+            },
+        )]
+
+    provider = SearchResearchProvider(FunctionSearchBackend(search_with_provenance))
+    result = provider.acquire(AcquisitionRequest(
+        query="AI security research", source_type="web", max_sources=1,
+    ))
+
+    metadata = result.sources[0].metadata
+    assert metadata["backend"] == "google_news_rss"
+    assert metadata["search_backend_coordinator"] == "function_search"
+    assert metadata["search_backend"] == "google_news_rss"
+    assert result.sources[0].published_at == "2026-10-12T04:00:00+00:00"
+
+
 def test_acquisition_result():
     backend = FunctionSearchBackend(
         fake_search

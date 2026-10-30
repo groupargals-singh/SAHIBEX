@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from core.research.answer_synthesis import (
@@ -112,6 +113,24 @@ def _build_fixture():
         source,
         document,
     )
+
+
+def test_empty_answer_is_not_reported_as_trace_complete():
+    (answer, knowledge, finding, evidence, source, _document) = _build_fixture()
+    empty_answer = replace(answer, claims=())
+
+    result = AnswerTraceabilityEngine().trace_answer(
+        answer=empty_answer,
+        knowledge_items=[knowledge],
+        findings=[finding],
+        evidence_items=[evidence],
+        sources=[source],
+    )
+
+    assert result.traces == ()
+    assert result.traceable_claim_count == 0
+    assert result.incomplete_claim_count == 0
+    assert result.trace_complete is False
 
 
 def test_complete_trace():
@@ -508,4 +527,92 @@ if __name__ == "__main__":
 
     print(
         "SAHIBEX 6G-9C ANSWER TRACEABILITY TEST: PASS"
+    )
+
+def test_evidence_linked_to_unrelated_finding_is_rejected():
+    (
+        answer,
+        knowledge,
+        _finding,
+        evidence,
+        source,
+        _document,
+    ) = _build_fixture()
+
+    unrelated_evidence = Evidence(
+        evidence_id="evidence_unrelated",
+        finding_id="finding_unrelated",
+        source_id="source_1",
+        evidence_text="Unrelated evidence.",
+        supports=True,
+        strength=0.90,
+    )
+
+    mismatched_knowledge = KnowledgeCandidate(
+        knowledge_id="knowledge_1",
+        statement="Test claim",
+        findings=["finding_1"],
+        evidence=["evidence_unrelated"],
+        confidence=0.90,
+        verified=True,
+    )
+
+    result = AnswerTraceabilityEngine().trace_answer(
+        answer=answer,
+        knowledge_items=[mismatched_knowledge],
+        findings=[_finding],
+        evidence_items=[evidence, unrelated_evidence],
+        sources=[source],
+    )
+
+    trace = result.traces[0]
+    assert trace.trace_complete is False
+    assert trace.evidence_ids == ()
+    assert "evidence_finding_mismatch:evidence_unrelated" in (
+        trace.missing_links
+    )
+
+
+def test_evidence_linked_to_different_knowledge_is_rejected():
+    (
+        answer,
+        _knowledge,
+        finding,
+        _evidence,
+        source,
+        _document,
+    ) = _build_fixture()
+
+    mismatched_evidence = Evidence(
+        evidence_id="evidence_other_knowledge",
+        finding_id="finding_1",
+        source_id="source_1",
+        evidence_text="Evidence owned by another knowledge record.",
+        supports=True,
+        strength=0.90,
+        metadata={"knowledge_id": "knowledge_other"},
+    )
+
+    knowledge = KnowledgeCandidate(
+        knowledge_id="knowledge_1",
+        statement="Test claim",
+        findings=["finding_1"],
+        evidence=["evidence_other_knowledge"],
+        confidence=0.90,
+        verified=True,
+    )
+
+    result = AnswerTraceabilityEngine().trace_answer(
+        answer=answer,
+        knowledge_items=[knowledge],
+        findings=[finding],
+        evidence_items=[mismatched_evidence],
+        sources=[source],
+    )
+
+    trace = result.traces[0]
+    assert trace.trace_complete is False
+    assert trace.evidence_ids == ()
+    assert "evidence_knowledge_mismatch:evidence_other_knowledge" in (
+        trace.missing_links
     )

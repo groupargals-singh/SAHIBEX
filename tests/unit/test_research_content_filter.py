@@ -43,3 +43,26 @@ def test_extractor_filters_page_chrome_but_preserves_article_claims():
 def test_research_content_filter_keeps_short_but_potentially_factual_claims():
     decision = ResearchContentFilter().evaluate("GDP grew 5%.")
     assert decision.accepted is True
+
+
+def test_research_content_filter_strips_inline_news_page_chrome():
+    decision = ResearchContentFilter().evaluate(
+        "OpenAI defended its decision. Skip to content Advertisement "
+        "Make us preferred source on Google. Story continues below this ad "
+        "Also Read | An unrelated sidebar story."
+    )
+    assert decision.accepted is True
+    assert "OpenAI defended its decision" in decision.normalized_text
+    assert "skip to content" not in decision.normalized_text.casefold()
+    assert "advertisement" not in decision.normalized_text.casefold()
+    assert "story continues below this ad" not in decision.normalized_text.casefold()
+    assert "unrelated sidebar" not in decision.normalized_text.casefold()
+
+
+def test_research_content_filter_removes_social_share_chrome():
+    decision = ResearchContentFilter().evaluate(
+        "OpenAI updated its safety policy. Whatsapp twitter Facebook Reddit PRINT"
+    )
+    assert decision.accepted is True
+    assert "OpenAI updated its safety policy" in decision.normalized_text
+    assert "Whatsapp" not in decision.normalized_text

@@ -420,11 +420,28 @@ def test_full_knowledge_intelligence_integration() -> None:
             "final answer produced",
         )
 
+
+
         check(
             knowledge.knowledge_id
-            in result.answer.knowledge_ids,
-            "knowledge reaches final answer",
+            not in result.answer.knowledge_ids,
+            "knowledge with unresolved persisted conflict is excluded from final answer",
         )
+
+        final_context = result.knowledge_verification_contexts[
+            knowledge.knowledge_id
+        ]
+
+        check(
+            final_context["verification_status"] == "VERIFIED",
+            "verified lifecycle remains visible despite conflict blocking",
+        )
+
+        check(
+            final_context["conflict_status"] == "UNRESOLVED",
+            "unresolved persisted conflict remains visible in final answer context",
+        )
+
 
         check(
             knowledge.knowledge_id
@@ -471,6 +488,7 @@ def test_full_knowledge_intelligence_integration() -> None:
                 "TRACEABLE",
                 "NO_TRACEABLE_EVIDENCE",
                 "EVIDENCE_WITHOUT_SOURCE",
+                "NO_KNOWLEDGE",
             },
             "traceability status remains explicitly classified",
         )

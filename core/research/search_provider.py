@@ -547,7 +547,12 @@ class SearchResearchProvider(
             source_metadata.update(
                 {
                     "provider": self.provider_name,
-                    "backend": self.backend.backend_name,
+                    # Preserve the actual discovery engine for provenance and
+                    # freshness policy. MultiSourceSearchBackend is only the
+                    # coordinator; replacing the engine name with "multi_source"
+                    # makes downstream source allow-lists reject trusted RSS dates.
+                    "backend": str(source_metadata.get("search_backend") or source_metadata.get("backend") or self.backend.backend_name),
+                    "search_backend_coordinator": self.backend.backend_name,
                     "search_query": query,
                     "search_rank": result.rank,
                     "acquired_at": acquired_at,

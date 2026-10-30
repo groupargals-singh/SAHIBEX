@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
+from threading import RLock
 from typing import Any, Callable
 
 
@@ -24,6 +25,7 @@ class InterModuleBus:
         self._sequence = 0
         self._history: list[ModuleMessage] = []
         self._handlers: dict[str, list[Callable[[ModuleMessage], Any]]] = {}
+        self._lock = RLock()
 
     @staticmethod
     def _text(value: str, name: str) -> str:
@@ -35,21 +37,24 @@ class InterModuleBus:
         channel = self._text(channel, "channel")
         if not callable(handler):
             raise TypeError("handler must be callable")
-        self._handlers.setdefault(channel, []).append(handler)
+        with self._lock:
+            self._handlers.setdefault(channel, []).append(handler)
 
     def send(self, channel: str, source: str, payload: Any) -> ModuleMessage:
         channel = self._text(channel, "channel")
         source = self._text(source, "source")
-        self._sequence += 1
-        message = ModuleMessage(
-            channel, source, payload, self._sequence,
-            datetime.now(timezone.utc).isoformat()
-        )
-        self._history.append(message)
-        return message
+        with self._lock:
+            self._sequence += 1
+            message = ModuleMessage(
+                channel, source, payload, self._sequence,
+                datetime.now(timezone.utc).isoformat()
+            )
+            self._history.append(message)
+            return message
 
     def dispatch(self, message: ModuleMessage) -> list[Any]:
-        handlers = tuple(self._handlers.get(message.channel, ()))
+        with self._lock:
+            handlers = tuple(self._handlers.get(message.channel, ()))
         if not handlers:
             return []
         with ThreadPoolExecutor(max_workers=min(self._max_workers, len(handlers))) as pool:
@@ -60,7 +65,8 @@ class InterModuleBus:
 
     @property
     def history(self) -> tuple[ModuleMessage, ...]:
-        return tuple(self._history)
+        with self._lock:
+            return tuple(self._history)
 
     @property
     def max_workers(self) -> int:

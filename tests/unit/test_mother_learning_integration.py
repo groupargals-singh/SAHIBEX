@@ -13,6 +13,7 @@ from core.research.acquisition import (
     ResearchAcquisitionProvider,
 )
 from core.research.extractor import ExtractedFinding
+from types import SimpleNamespace
 
 
 class FakeResearchProvider(ResearchAcquisitionProvider):
@@ -107,3 +108,143 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+def _build_learning_for_arbitration_test(
+    *,
+    arbitration_present: bool,
+    arbitration_accepted: bool = False,
+):
+    evidence = SimpleNamespace(
+        knowledge_id="knowledge-test-1",
+        verified=True,
+    )
+
+    answer_model = SimpleNamespace(
+        knowledge_ids=("knowledge-test-1",),
+        evidence=(evidence,),
+    )
+
+    answer_fields = {
+        "answer": answer_model,
+        "knowledge_verification_contexts": {
+            "knowledge-test-1": {
+                "knowledge_id": "knowledge-test-1",
+                "verification_status": "VERIFIED",
+            },
+        },
+    }
+
+    if arbitration_present:
+        answer_fields["arbitration"] = SimpleNamespace(
+            accepted=arbitration_accepted,
+        )
+
+    answer_context = SimpleNamespace(**answer_fields)
+
+    research_context = SimpleNamespace(
+        answer=answer_context,
+    )
+
+    class FakeResearch:
+        def __init__(self):
+            self.research_pipeline = SimpleNamespace(
+                context_for=lambda job_id: research_context,
+            )
+
+        def research(self, *, query, confirmation=False):
+            return SimpleNamespace(
+                success=True,
+                topic=query,
+                status="completed",
+                answer="Test research answer",
+                job_id="learning-job-test",
+                execution_id="learning-execution-test",
+                verification_status="VERIFIED",
+                error="",
+            )
+
+    return MotherLearningIntegration(
+        research=FakeResearch(),
+    )
+
+
+def test_learning_rejects_verified_evidence_when_arbitration_rejects():
+    learning = _build_learning_for_arbitration_test(
+        arbitration_present=True,
+        arbitration_accepted=False,
+    )
+
+    result = learning.learn(topic="Test arbitration rejection")
+
+    assert result.success is False
+    assert result.verified_knowledge_count == 0
+    assert result.verified_knowledge_ids == ()
+    assert result.verification_status == (
+        "INSUFFICIENT_VERIFIED_KNOWLEDGE"
+    )
+
+
+def test_learning_fails_closed_when_arbitration_is_missing():
+    learning = _build_learning_for_arbitration_test(
+        arbitration_present=False,
+    )
+
+    result = learning.learn(topic="Test missing arbitration")
+
+    assert result.success is False
+    assert result.verified_knowledge_count == 0
+    assert result.verified_knowledge_ids == ()
+    assert result.verification_status == (
+        "INSUFFICIENT_VERIFIED_KNOWLEDGE"
+    )
+
+
+def test_learning_accepts_verified_evidence_when_arbitration_accepts():
+    learning = _build_learning_for_arbitration_test(
+        arbitration_present=True,
+        arbitration_accepted=True,
+    )
+
+    result = learning.learn(topic="Test accepted arbitration")
+
+    assert result.success is True
+    assert result.verified_knowledge_count == 1
+    assert result.verified_knowledge_ids == (
+        "knowledge-test-1",
+    )
+    assert result.verification_status == "VERIFIED"
+
+
+def test_learning_rejects_evidence_for_knowledge_not_in_answer():
+    learning = _build_learning_for_arbitration_test(
+        arbitration_present=True,
+        arbitration_accepted=True,
+    )
+    original_research = learning.research
+    context = original_research.research_pipeline.context_for("learning-job-test")
+    context.answer.answer.evidence = (
+        SimpleNamespace(knowledge_id="unrelated-knowledge", verified=True),
+    )
+
+    result = learning.learn(topic="Reject unrelated evidence")
+
+    assert result.success is False
+    assert result.verified_knowledge_count == 0
+    assert result.verified_knowledge_ids == ()
+
+
+def test_learning_rejects_evidence_without_persisted_verified_status():
+    learning = _build_learning_for_arbitration_test(
+        arbitration_present=True,
+        arbitration_accepted=True,
+    )
+    context = learning.research.research_pipeline.context_for("learning-job-test")
+    context.answer.knowledge_verification_contexts["knowledge-test-1"][
+        "verification_status"
+    ] = "UNVERIFIED"
+
+    result = learning.learn(topic="Reject unverified lifecycle")
+
+    assert result.success is False
+    assert result.verified_knowledge_count == 0
+    assert result.verified_knowledge_ids == ()

@@ -91,11 +91,28 @@ class ResearchExtractionPipeline:
                 "document must be a ResearchDocument"
             )
 
-        if document.document_id not in self.pipeline.engine.documents:
+        registered_document = self.pipeline.engine.documents.get(
+            document.document_id
+        )
+        if registered_document is None:
             raise KeyError(
                 f"Unknown document: {document.document_id}"
             )
 
+        # A matching document ID is not sufficient proof of identity: callers
+        # can construct a second object with the same ID but different content
+        # or source. Always bind extraction to the canonical ingested document.
+        if document.source_id != registered_document.source_id:
+            raise ValueError(
+                "document.source_id does not match the registered document"
+            )
+        if document.content != registered_document.content:
+            raise ValueError(
+                "document content does not match the registered document"
+            )
+
+        # Use the engine's canonical instance for downstream processing.
+        document = registered_document
         source_id = document.source_id
 
         if source_id not in self.pipeline.engine.sources:

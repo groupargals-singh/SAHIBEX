@@ -343,7 +343,7 @@ class ResearchResultAggregator:
         sources: list[ResearchSource],
     ) -> list[MultiSourceAgreementAssessment]:
         """
-        Build one 6G-4 agreement assessment per
+        Build one 6G-5 agreement assessment per
         unique knowledge candidate.
 
         Agreement is based on distinct source IDs linked
@@ -717,6 +717,7 @@ class ResearchResultAggregator:
         sources: Iterable[ResearchSource] = (),
         findings: Iterable[ResearchFinding] = (),
         reference_time: datetime | None = None,
+        freshness_sensitive: bool = True,
     ) -> ResearchAggregationResult:
 
         if not isinstance(limit, int):
@@ -749,7 +750,7 @@ class ResearchResultAggregator:
             reference_time = utc_now()
 
         # -------------------------------------------------
-        # 6G-4 Multi-Source Agreement
+        # 6G-5 Multi-Source Agreement
         # -------------------------------------------------
 
         agreement_assessments = (
@@ -1012,6 +1013,7 @@ class ResearchResultAggregator:
             source_ranking_assessments=(
                 source_ranking_assessments
             ),
+            freshness_sensitive=freshness_sensitive,
         )
 
         # -------------------------------------------------

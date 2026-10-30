@@ -8,6 +8,7 @@ from core.brain.mother_sandbox_runtime import (
     MotherSandboxRuntime,
 )
 from tools.registry import ToolRegistry
+from tools.permission_gateway import ToolPermissionGateway
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,7 @@ class SafeToolExecutor:
         self,
         registry: ToolRegistry,
         sandbox: MotherSandboxRuntime | None = None,
+        permission_gateway: ToolPermissionGateway | None = None,
     ) -> None:
         self.registry = registry
         self.sandbox = (
@@ -48,6 +50,20 @@ class SafeToolExecutor:
             if sandbox is not None
             else MotherSandboxRuntime()
         )
+        self.permission_gateway = permission_gateway
+
+    def bind_permission_gateway(
+        self,
+        permission_gateway: ToolPermissionGateway,
+    ) -> None:
+        if not isinstance(permission_gateway, ToolPermissionGateway):
+            raise TypeError("permission_gateway must be ToolPermissionGateway")
+        if (
+            self.permission_gateway is not None
+            and self.permission_gateway is not permission_gateway
+        ):
+            raise ValueError("executor is already bound to a different permission gateway")
+        self.permission_gateway = permission_gateway
 
     def execute(
         self,
@@ -64,6 +80,57 @@ class SafeToolExecutor:
             )
 
         tool = self.registry.get(tool_name)
+        confirmation_provided = kwargs.pop("_confirmation_provided", False)
+        # Never trust a caller-supplied permission boolean. The executor
+        # rechecks the canonical gateway and creates the handler flag itself.
+        kwargs.pop("_permission_granted", None)
+
+        if not isinstance(confirmation_provided, bool):
+            return ToolExecutionResult(
+                success=False,
+                tool=tool_name,
+                result=None,
+                error="Execution blocked: confirmation must be a boolean.",
+            )
+
+        if tool.read_only and tool.protected_action is not None:
+            return ToolExecutionResult(
+                success=False,
+                tool=tool_name,
+                result=None,
+                error="Execution blocked: conflicting read-only/protected-action metadata.",
+            )
+
+        if not tool.read_only:
+            if self.permission_gateway is None:
+                return ToolExecutionResult(
+                    success=False,
+                    tool=tool_name,
+                    result=None,
+                    error="Execution blocked: no canonical permission gateway is bound.",
+                )
+            try:
+                permission = self.permission_gateway.check(
+                    tool_name,
+                    confirmation=confirmation_provided,
+                    request=kwargs,
+                )
+            except (KeyError, TypeError, ValueError, PermissionError) as exc:
+                return ToolExecutionResult(
+                    success=False,
+                    tool=tool_name,
+                    result=None,
+                    error=f"Execution blocked: permission check failed: {exc}",
+                )
+            if not permission.allowed:
+                return ToolExecutionResult(
+                    success=False,
+                    tool=tool_name,
+                    result=None,
+                    error=f"Execution blocked by permission gateway: {permission.reason}",
+                )
+            kwargs["_permission_granted"] = True
+            kwargs["_confirmation_provided"] = confirmation_provided
 
         sandbox_result = self.sandbox.validate(
             MotherSandboxRequest(

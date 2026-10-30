@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$HOME/SAHIBEX"
 cd "$ROOT"
 export SAHIBEX_MODEL_PROVIDER=local
-export SAHIBEX_SEARCH_BACKEND=duckduckgo_html
+export SAHIBEX_SEARCH_BACKEND=google_news_rss
 
 if curl -fsS --max-time 2 http://127.0.0.1:8080/health >/dev/null 2>&1; then
   echo "LOCAL MODEL: ONLINE"

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Sequence
 
+from core.research.freshness import STATUS_UNKNOWN
 from core.research.models import (
     Evidence,
     KnowledgeCandidate,
@@ -211,6 +212,8 @@ def _status_for_claim(
     agreement_score: float,
     conflict_score: float,
     freshness_score: float,
+    freshness_unknown: bool,
+    freshness_sensitive: bool,
     confidence_score: float,
     source_ranking_score: float,
     unresolved_conflict_count: int,
@@ -234,7 +237,7 @@ def _status_for_claim(
             "Knowledge has not passed verification.",
         )
 
-    if freshness_score < 0.40:
+    if freshness_sensitive and freshness_score < 0.40 and not freshness_unknown:
         return (
             STALE,
             "Supporting information has low freshness.",
@@ -274,6 +277,7 @@ def assess_claim(
     conflict_assessments: Sequence[Any] = (),
     freshness_assessments: Sequence[Any] = (),
     source_ranking_assessments: Sequence[Any] = (),
+    freshness_sensitive: bool = True,
 ) -> AnswerClaimAssessment:
 
     linked_evidence = _knowledge_evidence(
@@ -357,26 +361,24 @@ def assess_claim(
     }
 
     freshness_scores = []
+    linked_freshness_statuses = []
 
     for assessment in freshness_assessments:
-        if getattr(
-            assessment,
-            "source_id",
-            None,
-        ) in linked_source_ids:
-            freshness_scores.append(
-                _safe_score(
-                    assessment,
-                    "freshness_score",
-                )
-            )
+        if getattr(assessment, "source_id", None) in linked_source_ids:
+            freshness_scores.append(_safe_score(assessment, "freshness_score"))
+            linked_freshness_statuses.append(str(getattr(assessment, "status", "")).upper())
 
-    freshness_score = _average(
-        freshness_scores
-    )
-
+    freshness_score = _average(freshness_scores)
     if not freshness_scores and linked_sources:
         freshness_score = 0.0
+
+    # UNKNOWN publication date is not the same as a known stale source. For
+    # stable facts, do not reject solely because a publisher omitted a date.
+    # Time-sensitive live acceptance independently requires explicit dates.
+    freshness_unknown = bool(linked_sources) and (
+        (bool(linked_freshness_statuses) and all(status == STATUS_UNKNOWN for status in linked_freshness_statuses))
+        or (not linked_freshness_statuses and all(source.published_at is None for source in linked_sources))
+    )
 
     source_ranking_score = (
         _source_ranking_for_knowledge(
@@ -398,6 +400,8 @@ def assess_claim(
         agreement_score=agreement_score,
         conflict_score=conflict_score,
         freshness_score=freshness_score,
+        freshness_unknown=freshness_unknown,
+        freshness_sensitive=freshness_sensitive,
         confidence_score=confidence_score,
         source_ranking_score=source_ranking_score,
         unresolved_conflict_count=len(
@@ -507,6 +511,7 @@ def synthesize_answer(
     conflict_assessments: Sequence[Any] = (),
     freshness_assessments: Sequence[Any] = (),
     source_ranking_assessments: Sequence[Any] = (),
+    freshness_sensitive: bool = True,
 ) -> QualityAwareAnswer:
 
     claims = []
@@ -532,6 +537,7 @@ def synthesize_answer(
                 source_ranking_assessments=(
                     source_ranking_assessments
                 ),
+                freshness_sensitive=freshness_sensitive,
             )
         )
 
@@ -655,6 +661,7 @@ class QualityAwareAnswerSynthesizer:
         conflict_assessments: Sequence[Any] = (),
         freshness_assessments: Sequence[Any] = (),
         source_ranking_assessments: Sequence[Any] = (),
+        freshness_sensitive: bool = True,
     ) -> QualityAwareAnswer:
 
         return synthesize_answer(
@@ -676,4 +683,5 @@ class QualityAwareAnswerSynthesizer:
             source_ranking_assessments=(
                 source_ranking_assessments
             ),
+            freshness_sensitive=freshness_sensitive,
         )

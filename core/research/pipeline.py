@@ -12,6 +12,7 @@ from core.research.models import (
     ResearchDocument,
     ResearchFinding,
     ResearchSource,
+    utc_now,
 )
 from core.research.source_registry import SourceRegistry
 from core.research.storage import ResearchStorage
@@ -124,8 +125,25 @@ class ResearchIngestionPipeline:
         Duplicate ingestion must therefore restore the matching source
         and document into the engine before downstream extraction.
         """
+        # The incoming source may be a duplicate URL/content candidate while
+        # the canonical persisted document belongs to an earlier source ID.
+        # Register both identities before restoring the canonical document;
+        # otherwise ResearchEngine.add_document raises "unknown source" after
+        # a valid persistent deduplication match.
         if source.source_id not in self.engine.sources:
             self.engine.register_source(source)
+
+        document_source_id = document.source_id
+        if document_source_id not in self.engine.sources:
+            canonical_source = self.storage.get_source(document_source_id)
+            if canonical_source is None and document_source_id == source.source_id:
+                canonical_source = source
+            if canonical_source is None:
+                raise ValueError(
+                    "canonical document source is missing from persistent storage: "
+                    f"{document_source_id}"
+                )
+            self.engine.register_source(canonical_source)
 
         if document.document_id not in self.engine.documents:
             self.engine.add_document(document)
@@ -138,6 +156,17 @@ class ResearchIngestionPipeline:
         if document.source_id != source.source_id:
             raise ValueError(
                 "document.source_id must match source.source_id"
+            )
+
+        # Canonicalize the content fingerprint before deduplication or any
+        # persistent writes. A missing hash is filled in; a caller-supplied
+        # mismatched hash is rejected so it cannot spoof document identity.
+        expected_hash = ResearchEngine.hash_content(document.content)
+        if not document.content_hash:
+            document.content_hash = expected_hash
+        elif document.content_hash != expected_hash:
+            raise ValueError(
+                "document.content_hash does not match document content"
             )
 
         source_result = self.registry.register(source)
@@ -267,88 +296,147 @@ class ResearchIngestionPipeline:
         confidence: float | None = None,
     ) -> KnowledgeResult:
         """
-        Create, link, verify, and persist a knowledge candidate.
-
-        Knowledge is created from a finding and its related evidence.
-
-        After the knowledge ID exists, the supporting evidence is explicitly
-        linked back to that knowledge through:
-
-            evidence.metadata["knowledge_id"]
-
-        This creates the bidirectional relationship needed by downstream
-        answer synthesis and traceability:
-
-            Knowledge -> Evidence -> Source
+        Create, link, verify, and persist a knowledge candidate
+        from multiple findings and their evidence.
         """
-
         if not finding_ids:
             raise ValueError(
                 "At least one finding_id is required."
             )
 
-        finding_id = finding_ids[0]
+        normalized_ids = list(dict.fromkeys(finding_ids))
+
+        for finding_id in normalized_ids:
+            if finding_id not in self.engine.findings:
+                raise ValueError(f"unknown finding: {finding_id}")
+
+        selected_evidence_ids = (
+            list(dict.fromkeys(evidence_ids))
+            if evidence_ids is not None
+            else None
+        )
+
+        # Validate all explicitly selected evidence before creating
+        # a candidate or modifying stored metadata.
+        if selected_evidence_ids is not None:
+            # Validate existence and finding linkage for the complete set
+            # before checking ownership. This keeps malformed requests from
+            # being masked by an earlier evidence-ownership error.
+            for evidence_id in selected_evidence_ids:
+                evidence = self.engine.evidence.get(evidence_id)
+                if evidence is None:
+                    raise KeyError(
+                        f"Unknown evidence: {evidence_id}"
+                    )
+                if evidence.finding_id not in normalized_ids:
+                    raise ValueError(
+                        f"Evidence {evidence_id} does not belong "
+                        "to the supplied findings."
+                    )
+
+            for evidence_id in selected_evidence_ids:
+                evidence = self.engine.evidence[evidence_id]
+                linked_knowledge_id = (evidence.metadata or {}).get(
+                    "knowledge_id"
+                )
+                if linked_knowledge_id:
+                    raise ValueError(
+                        f"Evidence {evidence_id} is already linked to "
+                        f"knowledge candidate {linked_knowledge_id}."
+                    )
 
         knowledge = self.engine.create_knowledge_candidate(
             statement=statement,
-            finding_id=finding_id,
+            finding_ids=normalized_ids,
             confidence=confidence,
         )
 
-        # ---------------------------------------------------------
-        # Link the evidence used by this knowledge candidate
-        # back to the generated knowledge ID.
-        # ---------------------------------------------------------
+        if selected_evidence_ids is None:
+            selected_evidence_ids = list(knowledge.evidence)
+        else:
+            # Keep candidate evidence aligned with the explicitly
+            # selected evidence used by this knowledge record.
+            knowledge.evidence = selected_evidence_ids
 
-        selected_evidence_ids = (
-            list(evidence_ids)
-            if evidence_ids is not None
-            else list(knowledge.evidence)
-        )
-
-        for evidence_id in selected_evidence_ids:
-            evidence = self.engine.evidence.get(
-                evidence_id
-            )
-
-            if evidence is None:
-                raise KeyError(
-                    f"Unknown evidence: {evidence_id}"
+        # The engine initially estimates confidence from every unlinked
+        # evidence item attached to the findings. If this call explicitly
+        # selected a subset, that estimate can include evidence which is
+        # not actually linked to this candidate. Recompute against the
+        # exact candidate evidence set so unselected evidence cannot inflate
+        # confidence or affect later verification decisions.
+        if confidence is None and evidence_ids is not None:
+            evidence_by_finding: dict[str, list[Evidence]] = {
+                finding_id: [] for finding_id in normalized_ids
+            }
+            for evidence_id in selected_evidence_ids:
+                selected_evidence = self.engine.evidence[evidence_id]
+                evidence_by_finding[selected_evidence.finding_id].append(
+                    selected_evidence
                 )
 
-            evidence.metadata["knowledge_id"] = (
-                knowledge.knowledge_id
+            finding_scores = [
+                self.engine._calculate_confidence(
+                    self.engine.findings[finding_id],
+                    evidence_by_finding[finding_id],
+                )
+                for finding_id in normalized_ids
+            ]
+            knowledge.confidence = round(
+                sum(finding_scores) / len(finding_scores),
+                4,
             )
 
+        for evidence_id in selected_evidence_ids:
+            evidence = self.engine.evidence[evidence_id]
+            evidence.metadata["knowledge_id"] = knowledge.knowledge_id
             self.storage.save_evidence(evidence)
 
-        # Refresh the knowledge object from the engine.
-        knowledge = self.engine.knowledge[
-            knowledge.knowledge_id
-        ]
-
-        # ---------------------------------------------------------
-        # Verify knowledge using the existing ResearchEngine
-        # verification authority.
-        # ---------------------------------------------------------
-
-        verified = self.engine.verify_knowledge(
-            knowledge.knowledge_id
-        )
-
-        knowledge = self.engine.knowledge[
-            knowledge.knowledge_id
-        ]
-
-        # ---------------------------------------------------------
-        # Persist the final knowledge state.
-        # ---------------------------------------------------------
-
+        self.engine.verify_knowledge(knowledge.knowledge_id)
+        knowledge = self.engine.knowledge[knowledge.knowledge_id]
         self.storage.save_knowledge(knowledge)
+
+        # Record the outcome; inconsistent or missing status fails closed.
+        raw_status = str(
+            knowledge.metadata.get("verification_status", "UNVERIFIED")
+        ).upper()
+
+        if raw_status == "CONFLICTED":
+            verification_status = "CONFLICTED"
+        elif raw_status == "VERIFIED" and knowledge.verified:
+            verification_status = "VERIFIED"
+        else:
+            verification_status = "UNVERIFIED"
+
+        reason = str(
+            knowledge.metadata.get("verification_reason", "")
+        ).strip()
+        if not reason:
+            reason = f"Research verification outcome: {verification_status}."
+
+        self.storage.record_knowledge_verification(
+            knowledge_id=knowledge.knowledge_id,
+            status=verification_status,
+            reason=reason,
+            verified_at=knowledge.last_verified_at or utc_now(),
+            metadata={
+                "candidate_verified": bool(knowledge.verified),
+                "confidence": knowledge.confidence,
+                "agreement_version": knowledge.metadata.get("agreement_version"),
+                "independent_source_count": knowledge.metadata.get(
+                    "independent_source_count", 0
+                ),
+                "supporting_source_count": knowledge.metadata.get(
+                    "supporting_source_count", 0
+                ),
+                "contradicting_source_count": knowledge.metadata.get(
+                    "contradicting_source_count", 0
+                ),
+            },
+        )
 
         return KnowledgeResult(
             knowledge_id=knowledge.knowledge_id,
-            verified=verified,
+            verified=knowledge.verified,
             confidence=knowledge.confidence,
             stored=True,
         )

@@ -115,7 +115,10 @@ class BingNewsRSSSearchBackend(SearchProviderBackend):
                 title=source.title,
                 url=destination,
                 snippet=snippet,
-                publisher=source.title.rsplit(" - ", 1)[-1] if " - " in source.title else source.publisher,
+                # RSS publisher metadata may be the search query/feed label.
+                # Use the validated article destination's host as a conservative
+                # identity until the publisher page itself is fetched.
+                publisher=(urlparse(destination).hostname or "").casefold().removeprefix("www."),
                 published_at=str(source.published_at) if source.published_at else None,
                 rank=len(results) + 1,
                 metadata={

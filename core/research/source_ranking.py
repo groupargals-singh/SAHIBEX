@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, List, Mapping
 
+from core.research.source_reliability_assessment import (
+    assess_source_reliability,
+)
+
 
 SOURCE_RANKING_VERSION = "6G-8"
 
@@ -108,10 +112,8 @@ def _source_id(item: object) -> str:
 def _reliability_score(
     source: object,
 ) -> float:
-    return _get_value(
-        source,
-        "reliability",
-    )
+    """Use declared reliability plus transparent domain/provenance checks."""
+    return assess_source_reliability(source).assessed_reliability
 
 
 def _quality_score(

@@ -16,7 +16,9 @@ if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
 fi
 source .venv/bin/activate
 export SAHIBEX_MODEL_PROVIDER="${SAHIBEX_MODEL_PROVIDER:-local}"
-export SAHIBEX_SEARCH_BACKEND="${SAHIBEX_SEARCH_BACKEND:-duckduckgo_html}"
+export SAHIBEX_SEARCH_BACKEND="${SAHIBEX_SEARCH_BACKEND:-google_news_rss}"
+export SAHIBEX_SELF_IMPROVEMENT_AUDIT_DB="${SAHIBEX_SELF_IMPROVEMENT_AUDIT_DB:-$HOME/SAHIBEX/data/runtime/self_improvement_audit.sqlite3}"
+export SAHIBEX_SELF_IMPROVEMENT_STATE_DB="${SAHIBEX_SELF_IMPROVEMENT_STATE_DB:-$HOME/SAHIBEX/data/runtime/self_improvement_state.sqlite3}"
 nohup python -m tools.android_companion_media_server >>"$LOG_FILE" 2>&1 &
 echo $! > "$PID_FILE"
 for _ in $(seq 1 20); do

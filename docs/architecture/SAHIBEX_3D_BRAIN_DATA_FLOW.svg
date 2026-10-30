@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1100" viewBox="0 0 1600 1100" role="img" aria-labelledby="title desc">
+<title id="title">SAHIBEX Main Brain architecture and data flow</title>
+<desc id="desc">High-level architecture overview. It is a conceptual map source-mapped to the repository, not a complete line-by-line call graph.</desc>
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#071426"/><stop offset="1" stop-color="#102b43"/></linearGradient>
+  <linearGradient id="brain" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#164e75"/><stop offset="1" stop-color="#172554"/></linearGradient>
+  <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#67e8f9"/></marker>
+  <marker id="control" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#fbbf24"/></marker>
+  <style>
+    .h{font:700 29px system-ui,sans-serif;fill:#f8fafc}.sub{font:18px system-ui,sans-serif;fill:#cbd5e1}
+    .box{fill:#132d46;stroke:#38bdf8;stroke-width:2;rx:18}.gate{fill:#382f1b;stroke:#fbbf24;stroke-width:2;rx:18}
+    .verify{fill:#12382f;stroke:#34d399;stroke-width:2;rx:18}.warn{fill:#3b2028;stroke:#fb7185;stroke-width:2;rx:18}
+    .label{font:700 21px system-ui,sans-serif;fill:#f8fafc;text-anchor:middle}.small{font:16px system-ui,sans-serif;fill:#cbd5e1;text-anchor:middle}
+    .flow{fill:none;stroke:#67e8f9;stroke-width:3;marker-end:url(#arrow)}.ctl{fill:none;stroke:#fbbf24;stroke-width:2.5;stroke-dasharray:9 7;marker-end:url(#control)}
+    .footer{font:15px system-ui,sans-serif;fill:#94a3b8}
+  </style>
+</defs>
+<rect width="1600" height="1100" fill="url(#bg)"/>
+<text x="800" y="52" class="h" text-anchor="middle" font-size="34">SAHIBEX · MAIN BRAIN ARCHITECTURE</text>
+<text x="800" y="82" class="sub" text-anchor="middle">3D-inspired layered system map · source-informed overview · not a verified call graph</text>
+<!-- input -->
+<rect x="545" y="115" width="510" height="76" class="box"/>
+<text x="800" y="146" class="label">USER REQUEST</text><text x="800" y="172" class="small">Text UI / authorized Android Companion</text>
+<path d="M800 191 V220" class="flow"/>
+<!-- main brain -->
+<rect x="390" y="220" width="820" height="92" class="box" fill="url(#brain)"/>
+<text x="800" y="258" class="label" font-size="27">SAHIBEX · MasterBrain.process()</text>
+<text x="800" y="286" class="small">Intent/action · runtime state · orchestration · result/context</text>
+<!-- intent/context -->
+<path d="M800 312 V342" class="flow"/>
+<rect x="430" y="342" width="740" height="76" class="box"/>
+<text x="800" y="372" class="label">INTENT + ACTION + RISK CLASSIFICATION</text><text x="800" y="397" class="small">Safe deterministic fast paths may exit earlier; planning follows authorization gates</text>
+<!-- authority -->
+<path d="M800 418 V448" class="ctl"/>
+<rect x="430" y="448" width="740" height="86" class="gate"/>
+<text x="800" y="480" class="label">CONSTITUTION · HUMAN AUTHORITY · PERMISSION GATE</text>
+<text x="800" y="507" class="small">PermissionGateway / approval policy · protected actions require authorization</text>
+<!-- specialist task routes; memory/knowledge is a cross-cutting context side-channel, not a result-producing route -->
+<path d="M800 534 V563 H245 V590" class="flow"/>
+<path d="M800 563 V590" class="flow"/>
+<rect x="65" y="590" width="360" height="118" class="box"/>
+<text x="245" y="625" class="label">RESEARCH</text><text x="245" y="652" class="small">Discovery → publisher fetch</text><text x="245" y="678" class="small">Freshness → evidence / claims</text>
+<rect x="500" y="590" width="600" height="118" class="box"/>
+<text x="800" y="625" class="label">OPERATIONAL / LEARNING / TOOLS</text><text x="800" y="652" class="small">Mother integrations · ModelGateway</text><text x="800" y="678" class="small">Tool Brain → permission-gated executor</text>
+<rect x="1175" y="590" width="360" height="118" class="box"/>
+<text x="1355" y="625" class="label">MEMORY / KNOWLEDGE</text><text x="1355" y="652" class="small">Cross-cutting context</text><text x="1355" y="678" class="small">Lifecycle / audit side-channel</text>
+<!-- merge -->
+<path d="M245 708 V740 H800 V765" class="flow"/>
+<path d="M800 708 V765" class="flow"/>
+<path d="M1100 650 H1175" class="ctl"/>
+<rect x="430" y="765" width="740" height="88" class="verify"/>
+<text x="800" y="798" class="label">VERIFICATION · EVIDENCE · RESULT INTEGRITY</text>
+<text x="800" y="826" class="small">VerificationEngine · source/claim checks · truthful status and fail-closed outcomes</text>
+<path d="M800 853 V884" class="flow"/>
+<rect x="500" y="884" width="600" height="74" class="verify"/>
+<text x="800" y="914" class="label">USER-FACING RESULT</text><text x="800" y="939" class="small">Verified for task OR explicitly blocked / NOT_VERIFIED</text>
+<!-- control notes -->
+<rect x="65" y="775" width="300" height="105" class="gate"/>
+<text x="215" y="808" class="label">HUMAN APPROVAL</text><text x="215" y="835" class="small">Protected operations</text><text x="215" y="858" class="small">remain permission-gated</text>
+<path d="M365 820 H430" class="ctl"/>
+<rect x="1235" y="775" width="300" height="105" class="box" stroke-dasharray="8 6"/>
+<text x="1385" y="808" class="label">INTERNAL BRAIN ROLES</text><text x="1385" y="835" class="small">Registered handlers /</text><text x="1385" y="858" class="small">authorized dispatch only</text>
+<path d="M1235 820 H1170" class="ctl"/>
+<text x="800" y="1015" class="sub" text-anchor="middle">Solid cyan = primary flow · dashed amber = authority/control relationship</text>
+<text x="800" y="1044" class="footer" text-anchor="middle">Memory/knowledge is a side-channel, not a specialist result route.</text>
+<text x="800" y="1070" class="footer" text-anchor="middle">Exact edge-by-edge trace and Android visual review remain pending.</text>
+<text x="800" y="1090" class="footer" text-anchor="middle">Source anchors: master_brain.py · permission_gateway.py · verification/verifier.py</text>
+</svg>

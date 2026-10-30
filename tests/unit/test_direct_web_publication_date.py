@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from core.research.acquisition import AcquisitionRequest
 from core.research.web_provider import DirectWebResearchProvider
@@ -39,7 +39,10 @@ def test_does_not_treat_modified_time_as_publication_time():
 
 def test_time_sensitive_acquisition_rejects_stale_or_listing_pages():
     provider = DirectWebResearchProvider()
-    fresh_html = '<html><head><meta property="article:published_time" content="2026-10-09T10:00:00Z"></head><body><article><p>Fresh AI safety report content.</p></article></body></html>'
+    fresh_time = datetime.now(timezone.utc) - timedelta(days=1)
+    fresh_timestamp = fresh_time.isoformat().replace("+00:00", "Z")
+    fresh_body = "Fresh AI safety report content with enough concrete detail to represent a real article rather than a title stub. " * 3
+    fresh_html = f'<html><head><meta property="article:published_time" content="{fresh_timestamp}"></head><body><article><p>{fresh_body}</p></article></body></html>'
     stale_html = '<html><head><meta property="article:published_time" content="2026-05-20T10:00:00Z"></head><body><p>Old index content.</p></body></html>'
 
     def fake_fetch(url):
@@ -67,6 +70,99 @@ def test_time_sensitive_acquisition_rejects_stale_or_listing_pages():
     assert result.sources[0].locator.endswith("fresh-article")
     assert result.status == "partial"
     assert any("listing page rejected" in item for item in result.metadata["errors"])
+
+
+def test_time_sensitive_acquisition_rejects_title_only_or_near_empty_publisher_page():
+    provider = DirectWebResearchProvider()
+    url = "https://www.example.com/title-only"
+    published = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    body = f'<html><head><meta property="article:published_time" content="{published}" /></head><body><article><h1>AI safety report</h1><p>Only a short title stub.</p></article></body></html>'
+    provider.fetch_url = lambda requested: {
+        "url": requested,
+        "final_url": requested,
+        "status": 200,
+        "content_type": "text/html",
+        "content": body,
+        "bytes": len(body),
+    }
+    result = provider.acquire(AcquisitionRequest(
+        query="latest AI safety news today",
+        source_type="web",
+        metadata={"url": url},
+    ))
+    assert result.sources == []
+    assert result.completed is False
+    assert any("article body too short" in item for item in result.metadata["errors"])
+
+
+def test_discovery_timestamp_parser_accepts_rfc2822_rss_date():
+    value = DirectWebResearchProvider._parse_discovery_publication_timestamp(
+        "Fri, 09 Oct 2026 10:00:00 GMT"
+    )
+    assert value == datetime(2026, 10, 9, 10, 0, tzinfo=timezone.utc)
+
+
+def test_time_sensitive_acquisition_accepts_recent_explicit_rss_timestamp_when_publisher_date_is_missing():
+    provider = DirectWebResearchProvider()
+    url = "https://www.example.com/article"
+    recent_timestamp = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    article_text = "Current AI security report content with enough concrete detail to support a real research finding and source verification. " * 3
+    body = f"<html><body><article><p>{article_text}</p></article></body></html>"
+    provider.fetch_url = lambda requested: {
+        "url": requested,
+        "final_url": requested,
+        "status": 200,
+        "content_type": "text/html",
+        "content": body,
+        "bytes": len(body),
+    }
+    result = provider.acquire(AcquisitionRequest(
+        query="latest AI security news",
+        source_type="web",
+        metadata={
+            "url": url,
+            "discovery_metadata_by_url": {
+                url: {
+                    "published_at": recent_timestamp,
+                    "backend": "google_news_rss",
+                    "discovery_only": True,
+                }
+            },
+        },
+    ))
+    assert len(result.sources) == 1
+    assert result.sources[0].published_at.isoformat() == recent_timestamp
+    assert result.sources[0].metadata["publication_timestamp_source"] == "rss_discovery_metadata"
+
+
+def test_time_sensitive_acquisition_rejects_stale_discovery_timestamp():
+    provider = DirectWebResearchProvider()
+    url = "https://www.example.com/article"
+    body = "<html><body><article><p>Old AI security report content.</p></article></body></html>"
+    provider.fetch_url = lambda requested: {
+        "url": requested,
+        "final_url": requested,
+        "status": 200,
+        "content_type": "text/html",
+        "content": body,
+        "bytes": len(body),
+    }
+    result = provider.acquire(AcquisitionRequest(
+        query="latest AI security news",
+        source_type="web",
+        metadata={
+            "url": url,
+            "discovery_metadata_by_url": {
+                url: {
+                    "published_at": "2026-05-20T10:00:00+00:00",
+                    "backend": "google_news_rss",
+                    "discovery_only": True,
+                }
+            },
+        },
+    ))
+    assert result.sources == []
+    assert any("publication date is missing or outside" in item for item in result.metadata["errors"])
 
 
 def test_time_sensitive_acquisition_rejects_missing_publication_date():

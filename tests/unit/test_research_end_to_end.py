@@ -95,7 +95,7 @@ class HighConfidenceTestExtractor(ResearchExtractor):
         ]
 
 
-def main() -> None:
+def test_research_end_to_end() -> None:
     print("SAHIBEX RESEARCH END-TO-END TEST")
 
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -315,7 +315,8 @@ def main() -> None:
         # ---------------------------------------------------------
 
         for knowledge in knowledge_items:
-            assert knowledge.verified is True
+            assert knowledge.verified is False
+            assert knowledge.metadata.get("verification_status") == "UNVERIFIED"
             assert knowledge.confidence >= 0.60
 
         print("[PASS] knowledge verification")
@@ -336,7 +337,8 @@ def main() -> None:
                 stored_knowledge.knowledge_id
                 == knowledge.knowledge_id
             )
-            assert stored_knowledge.verified is True
+            assert stored_knowledge.verified is False
+            assert stored_knowledge.metadata.get("verification_status") == "UNVERIFIED"
 
         print("[PASS] persistent knowledge")
 
@@ -350,7 +352,7 @@ def main() -> None:
 
         query_result = query_engine.search(
             "verified knowledge supporting evidence",
-            verified_only=True,
+            verified_only=False,
             limit=10,
         )
 
@@ -374,11 +376,11 @@ def main() -> None:
             sources=list(
                 research_engine.sources.values()
             ),
-            verified_only=True,
+            verified_only=False,
         )
 
         assert aggregation_result is not None
-        assert aggregation_result.verified_count >= 1
+        assert aggregation_result.verified_count == 0
         assert (
             len(aggregation_result.results)
             >= 1
@@ -398,7 +400,7 @@ def main() -> None:
             query=(
                 "verified knowledge supporting evidence"
             ),
-            verified_only=True,
+            verified_only=False,
             limit=10,
             evidence_items=list(
                 research_engine.evidence.values()
@@ -529,4 +531,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    test_research_end_to_end()

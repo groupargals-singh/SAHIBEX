@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Iterable, List
 
 from core.research.conflict import (
@@ -23,6 +24,7 @@ CONFLICT_INTELLIGENCE_VERSION = "6G-5"
 
 CONFLICT_TYPE_EXPLICIT_NEGATION = "EXPLICIT_NEGATION"
 CONFLICT_TYPE_LEXICAL_CONTRADICTION = "LEXICAL_CONTRADICTION"
+CONFLICT_TYPE_NUMERIC_CONTRADICTION = "NUMERIC_CONTRADICTION"
 CONFLICT_TYPE_UNKNOWN = "UNKNOWN"
 
 
@@ -64,11 +66,14 @@ class ConflictIntelligenceAssessment:
     resolution_reason: str
 
     version: str = CONFLICT_INTELLIGENCE_VERSION
+    temporal_comparison_status: str = "UNKNOWN"
+    publication_time_delta_seconds: float | None = None
 
     def __post_init__(self) -> None:
         valid_types = {
             CONFLICT_TYPE_EXPLICIT_NEGATION,
             CONFLICT_TYPE_LEXICAL_CONTRADICTION,
+            CONFLICT_TYPE_NUMERIC_CONTRADICTION,
             CONFLICT_TYPE_UNKNOWN,
         }
 
@@ -219,6 +224,9 @@ class ResearchConflictIntelligence:
         if "contradictory lexical term" in reason:
             return CONFLICT_TYPE_LEXICAL_CONTRADICTION
 
+        if "contradictory numeric value" in reason:
+            return CONFLICT_TYPE_NUMERIC_CONTRADICTION
+
         return CONFLICT_TYPE_UNKNOWN
 
     @staticmethod
@@ -337,6 +345,47 @@ class ResearchConflictIntelligence:
 
         return 0.0
 
+    @staticmethod
+    def _latest_publication_time(
+        knowledge_id: str,
+        evidence_items: Iterable[Evidence],
+        sources: Iterable[ResearchSource],
+    ) -> datetime | None:
+        """Return the newest valid publication timestamp linked to a claim.
+
+        Only evidence explicitly linked through metadata["knowledge_id"] is
+        considered. Missing, naive, or timezone-without-offset timestamps are
+        ignored rather than guessed.
+        """
+        source_map = {
+            source.source_id: source
+            for source in sources
+        }
+        timestamps: list[datetime] = []
+
+        for evidence in evidence_items:
+            metadata = evidence.metadata or {}
+            if metadata.get("knowledge_id") != knowledge_id:
+                continue
+
+            source = source_map.get(evidence.source_id)
+            if source is None or source.published_at is None:
+                continue
+
+            published_at = source.published_at
+            if (
+                published_at.tzinfo is None
+                or published_at.utcoffset() is None
+            ):
+                continue
+
+            timestamps.append(published_at)
+
+        if not timestamps:
+            return None
+
+        return max(timestamps, key=lambda value: value.timestamp())
+
     def assess_pair(
         self,
         conflict: ConflictPair,
@@ -400,6 +449,36 @@ class ResearchConflictIntelligence:
             source_list,
         )
 
+        first_publication = self._latest_publication_time(
+            conflict.first_knowledge_id,
+            evidence_list,
+            source_list,
+        )
+        second_publication = self._latest_publication_time(
+            conflict.second_knowledge_id,
+            evidence_list,
+            source_list,
+        )
+
+        temporal_status = "UNKNOWN"
+        publication_delta = None
+        if (
+            first_publication is not None
+            and second_publication is not None
+        ):
+            publication_delta = round(
+                (
+                    first_publication - second_publication
+                ).total_seconds(),
+                3,
+            )
+            if publication_delta > 0:
+                temporal_status = "FIRST_NEWER"
+            elif publication_delta < 0:
+                temporal_status = "SECOND_NEWER"
+            else:
+                temporal_status = "TIED"
+
         return ConflictIntelligenceAssessment(
             first_knowledge_id=(
                 conflict.first_knowledge_id
@@ -431,6 +510,8 @@ class ResearchConflictIntelligence:
                 4,
             ),
             resolution_reason=resolution.reason,
+            temporal_comparison_status=temporal_status,
+            publication_time_delta_seconds=publication_delta,
         )
 
     def analyze(

@@ -7,7 +7,10 @@ from security.secrets.credential_store import CredentialStore
 from core.research.acquisition import ResearchAcquisitionEngine
 from core.research.brave_search_backend import BraveSearchBackend
 from core.research.duckduckgo_search_backend import DuckDuckGoHTMLBackend
+from core.research.google_news_rss_search_backend import GoogleNewsRSSSearchBackend
+from core.research.gdelt_search_backend import GDELTSearchBackend
 from core.research.bing_news_rss_search_backend import BingNewsRSSSearchBackend
+from core.research.multi_source_search_backend import MultiSourceSearchBackend
 from core.research.document_provider import (
     DocumentProviderConfig,
     LocalDocumentResearchProvider,
@@ -43,8 +46,10 @@ def build_default_research_acquisition_engine(
     remains the only execution gate.
 
     Search uses Brave when SAHIBEX_BRAVE_API_KEY is configured.
-    When SAHIBEX_SEARCH_BACKEND=duckduckgo_html is explicitly set,
-    the dependency-free DuckDuckGo discovery backend is enabled.
+    SAHIBEX_SEARCH_BACKEND may explicitly select google_news_rss,
+    duckduckgo_html, or a credential-backed Brave provider. Google News RSS
+    is suitable for credential-free discovery; its links remain unverified
+    until the publisher-content and evidence pipeline accepts them.
     Without an explicitly configured backend, search remains
     fail-closed rather than silently using a mock provider.
     """
@@ -71,20 +76,40 @@ def build_default_research_acquisition_engine(
     if brave_configured:
         engine.register_provider(
             SearchResearchProvider(
-                BraveSearchBackend.from_credential_store(
-                    store
-                )
+                MultiSourceSearchBackend([
+                    BraveSearchBackend.from_credential_store(store),
+                    GoogleNewsRSSSearchBackend(),
+                    BingNewsRSSSearchBackend(),
+                    GDELTSearchBackend(),
+                    DuckDuckGoHTMLBackend(),
+                ], timeout_seconds=6.0)
             )
         )
-        search_backend = "brave_search"
+        search_backend = "multi_source"
+    elif configured_backend == "google_news_rss":
+        engine.register_provider(
+            SearchResearchProvider(
+                MultiSourceSearchBackend([
+                    GoogleNewsRSSSearchBackend(),
+                    BingNewsRSSSearchBackend(),
+                    GDELTSearchBackend(),
+                    DuckDuckGoHTMLBackend(),
+                ], timeout_seconds=6.0)
+            )
+        )
+        search_backend = "multi_source"
     elif configured_backend == "duckduckgo_html":
         engine.register_provider(
             SearchResearchProvider(
-                DuckDuckGoHTMLBackend(),
-                fallback_backend=BingNewsRSSSearchBackend(),
+                MultiSourceSearchBackend([
+                    DuckDuckGoHTMLBackend(),
+                    GoogleNewsRSSSearchBackend(),
+                    BingNewsRSSSearchBackend(),
+                    GDELTSearchBackend(),
+                ], timeout_seconds=6.0)
             )
         )
-        search_backend = "duckduckgo_html"
+        search_backend = "multi_source"
     else:
         # Keep the search capability registered for a stable provider
         # contract, but use an explicit fail-closed backend. It is not
@@ -96,7 +121,7 @@ def build_default_research_acquisition_engine(
         )
         search_backend = None
 
-    search_configured = brave_configured or configured_backend == "duckduckgo_html"
+    search_configured = brave_configured or configured_backend in {"duckduckgo_html", "google_news_rss"}
     active_providers = tuple(
         provider
         for provider in engine.providers()

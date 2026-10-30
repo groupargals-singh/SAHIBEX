@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
+import re
 from typing import Iterable, List
 
 from core.research.models import KnowledgeCandidate
@@ -93,8 +95,50 @@ class ResearchConflictDetector:
 
     @classmethod
     def _tokens(cls, statement: str) -> list[str]:
-        normalized = cls._normalize(statement)
-        return normalized.split() if normalized else []
+        """Tokenize claims while preserving decimals and contractions.
+
+        ``_normalize`` is intentionally kept unchanged because the answer
+        pipeline also uses it for its existing deduplication key.
+        """
+        if not isinstance(statement, str) or not statement.strip():
+            return []
+
+        text = statement.lower().replace("’", "'")
+        raw_tokens = re.findall(
+            r"(?<!\w)[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|[a-z]+(?:'[a-z]+)?",
+            text,
+        )
+        contractions = {
+            "isn't": ("is", "not"), "isnt": ("is", "not"),
+            "aren't": ("are", "not"), "arent": ("are", "not"),
+            "wasn't": ("was", "not"), "wasnt": ("was", "not"),
+            "weren't": ("were", "not"), "werent": ("were", "not"),
+            "doesn't": ("does", "not"), "doesnt": ("does", "not"),
+            "don't": ("do", "not"), "dont": ("do", "not"),
+            "didn't": ("did", "not"), "didnt": ("did", "not"),
+            "hasn't": ("has", "not"), "hasnt": ("has", "not"),
+            "haven't": ("have", "not"), "havent": ("have", "not"),
+            "hadn't": ("had", "not"), "hadnt": ("had", "not"),
+            "can't": ("can", "not"), "cant": ("can", "not"),
+            "cannot": ("can", "not"), "couldn't": ("could", "not"),
+            "couldnt": ("could", "not"), "shouldn't": ("should", "not"),
+            "shouldnt": ("should", "not"), "wouldn't": ("would", "not"),
+            "wouldnt": ("would", "not"), "mustn't": ("must", "not"),
+            "mustnt": ("must", "not"), "won't": ("will", "not"),
+            "wont": ("will", "not"),
+        }
+        tokens: list[str] = []
+        for token in raw_tokens:
+            tokens.extend(contractions.get(token, (token,)))
+        return tokens
+
+    @staticmethod
+    def _numeric_value(token: str) -> Decimal | None:
+        """Return a safely parsed numeric token, or None for ordinary words."""
+        try:
+            return Decimal(token.replace(",", ""))
+        except (InvalidOperation, ValueError):
+            return None
 
     @classmethod
     def _remove_negation(cls, tokens: list[str]) -> tuple[list[str], bool]:
@@ -118,6 +162,12 @@ class ResearchConflictDetector:
         first_tokens = cls._tokens(first)
         second_tokens = cls._tokens(second)
 
+        # Multiple negations are ambiguous for this conservative detector.
+        first_count = sum(token in cls.NEGATION_WORDS for token in first_tokens)
+        second_count = sum(token in cls.NEGATION_WORDS for token in second_tokens)
+        if first_count > 1 or second_count > 1:
+            return False
+
         first_base, first_negated = cls._remove_negation(first_tokens)
         second_base, second_negated = cls._remove_negation(second_tokens)
 
@@ -138,25 +188,73 @@ class ResearchConflictDetector:
         if len(first_tokens) != len(second_tokens):
             return False
 
-        differences = []
+        known_pairs = {
+            tuple(sorted(pair_item))
+            for pair_item in cls.CONTRADICTION_PAIRS
+        }
+        differences = 0
 
         for first_token, second_token in zip(first_tokens, second_tokens):
             if first_token == second_token:
                 continue
+            if tuple(sorted((first_token, second_token))) not in known_pairs:
+                return False
+            differences += 1
 
-            pair = tuple(sorted((first_token, second_token)))
+        return differences == 1
 
-            known_pairs = {
-                tuple(sorted(pair_item))
-                for pair_item in cls.CONTRADICTION_PAIRS
-            }
+    @classmethod
+    def _numeric_conflict(
+        cls,
+        first: str,
+        second: str,
+    ) -> bool:
+        """Detect one changed numeric value in otherwise identical context.
 
-            if pair in known_pairs:
-                differences.append(pair)
-            else:
+        Date-like years are ignored when preceded by an explicit temporal
+        marker, since different years can describe different time periods.
+        """
+        first_tokens = cls._tokens(first)
+        second_tokens = cls._tokens(second)
+        if not first_tokens or len(first_tokens) != len(second_tokens):
+            return False
+
+        differences = 0
+        year_context_words = {
+            "in", "during", "since", "until", "by", "before", "after", "year",
+        }
+
+        for index, (first_token, second_token) in enumerate(
+            zip(first_tokens, second_tokens)
+        ):
+            if first_token == second_token:
+                continue
+
+            first_number = cls._numeric_value(first_token)
+            second_number = cls._numeric_value(second_token)
+            if first_number is None or second_number is None:
+                return False
+            if first_number == second_number:
+                # Formatting variants such as 1,000 and 1000 are equivalent.
+                continue
+
+            is_year_pair = (
+                first_number == first_number.to_integral_value()
+                and second_number == second_number.to_integral_value()
+                and 1000 <= abs(first_number) <= 9999
+                and 1000 <= abs(second_number) <= 9999
+                and index > 0
+                and first_tokens[index - 1] in year_context_words
+                and second_tokens[index - 1] in year_context_words
+            )
+            if is_year_pair:
                 return False
 
-        return len(differences) == 1
+            differences += 1
+            if differences > 1:
+                return False
+
+        return differences == 1
 
     @classmethod
     def detect_pair(
@@ -181,6 +279,12 @@ class ResearchConflictDetector:
             second.statement,
         ):
             reason = "same context with contradictory lexical term"
+
+        elif cls._numeric_conflict(
+            first.statement,
+            second.statement,
+        ):
+            reason = "same context with contradictory numeric value"
 
         else:
             return None

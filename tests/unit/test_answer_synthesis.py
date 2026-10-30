@@ -502,3 +502,38 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def test_unknown_publication_date_is_not_mislabeled_as_known_stale():
+    from types import SimpleNamespace
+    from core.research.answer_synthesis import QualityAwareAnswerSynthesizer
+
+    knowledge = _knowledge("k-unknown-date", "New Delhi is the capital of India.", ["e-unknown-date"], verified=True, confidence=0.9)
+    evidence = [_evidence("e-unknown-date", "s-unknown-date", "k-unknown-date")]
+    source = _source("s-unknown-date")
+    source = ResearchSource(source_id=source.source_id, title=source.title, source_type="web", locator=source.locator, publisher=source.publisher, published_at=None, reliability=0.9)
+    unknown = SimpleNamespace(source_id="s-unknown-date", freshness_score=0.0, status="UNKNOWN")
+    result = QualityAwareAnswerSynthesizer().synthesize(
+        knowledge_items=[knowledge], evidence_items=evidence, sources=[source],
+        confidence_assessments=[_confidence("k-unknown-date", 0.9)],
+        agreement_assessments=[_agreement("k-unknown-date", 0.8)],
+        freshness_assessments=[unknown],
+        source_ranking_assessments=[_ranking("s-unknown-date", 0.9)],
+    )
+    assert result.claims[0].status != "STALE"
+
+
+def test_known_stale_publication_date_still_marks_claim_stale():
+    from types import SimpleNamespace
+    knowledge = _knowledge("k-stale-date", "A stable statement with evidence.", ["e-stale-date"], verified=True, confidence=0.9)
+    evidence = [_evidence("e-stale-date", "s-stale-date", "k-stale-date")]
+    source = _source("s-stale-date")
+    stale = SimpleNamespace(source_id="s-stale-date", freshness_score=0.1, status="STALE")
+    result = QualityAwareAnswerSynthesizer().synthesize(
+        knowledge_items=[knowledge], evidence_items=evidence, sources=[source],
+        confidence_assessments=[_confidence("k-stale-date", 0.9)],
+        agreement_assessments=[_agreement("k-stale-date", 0.8)],
+        freshness_assessments=[stale],
+        source_ranking_assessments=[_ranking("s-stale-date", 0.9)],
+    )
+    assert result.claims[0].status == "STALE"

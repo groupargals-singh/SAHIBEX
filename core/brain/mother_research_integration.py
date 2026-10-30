@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -10,6 +11,8 @@ from core.brain.prompt_injection_guard import (
     PromptInjectionGuard,
     PromptInjectionStatus,
 )
+from core.brain.universal_language_brain import UniversalLanguageBrain
+from core.brain.translation_adapter import MyMemoryTranslationAdapter
 from core.research.runtime_providers import (
     build_default_research_acquisition_engine,
 )
@@ -60,6 +63,7 @@ class MotherResearchResult:
     prompt_injection_rules: tuple[str, ...] = ()
 
     error: str = ""
+    diagnostics: dict[str, object] = field(default_factory=dict)
 
 
 class MotherResearchIntegration:
@@ -115,10 +119,11 @@ class MotherResearchIntegration:
         self.research_provider_status = None
 
         if acquisition_pipeline is None:
-            database_path = (
-                Path(settings.data_dir)
-                / "sahibex_brain.db"
-            )
+            # The acquisition/ingestion registry and the research query/
+            # knowledge store must target the same database when a caller
+            # injects custom storage. Otherwise sources are ingested into the
+            # default database while retrieval reads the injected database.
+            database_path = Path(self.storage.database_path)
 
             acquisition_engine, provider_status = (
                 build_default_research_acquisition_engine(
@@ -308,6 +313,15 @@ class MotherResearchIntegration:
         """Return bounded public HTTP(S) source leads, never verified claims."""
         acquisition = getattr(context, "acquisition", None)
         sources = getattr(acquisition, "sources", ())
+        # If publisher fetching failed, retain only the separately recorded
+        # search-discovery URLs as unverified leads. They are never evidence.
+        if not sources:
+            outputs = getattr(context, "outputs", {})
+            discovery = (
+                outputs.get("search_discovery_acquisition", {})
+                if isinstance(outputs, dict) else {}
+            )
+            sources = getattr(discovery, "sources", ())
         leads: list[str] = []
         seen: set[str] = set()
         for source in sources:
@@ -389,6 +403,21 @@ class MotherResearchIntegration:
         return message
 
     @staticmethod
+    def _answer_matches_query_language(query: str, answer: str) -> bool:
+        """Prevent a verified research claim from being returned in the wrong language."""
+        try:
+            return UniversalLanguageBrain().response_matches_language(query, answer)
+        except Exception:
+            # A language-check failure must not certify a mismatched answer.
+            return False
+
+    @staticmethod
+    def _current_news_freshness_gate(query: str, sources, *, now: datetime | None = None):
+        """Compatibility wrapper for the shared query-specific freshness gate."""
+        from core.research.freshness import assess_query_source_freshness
+        return assess_query_source_freshness(query, sources, reference_time=now)
+
+    @staticmethod
     def _answer_text_and_verification(
         pipeline_result,
     ) -> tuple[str, str]:
@@ -418,8 +447,12 @@ class MotherResearchIntegration:
             "verification_status",
             None,
         )
-        if isinstance(explicit_status, str) and explicit_status:
-            return answer, explicit_status
+        if isinstance(explicit_status, str) and explicit_status.strip():
+            # Normalize status tokens at this boundary. Providers may emit
+            # lowercase or padded strings; downstream acceptance compares
+            # against canonical constants and must not silently reject a
+            # genuinely VERIFIED result because of formatting alone.
+            return answer, explicit_status.strip().upper()
 
         answer_verified = getattr(
             synthesized_answer,
@@ -448,6 +481,237 @@ class MotherResearchIntegration:
         else:
             verification_status = "UNKNOWN"
         return answer, verification_status
+
+    @staticmethod
+    def _pipeline_diagnostics(context) -> dict[str, object]:
+        """Return bounded, secret-free stage telemetry for failed research audits."""
+        outputs = context.outputs if isinstance(getattr(context, "outputs", None), dict) else {}
+        diagnostics: dict[str, object] = {}
+
+        publisher = outputs.get("publisher_fetch")
+        if isinstance(publisher, dict):
+            diagnostics["publisher_fetch"] = {
+                "status": str(publisher.get("status", "UNKNOWN"))[:80],
+                "requested": publisher.get("requested"),
+                "acquired": publisher.get("acquired"),
+                "errors": [str(item)[:180] for item in list(publisher.get("details") or [])[:5]],
+            }
+
+        timestamp_provenance = outputs.get("discovery_timestamp_provenance")
+        if isinstance(timestamp_provenance, dict):
+            diagnostics["discovery_timestamp_provenance"] = {
+                key: timestamp_provenance.get(key)
+                for key in ("candidate_sources_with_timestamp", "selected_urls_with_timestamp", "selected_urls_with_trusted_backend")
+            }
+
+        discovery = outputs.get("corroboration_discovery")
+        if isinstance(discovery, dict):
+            diagnostics["discovery"] = {
+                "candidate_url_count": discovery.get("candidate_url_count"),
+                "resolved_candidate_url_count": discovery.get("resolved_candidate_url_count"),
+                "selected_diverse_url_count": discovery.get("selected_diverse_url_count"),
+                "selected_publisher_hosts": list(discovery.get("selected_publisher_hosts") or [])[:10],
+                "attempted_followups": len(discovery.get("attempted_queries") or []),
+                "attempted_expansions": len(discovery.get("expansion_queries") or []),
+                "failed_followups": [str(item)[:160] for item in list(discovery.get("failed_queries") or [])[:3]],
+                "failed_expansions": [str(item)[:160] for item in list(discovery.get("expansion_failures") or [])[:3]],
+            }
+
+        verification = getattr(context, "verification", None)
+        if isinstance(verification, dict):
+            diagnostics["evidence_verification"] = {
+                key: verification.get(key)
+                for key in ("documents", "extracted_count", "finding_count", "evidence_count", "status")
+                if key in verification
+            }
+        extraction = getattr(context, "extraction", None)
+        if isinstance(extraction, list):
+            diagnostics["extraction"] = {
+                "documents_processed": len(extraction),
+                "findings": sum(len(getattr(item, "findings", ()) or ()) for item in extraction),
+                "evidence_stored": sum(
+                    1 for item in extraction
+                    for finding in (getattr(item, "findings", ()) or ())
+                    if getattr(finding, "evidence_stored", False)
+                ),
+            }
+        answer_pipeline_result = getattr(context, "answer", None)
+        if answer_pipeline_result is not None:
+            answer = getattr(answer_pipeline_result, "answer", answer_pipeline_result)
+            answer_evidence = list(getattr(answer, "evidence", ()) or ())
+            diagnostics["answer"] = {
+                "status": str(getattr(answer, "status", "UNKNOWN"))[:80],
+                "verified": getattr(answer, "verified", None),
+                "confidence": getattr(answer, "confidence", None),
+                "claim_count": len(answer_evidence),
+                "claims_with_multiple_sources": sum(
+                    1 for item in answer_evidence
+                    if len(set(getattr(item, "source_ids", ()) or ())) >= 2
+                ),
+                "claims_with_evidence_text": sum(
+                    1 for item in answer_evidence
+                    if any(str(value).strip() for value in (getattr(item, "evidence_texts", ()) or ()))
+                ),
+            }
+            query_result = getattr(answer_pipeline_result, "query_result", None)
+            aggregation = getattr(answer_pipeline_result, "aggregation", None)
+            quality_answer = getattr(aggregation, "answer", None) if aggregation is not None else None
+            quality_claims = list(getattr(quality_answer, "claims", ()) or ())
+            diagnostics["claim_pipeline"] = {
+                "relevance_candidates_before_corroboration": getattr(
+                    answer_pipeline_result, "relevance_candidate_count", None
+                ),
+                "corroborated_candidates_retained": getattr(
+                    answer_pipeline_result, "corroborated_candidate_count", None
+                ),
+                "retrieval_matches_after_corroboration": getattr(query_result, "total_matches", None),
+                "aggregation_results": len(getattr(aggregation, "results", ()) or ()) if aggregation is not None else None,
+                "quality_claims": len(quality_claims),
+                "multi_source_quality_claims": sum(
+                    1 for item in quality_claims
+                    if getattr(item, "status", "") == "MULTI_SOURCE_SUPPORTED"
+                    and getattr(item, "source_count", 0) >= 2
+                ),
+                # Counts only; never log source text, queries, credentials, or raw errors.
+                "claim_linking": dict(
+                    getattr(answer_pipeline_result, "claim_link_diagnostics", None) or {}
+                ),
+            }
+            arbitration = getattr(answer_pipeline_result, "arbitration", None)
+            if arbitration is not None:
+                arbitration_reasons = getattr(arbitration, "reasons", ()) or ()
+                if isinstance(arbitration_reasons, str):
+                    arbitration_reasons = (arbitration_reasons,)
+                diagnostics["arbitration"] = {
+                    "accepted": getattr(arbitration, "accepted", None),
+                    "status": str(getattr(arbitration, "status", "UNKNOWN"))[:80],
+                    "reasons": [str(item)[:180] for item in list(arbitration_reasons)[:8]],
+                    # Preserve compatibility with older arbitration result objects.
+                    "reason": str(getattr(arbitration, "reason", ""))[:180],
+                }
+            traceability = getattr(answer_pipeline_result, "traceability", None)
+            if traceability is not None:
+                diagnostics["traceability"] = {
+                    "status": str(getattr(traceability, "status", "UNKNOWN"))[:80],
+                    "linked_count": getattr(traceability, "linked_count", None),
+                    "unlinked_count": getattr(traceability, "unlinked_count", None),
+                }
+        return diagnostics
+
+    def _promote_verified_answer_knowledge(self, context, *, query: str, job_id: str) -> dict[str, object]:
+        """Persist only claims that passed the final live answer gate.
+
+        This is deliberately stricter than a verified answer flag: the
+        arbitrator, end-to-end traceability, evidence linkage, multi-source
+        support, language and freshness gates must already have passed.
+        Conflicted or ambiguously selected knowledge is never promoted.
+        """
+        result = getattr(context, "answer", None)
+        answer = getattr(result, "answer", None)
+        arbitration = getattr(result, "arbitration", None)
+        if (
+            answer is None
+            or getattr(answer, "verified", False) is not True
+            or getattr(answer, "status", "") != "VERIFIED"
+            or getattr(arbitration, "accepted", False) is not True
+        ):
+            return {"status": "BLOCKED", "reason": "final answer/arbitration gate not accepted", "promoted_count": 0}
+
+        aggregation = getattr(result, "aggregation", None)
+        if int(getattr(aggregation, "unresolved_conflict_count", 0) or 0) > 0:
+            return {"status": "BLOCKED", "reason": "unresolved conflicts", "promoted_count": 0}
+
+        selected_ids = {
+            str(value).strip()
+            for value in (getattr(answer, "knowledge_ids", ()) or ())
+            if isinstance(value, str) and value.strip()
+        }
+        promoted: list[str] = []
+        skipped: list[str] = []
+        now = datetime.now(timezone.utc)
+        traceability = getattr(aggregation, "answer_traceability", None)
+        traces = {
+            getattr(trace, "knowledge_id", ""): trace
+            for trace in (getattr(traceability, "traces", ()) or ())
+            if getattr(trace, "knowledge_id", "")
+        }
+        for knowledge_id in sorted(selected_ids):
+            trace = traces.get(knowledge_id)
+            source_ids = tuple(dict.fromkeys(
+                str(value).strip()
+                for value in (getattr(trace, "source_ids", ()) or ())
+                if isinstance(value, str) and value.strip()
+            ))
+            evidence_ids = tuple(dict.fromkeys(
+                str(value).strip()
+                for value in (getattr(trace, "evidence_ids", ()) or ())
+                if isinstance(value, str) and value.strip()
+            ))
+            if (
+                trace is None
+                or getattr(trace, "trace_complete", False) is not True
+                or getattr(trace, "supported", False) is not True
+                or getattr(trace, "verified", False) is not True
+                or len(source_ids) < 2
+                or not evidence_ids
+            ):
+                continue
+
+            candidate = self.storage.get_knowledge(knowledge_id)
+            if candidate is None or not candidate.evidence or candidate.confidence < 0.60:
+                skipped.append(knowledge_id)
+                continue
+
+            conflict = self.storage.knowledge_verification_context(knowledge_id)
+            if int(conflict.get("unresolved_conflict_count", 0) or 0) > 0:
+                skipped.append(knowledge_id)
+                continue
+            conflict_count = int(conflict.get("conflict_count", 0) or 0)
+            if conflict_count > 0 and conflict.get("selected_knowledge_id") != knowledge_id:
+                skipped.append(knowledge_id)
+                continue
+
+            lifecycle = self.storage.knowledge_verification_lifecycle(knowledge_id)
+            current_status = str(lifecycle.get("verification_status", "UNVERIFIED")).upper()
+            if current_status == "CONFLICTED":
+                skipped.append(knowledge_id)
+                continue
+
+            candidate.verified = True
+            candidate.last_verified_at = now
+            metadata = dict(candidate.metadata or {})
+            metadata["verified_answer_promotion"] = {
+                "query": query,
+                "research_job_id": job_id,
+                "arbitration": "ACCEPTED",
+                "source_ids": list(source_ids),
+                "evidence_ids": list(evidence_ids),
+                "promoted_at": now.isoformat(),
+                "verification_rule": "final verified answer + accepted arbitration + complete verified traceability + independent multi-source support + final answer gates",
+            }
+            candidate.metadata = metadata
+            self.storage.save_knowledge(candidate)
+            self.storage.record_knowledge_verification(
+                knowledge_id=knowledge_id,
+                status="VERIFIED",
+                reason="Final Main Brain answer passed evidence, arbitration, traceability, freshness and language gates.",
+                verified_at=now,
+                metadata={
+                    "query": query,
+                    "research_job_id": job_id,
+                    "source_ids": list(source_ids),
+                    "evidence_ids": list(evidence_ids),
+                    "arbitration": "ACCEPTED",
+                },
+            )
+            promoted.append(knowledge_id)
+
+        return {
+            "status": "PROMOTED" if promoted else "NO_ELIGIBLE_CLAIMS",
+            "promoted_count": len(promoted),
+            "knowledge_ids": promoted,
+            "skipped_knowledge_ids": skipped,
+        }
 
     def research(
         self,
@@ -604,7 +868,61 @@ class MotherResearchIntegration:
                         execution.error
                         or "research execution failed"
                     ),
+                    diagnostics=self._pipeline_diagnostics(context),
                 )
+
+            freshness_diagnostics = self._current_news_freshness_gate(
+                query,
+                getattr(getattr(context, "acquisition", None), "sources", ()),
+            )
+            if (
+                freshness_diagnostics is not None
+                and freshness_diagnostics.get("status") != "PASS"
+                and verification_status == "VERIFIED"
+            ):
+                # Do not let the answer be labelled VERIFIED merely because
+                # claim support passed: a current-news answer also requires
+                # every selected publisher source to pass the query-specific
+                # publication-age gate. Stable facts do not enter this branch.
+                verification_status = "STALE"
+
+            # A verified claim is not a usable final answer if it switches
+            # away from the user's language. Do not mislabel an English answer
+            # to a Hindi query as a successful localized response. Until a
+            # trusted translation adapter is available, fail closed in the
+            # user's language rather than silently returning the wrong one.
+            language_matches = self._answer_matches_query_language(query, answer)
+            translation_diagnostics: dict[str, object] = {"attempted": False, "status": "NOT_CONFIGURED"}
+            if verification_status == "VERIFIED" and not language_matches:
+                translation_diagnostics["attempted"] = MyMemoryTranslationAdapter.configured()
+                if MyMemoryTranslationAdapter.configured():
+                    language_brain = UniversalLanguageBrain()
+                    source_language = language_brain.detect(answer).language_code
+                    target_language = language_brain.detect(query).language_code
+                    translated = MyMemoryTranslationAdapter().translate(
+                        answer,
+                        source_language=source_language,
+                        target_language=target_language,
+                    )
+                    if translated is not None and self._answer_matches_query_language(query, translated.text):
+                        # The claim's evidence graph remains the original
+                        # pipeline result. Translation is a rendering layer,
+                        # never a source of facts or a new verification event.
+                        answer = translated.text
+                        language_matches = True
+                        translation_diagnostics.update({
+                            "status": "TRANSLATED_AND_LANGUAGE_CHECKED",
+                            "provider": translated.provider,
+                            "source_language": translated.source_language,
+                            "target_language": translated.target_language,
+                            "url_tokens_preserved": translated.url_tokens_preserved,
+                            "numeric_tokens_preserved": translated.numeric_tokens_preserved,
+                            "source_answer_kept_in_traceability": True,
+                        })
+                    else:
+                        translation_diagnostics["status"] = "TRANSLATION_FAILED_OR_REJECTED"
+                if not language_matches:
+                    verification_status = "LANGUAGE_MISMATCH"
 
             # Completing acquisition/extraction is not the same as verifying
             # an answer. Never expose unverified page text as a successful
@@ -613,6 +931,40 @@ class MotherResearchIntegration:
             if not answer_verified:
                 source_leads = self._source_leads(context)
                 answer = self._insufficient_evidence_message(query, source_leads)
+
+            # The final fallback message is itself localized. Re-check the
+            # text actually returned to the user, not the rejected candidate.
+            language_matches = self._answer_matches_query_language(query, answer)
+            final_diagnostics = self._pipeline_diagnostics(context)
+            final_diagnostics["language_consistency"] = {
+                "matches_query": language_matches,
+                "status": "MATCH" if language_matches else "MISMATCH",
+            }
+            final_diagnostics["translation"] = translation_diagnostics
+            if freshness_diagnostics is not None:
+                final_diagnostics["current_news_freshness_gate"] = freshness_diagnostics
+
+            promotion_diagnostics: dict[str, object] = {
+                "status": "NOT_ATTEMPTED",
+                "promoted_count": 0,
+            }
+            if answer_verified:
+                try:
+                    promotion_diagnostics = self._promote_verified_answer_knowledge(
+                        context,
+                        query=query,
+                        job_id=job_id,
+                    )
+                except Exception as promotion_error:
+                    # The answer remains independently verified, but a failed
+                    # durable write must be visible and must not be reported as
+                    # successful knowledge persistence.
+                    promotion_diagnostics = {
+                        "status": "PERSISTENCE_FAILED",
+                        "promoted_count": 0,
+                        "error": type(promotion_error).__name__,
+                    }
+            final_diagnostics["verified_knowledge_promotion"] = promotion_diagnostics
 
             return MotherResearchResult(
                 success=answer_verified,
@@ -674,14 +1026,30 @@ class MotherResearchIntegration:
                     ]
                 ),
                 error=(
-                    "research completed but answer did not meet the "
-                    "verification threshold"
-                    if not answer_verified
-                    else ""
+                    "research answer language did not match the query language"
+                    if verification_status == "LANGUAGE_MISMATCH"
+                    else (
+                        "research completed but answer did not meet the verification threshold"
+                        if not answer_verified
+                        else ""
+                    )
                 ),
+                diagnostics=final_diagnostics,
             )
 
         except Exception as exc:
+            # Failures thrown before the execution manager returns a result
+            # still need bounded stage diagnostics. Without this, live failures
+            # look like generic zero-extraction errors and the blocked stage is
+            # impossible to distinguish from provider, fetch, or parser errors.
+            diagnostics: dict[str, object] = {}
+            try:
+                failed_context = self.research_pipeline.context_for(job_id)
+                diagnostics = self._pipeline_diagnostics(failed_context)
+            except Exception:
+                # Context creation itself may have failed; keep the result safe
+                # and do not mask the original exception with a diagnostic error.
+                diagnostics = {}
             return MotherResearchResult(
                 success=False,
                 query=query,
@@ -697,4 +1065,5 @@ class MotherResearchIntegration:
                 prompt_injection_safe_to_follow=True,
                 prompt_injection_rules=(),
                 error=str(exc),
+                diagnostics=diagnostics,
             )

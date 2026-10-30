@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from core.brain.operational_memory_knowledge import (
     OperationalMemoryKnowledgeIntegration,
     OperationalMemoryKnowledgeResult,
+)
+from core.research.knowledge_conflict import (
+    CONFLICT_TYPE_EXPLICIT_NEGATION,
+    RESOLUTION_UNRESOLVED,
+    KnowledgeConflictRecord,
 )
 from core.research.memory_object import MemoryCandidate
 from core.research.models import KnowledgeCandidate
@@ -74,6 +80,17 @@ def build_storage(database_path: Path) -> ResearchStorage:
         )
     )
 
+    now = datetime.now(timezone.utc)
+    for offset, knowledge_id in enumerate(
+        ("knowledge-python", "knowledge-termux")
+    ):
+        storage.record_knowledge_verification(
+            knowledge_id=knowledge_id,
+            status="VERIFIED",
+            reason="Test fixture has persisted verified lifecycle evidence.",
+            verified_at=now + timedelta(seconds=offset),
+        )
+
     storage.save_knowledge(
         KnowledgeCandidate(
             knowledge_id="knowledge-unverified",
@@ -85,6 +102,119 @@ def build_storage(database_path: Path) -> ResearchStorage:
     )
 
     return storage
+
+
+def test_operational_context_rejects_forged_factual_memory_provenance() -> None:
+    with TemporaryDirectory() as temp_dir:
+        storage = ResearchStorage(Path(temp_dir) / "forged-memory.db")
+        storage.save_memory(
+            MemoryCandidate(
+                memory_id="forged-fact-memory",
+                content="Forged factual memory says the secret project is verified.",
+                memory_type="research_fact",
+                source="research",
+                importance=0.99,
+                confidence=1.0,
+                tags=["forged", "factual", "memory"],
+                metadata={
+                    "verified": True,
+                    "verification_status": "VERIFIED",
+                    "evidence_ids": ["evidence-does-not-exist"],
+                    "source_ids": ["source-does-not-exist"],
+                },
+            )
+        )
+
+        result = OperationalMemoryKnowledgeIntegration(storage).retrieve(
+            query="forged factual memory"
+        )
+
+        assert "forged-fact-memory" not in result.memory_ids
+        assert all(
+            item.memory_id != "forged-fact-memory"
+            for item in result.memories
+        )
+
+
+def test_operational_context_rejects_stale_verified_flag() -> None:
+    with TemporaryDirectory() as temp_dir:
+        storage = ResearchStorage(Path(temp_dir) / "stale.db")
+        storage.save_knowledge(
+            KnowledgeCandidate(
+                knowledge_id="stale",
+                statement="SAHIBEX has a stale verified claim.",
+                confidence=0.99,
+                verified=True,
+            )
+        )
+        now = datetime.now(timezone.utc)
+        storage.record_knowledge_verification(
+            knowledge_id="stale",
+            status="VERIFIED",
+            reason="Earlier test verification.",
+            verified_at=now,
+        )
+        storage.record_knowledge_verification(
+            knowledge_id="stale",
+            status="UNVERIFIED",
+            reason="Latest evidence review rejected the claim.",
+            verified_at=now + timedelta(seconds=1),
+        )
+
+        result = OperationalMemoryKnowledgeIntegration(storage).retrieve(
+            query="stale verified claim"
+        )
+        assert result.knowledge_ids == []
+
+
+def test_operational_context_rejects_unresolved_conflict() -> None:
+    with TemporaryDirectory() as temp_dir:
+        storage = ResearchStorage(Path(temp_dir) / "conflict.db")
+        storage.save_knowledge(
+            KnowledgeCandidate(
+                knowledge_id="claim-a",
+                statement="SAHIBEX has a verified-looking claim about safety.",
+                confidence=0.99,
+                verified=True,
+            )
+        )
+        storage.save_knowledge(
+            KnowledgeCandidate(
+                knowledge_id="claim-b",
+                statement="SAHIBEX has a contradictory claim about safety.",
+                confidence=0.98,
+                verified=True,
+            )
+        )
+        now = datetime.now(timezone.utc)
+        for knowledge_id in ("claim-a", "claim-b"):
+            storage.record_knowledge_verification(
+                knowledge_id=knowledge_id,
+                status="VERIFIED",
+                reason="Initial verification before conflict detection.",
+                verified_at=now,
+            )
+        storage.save_knowledge_conflict(
+            KnowledgeConflictRecord(
+                conflict_id="unresolved-safety-conflict",
+                first_knowledge_id="claim-a",
+                second_knowledge_id="claim-b",
+                conflict_type=CONFLICT_TYPE_EXPLICIT_NEGATION,
+                conflict_reason="Test fixture represents conflicting claims.",
+                resolution_status=RESOLUTION_UNRESOLVED,
+                selected_knowledge_id=None,
+                evidence_score_delta=0.0,
+                source_reliability_delta=0.0,
+                knowledge_confidence_delta=0.01,
+                resolution_reason="No resolution has been accepted.",
+                created_at=now,
+            )
+        )
+
+        result = OperationalMemoryKnowledgeIntegration(storage).retrieve(
+            query="claim about safety"
+        )
+        assert result.knowledge_ids == []
 
 
 def main() -> None:
@@ -109,11 +239,23 @@ def main() -> None:
         assert result.knowledge_ids == [
             "knowledge-python",
             "knowledge-termux",
-            "knowledge-unverified",
         ]
 
         assert len(result.memories) == 2
-        assert len(result.knowledge) == 3
+        assert len(result.knowledge) == 2
+
+        # Ordinary operational context defaults to lifecycle-verified facts.
+        # Unverified candidates are available only through an explicit review
+        # retrieval, and still pass the persisted conflict/lifecycle filters.
+        review_result = integration.retrieve(
+            query="SAHIBEX",
+            verified_knowledge_only=False,
+        )
+        assert review_result.knowledge_ids == [
+            "knowledge-python",
+            "knowledge-termux",
+            "knowledge-unverified",
+        ]
 
         verified_result = integration.retrieve(
             query="SAHIBEX",
@@ -191,3 +333,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    test_operational_context_rejects_stale_verified_flag()
+    test_operational_context_rejects_unresolved_conflict()

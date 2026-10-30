@@ -17,6 +17,39 @@ class LocalFact:
 
 _FACTS = (
     (
+        re.compile(
+            r"(?:sahibex kya hai|sahibex kya h|sahibex ke baare mein batao|"
+            r"sahibex ke bare mein batao)"
+            r"(?:[?।.! ]*)"
+            r"(?:(?:hindi mein|in hindi|hindi)\s*(?:[0-9]+\s*)?(?:points?|bindu|baaton)?"
+            r"|(?:[0-9]+\s+)?(?:points?|bindu|baaton))?"
+            r"(?:[?।.! ]*)$", re.I
+        ),
+        LocalFact(
+            "SAHIBEX ke baare mein 3 baatein:\n"
+            "1. SAHIBEX ka full form ‘Smart Adaptive Human-Centered Intelligent Brain for Execution & Exploration’ hai; yeh project ka chuna hua naam aur vision hai.\n"
+            "2. Iska Main Brain intent samajhne, context aur planning, permission/safety, research, memory aur result verification ko coordinate karta hai.\n"
+            "3. Iska lakshya seekhne aur tools ka zimmedari se istemal karne wala zyada saksham AI banana hai. Yeh abhi vikasadhin hai; ise poori tarah independent ya human-level brain kehna sahi nahi hoga.",
+            "SAHIBEX-PROJECT-IDENTITY-001",
+        ),
+    ),
+    (
+        re.compile(
+            r"(?:what is sahibex|explain sahibex|describe sahibex)"
+            r"(?:[?।.! ]*)"
+            r"(?:(?:explain|describe)\s+in\s+[0-9]+\s+points?|in\s+[0-9]+\s+points?|"
+            r"in hindi(?:\s+[0-9]+\s+points?)?)?"
+            r"(?:[?।.! ]*)$", re.I
+        ),
+        LocalFact(
+            "SAHIBEX in 3 points:\n"
+            "1. SAHIBEX stands for ‘Smart Adaptive Human-Centered Intelligent Brain for Execution & Exploration’; this is the project's chosen name and vision.\n"
+            "2. Its Main Brain coordinates intent understanding, context and planning, permission and safety, research, memory, and result verification.\n"
+            "3. The goal is to build a more capable AI that can learn and use tools responsibly. SAHIBEX is still under development; it should not be described as fully independent or human-level yet.",
+            "SAHIBEX-PROJECT-IDENTITY-001-EN",
+        ),
+    ),
+    (
         re.compile(r"(?:भारत की राजधानी क्या है|भारत की राजधानी बताओ|what is the capital of india|capital of india)(?:[?।.! ]*)$", re.I),
         LocalFact(
             "भारत की राजधानी नई दिल्ली है। नई दिल्ली, दिल्ली के राष्ट्रीय राजधानी क्षेत्र (NCT) में स्थित है; दिल्ली किसी दूसरे राज्य का हिस्सा नहीं है।",

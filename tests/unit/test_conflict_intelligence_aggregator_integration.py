@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from core.research.aggregator import ResearchResultAggregator
 from core.research.models import (
     Evidence,
@@ -27,6 +29,7 @@ def make_knowledge(
 def make_source(
     source_id: str,
     reliability: float,
+    published_at: datetime | None = None,
 ) -> ResearchSource:
     return ResearchSource(
         source_id=source_id,
@@ -34,6 +37,7 @@ def make_source(
         source_type="web",
         locator=f"https://example.com/{source_id}",
         publisher="Test Publisher",
+        published_at=published_at,
         reliability=reliability,
     )
 
@@ -429,6 +433,63 @@ def test_conflict_intelligence_does_not_mutate_inputs() -> None:
     )
 
 
+def test_conflicting_reports_expose_publication_recency() -> None:
+    aggregator = ResearchResultAggregator()
+    now = datetime.now(timezone.utc)
+    first = make_knowledge("newer", "system is enabled")
+    second = make_knowledge("older", "system is disabled")
+
+    result = aggregator.aggregate(
+        [first, second],
+        evidence_items=[
+            make_evidence("e-new", "newer", "source-new", 0.5),
+            make_evidence("e-old", "older", "source-old", 0.5),
+        ],
+        sources=[
+            make_source("source-new", 0.8, published_at=now),
+            make_source(
+                "source-old",
+                0.8,
+                published_at=now - timedelta(days=3),
+            ),
+        ],
+    )
+
+    assert len(result.conflict_intelligence) == 1
+    assessment = result.conflict_intelligence[0]
+    assert assessment.temporal_comparison_status == "FIRST_NEWER"
+    assert assessment.publication_time_delta_seconds is not None
+    assert assessment.publication_time_delta_seconds > 0
+    # Publication recency is comparison context, not proof of truth.
+    assert assessment.resolution_status == "UNRESOLVED"
+
+
+def test_conflicting_reports_with_missing_dates_are_unknown() -> None:
+    aggregator = ResearchResultAggregator()
+    first = make_knowledge("dated", "system is enabled")
+    second = make_knowledge("undated", "system is disabled")
+
+    result = aggregator.aggregate(
+        [first, second],
+        evidence_items=[
+            make_evidence("e-dated", "dated", "source-dated", 0.5),
+            make_evidence("e-undated", "undated", "source-undated", 0.5),
+        ],
+        sources=[
+            make_source(
+                "source-dated",
+                0.8,
+                published_at=datetime.now(timezone.utc),
+            ),
+            make_source("source-undated", 0.8),
+        ],
+    )
+
+    assessment = result.conflict_intelligence[0]
+    assert assessment.temporal_comparison_status == "UNKNOWN"
+    assert assessment.publication_time_delta_seconds is None
+
+
 def main() -> None:
     print(
         "SAHIBEX 6G-5 CONFLICT INTELLIGENCE "
@@ -463,6 +524,14 @@ def main() -> None:
         (
             "input immutability",
             test_conflict_intelligence_does_not_mutate_inputs,
+        ),
+        (
+            "conflicting report publication recency",
+            test_conflicting_reports_expose_publication_recency,
+        ),
+        (
+            "missing publication dates remain unknown",
+            test_conflicting_reports_with_missing_dates_are_unknown,
         ),
     ]
 

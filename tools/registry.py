@@ -333,6 +333,45 @@ def build_default_registry(
         protected_files = ProtectedFilesystemTools(project_root)
         protected_command = ProtectedCommandTool(project_root)
 
+        # The unified bridge routes phone-local work and, when configured,
+        # work on the currently paired laptop/desktop. Existing permission
+        # and confirmation injection remain owned by SafeToolExecutor.
+        import os
+        desktop_tool = None
+        if os.environ.get("SAHIBEX_DESKTOP_AGENT_URL", "").strip() and os.environ.get("SAHIBEX_DEVICE_TOKEN", ""):
+            from tools.sahibex_desktop_tool import DesktopDeviceControlTool
+            desktop_tool = DesktopDeviceControlTool()
+            registry.register(
+                name="desktop_device_control",
+                description="Legacy direct access to the currently paired desktop agent.",
+                handler=lambda action, parameters=None, _permission_granted=False, _confirmation_provided=False: desktop_tool.execute(
+                    action=action,
+                    parameters=parameters,
+                    permission_granted=_permission_granted,
+                    confirmation_provided=_confirmation_provided,
+                ),
+                read_only=False,
+                requires_confirmation=True,
+                protected_action=ActionType.RUN_COMMAND,
+            )
+
+        from tools.sahibex_control_bridge import SahibexControlBridge
+        control_bridge = SahibexControlBridge(project_root, desktop=desktop_tool, phone_control=computer_tool)
+        registry.register(
+            name="sahibex_control_bridge",
+            description="Unified SAHIBEX control bridge. Route work to phone for local project files, commands and Android UI actions, or to the currently paired laptop/desktop for allowed workspace file creation, bounded commands, directory listing and browser opening. Specify target=phone or target=laptop. Protected operations require permission and confirmation.",
+            handler=lambda target, action, parameters=None, _permission_granted=False, _confirmation_provided=False: control_bridge.execute(
+                target=target,
+                action=action,
+                parameters=parameters,
+                _permission_granted=_permission_granted,
+                _confirmation_provided=_confirmation_provided,
+            ),
+            read_only=False,
+            requires_confirmation=True,
+            protected_action=ActionType.RUN_COMMAND,
+        )
+
         registry.register(
             name="computer_control",
             description="Control Android UI: click, swipe, type text, press keys, screenshot.",

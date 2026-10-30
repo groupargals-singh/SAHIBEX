@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from core.research.google_news_rss_search_backend import GoogleNewsRSSSearchBackend
@@ -18,7 +19,7 @@ class FakeRSSProvider:
                     locator="https://news.google.com/rss/articles/example?oc=5",
                     content="<a href='x'>AI safety report</a>",
                     publisher="Google News",
-                    published_at="2026-10-09T00:00:00Z",
+                    published_at=(datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
                 )
             ]
         )
@@ -99,7 +100,7 @@ def test_time_sensitive_query_discards_old_or_undated_items():
 
     provider = FakeRSSProvider()
     provider.acquire = lambda request: SimpleNamespace(sources=[
-        SimpleNamespace(title="AI safety report - Publisher", locator="https://news.google.com/recent", content="AI safety risk report", publisher="Publisher", published_at=datetime(2026, 10, 9, tzinfo=timezone.utc)),
+        SimpleNamespace(title="AI safety report - Publisher", locator="https://news.google.com/recent", content="AI safety risk report", publisher="Publisher", published_at=datetime.now(timezone.utc) - timedelta(days=1)),
         SimpleNamespace(title="AI safety old report - Publisher", locator="https://news.google.com/old", content="AI safety risk report", publisher="Publisher", published_at=datetime(2026, 9, 1, tzinfo=timezone.utc)),
         SimpleNamespace(title="AI safety undated report - Publisher", locator="https://news.google.com/undated", content="AI safety risk report", publisher="Publisher", published_at=None),
     ])

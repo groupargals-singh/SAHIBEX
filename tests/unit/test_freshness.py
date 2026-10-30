@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 
 from core.research.freshness import (
     STATUS_AGING,
@@ -14,6 +14,14 @@ from core.research.models import ResearchSource
 
 
 UTC = timezone.utc
+
+
+class NoOffsetTimezone(tzinfo):
+    def utcoffset(self, dt):
+        return None
+
+    def dst(self, dt):
+        return None
 
 
 def make_source(
@@ -241,6 +249,61 @@ def test_naive_reference_time_is_rejected() -> None:
         )
 
 
+def test_timezone_with_no_utc_offset_is_rejected() -> None:
+    reference = datetime(
+        2026,
+        1,
+        10,
+        tzinfo=UTC,
+    )
+    invalid_time = datetime(
+        2026,
+        1,
+        1,
+        tzinfo=NoOffsetTimezone(),
+    )
+
+    invalid_cases = [
+        (
+            make_source(
+                "no-offset-publication",
+                published_at=invalid_time,
+                accessed_at=reference,
+            ),
+            reference,
+        ),
+        (
+            make_source(
+                "no-offset-access",
+                published_at=reference - timedelta(days=1),
+                accessed_at=invalid_time,
+            ),
+            reference,
+        ),
+        (
+            make_source(
+                "valid-source-invalid-reference",
+                published_at=reference - timedelta(days=1),
+                accessed_at=reference,
+            ),
+            invalid_time,
+        ),
+    ]
+
+    for source, reference_time in invalid_cases:
+        try:
+            assess_source_freshness(
+                source,
+                reference_time=reference_time,
+            )
+        except ValueError as exc:
+            assert "timezone-aware" in str(exc)
+        else:
+            raise AssertionError(
+                "timestamp with tzinfo but no UTC offset must be rejected"
+            )
+
+
 def test_reliability_does_not_change_freshness() -> None:
     reference = datetime(
         2026,
@@ -357,6 +420,10 @@ def main() -> None:
         (
             "naive reference protection",
             test_naive_reference_time_is_rejected,
+        ),
+        (
+            "timezone without UTC offset protection",
+            test_timezone_with_no_utc_offset_is_rejected,
         ),
         (
             "reliability separation",

@@ -11,6 +11,7 @@ class ComputerAction(str, Enum):
     TYPE_TEXT = "type_text"
     PRESS_KEY = "press_key"
     SCREENSHOT = "screenshot"
+    UI_TREE = "ui_tree"
 
 
 @dataclass(frozen=True)

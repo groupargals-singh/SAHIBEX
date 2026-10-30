@@ -412,3 +412,241 @@ Resolve the Android Termux API compatibility/service issue before attempting cam
 - Added a conservative Devanagari-script check for the insufficient-evidence explanation. Hindi questions now receive a Hindi explanation that explicitly says source links are leads, not verified conclusions; English questions retain English messaging. Added regression tests for both languages and source-link preservation.
 - Focused tests: **15 passed** across research integrity and Master Brain research/learning flow suites; compileall and `git diff --check` passed.
 - Open critical issue: live research still does not reliably corroborate independent sources and produce a verified answer. This localization fix improves usability but does not close the research-quality gate.
+
+
+## 2026-10-10 — Verification pass for evidence/filter/memory pipeline
+
+- Confirmed the Termux source-of-truth repository is `$HOME/SAHIBEX`; working tree was clean before this verification pass.
+- Focused research/filter/answer/memory verification regression: **28 passed, 0 failed**.
+- Full repository regression on the current source: **1601 passed, 0 failed** in 109.81 seconds (process exit code 0).
+- `python -m compileall -q app core security verification tools tests`: PASS; `git diff --check`: PASS.
+- Important scope boundary: these repository tests do not prove that two separately generated answer candidates are currently produced and compared in every live query. Existing multi-source research, answer-quality/conflict/source-traceability gates, and verified-learning persistence checks are present, but the explicit dual-candidate → third-party arbitration workflow is still an integration task and must not be reported as completed until wired into the live Master Brain path with end-to-end tests.
+- Live public-web research remains fail-closed when trustworthy independent evidence is insufficient. The current system may return source leads with `NOT_VERIFIED`; those leads are not verified conclusions and must not be promoted to trusted knowledge.
+
+
+## 2026-10-10 — Dual-path answer arbitration wired into research pipeline
+
+- Added `core/research/answer_arbitration.py`: deterministic third-pass arbiter compares the quality-aware candidate's knowledge claim IDs against the evidence-linked synthesis candidate, requires a supported quality status and verified synthesis, and rejects empty/disagreeing candidates or unresolved conflicts.
+- Wired arbitration into `core/research/answer_pipeline.py`. Arbitration details are included in the pipeline result; an otherwise-verified answer is downgraded to `ARBITRATION_REJECTED` if the candidates disagree or a verification gate fails.
+- Added four focused tests in `tests/unit/test_answer_arbitration.py` for agreement, claim disagreement, unverified/conflicted inputs, and empty candidates.
+- Focused regression: **31 passed, 0 failed** across arbitration, answer pipeline/traceability, research answer integrity, learning integration, and memory runtime tests. Compileall and `git diff --check` passed.
+- Scope boundary: this is two existing synthesis paths plus a deterministic verifier, not two independent LLMs plus a third LLM. Public-web corroboration remains constrained by the existing acquisition/evidence quality gates. Full repository regression is running; this entry does not claim full-suite success until its exit result is confirmed.
+
+
+## 2026-10-10 — Arbitration full-regression result
+
+- Full repository test suite after the arbitration integration and new tests: **1605 passed, 0 failed** in 104.77 seconds; pytest process exit code 0.
+- The increase from the previous 1601-test run is the four new arbitration regression tests.
+- Final compileall and `git diff --check` are being re-run after the roadmap result update. This verifies repository tests and static compilation; it does not by itself certify live public-web answers or the whole SAHIBEX runtime as production-ready.
+
+
+## 2026-10-10 — Memory provenance hardening + live startup/typed-command checks
+
+- Expanded the Memory Brain fail-closed gate to catch new factual aliases (for example `scientific_fact` and `semantic_knowledge`) so a newly named factual memory type cannot bypass provenance checks. Preserved the explicitly user-confirmed `project_fact` path. Rejected writes now receive a traceable candidate memory ID without being persisted or activated.
+- Added regression coverage for alias bypass; targeted memory/research/arbitration regression: **20 passed, 0 failed**. `bash -n scripts/start_sahibex_background.sh` and Python compilation for the smoke script passed.
+- Fixed `scripts/start_sahibex_background.sh`: it previously checked health after only a 2-second sleep, even though the supervisor starts the local model asynchronously; this caused a false startup failure while services were still loading. It now waits up to 45 seconds for model health and reports a clear timeout if startup fails.
+- Fixed the live quality smoke's expected-outcome logic. A current-news query that correctly returns `NOT_VERIFIED` with an explicit evidence disclaimer is a safe fail-closed outcome, not a fabricated “success” and not automatically a test-script failure. The smoke labels this separately as `SAFE_FAIL_CLOSED`; actual verified research is still labeled `VERIFIED_RESEARCH` only when status is `VERIFIED`.
+- Runtime was brought back online without downloading anything: local model `/health` PASS, web search provider ACTIVE, background supervisor ONLINE, Android media bridge `/health` PASS. Re-running `start_sahibex_background.sh` detected the existing supervisor and did not create a duplicate.
+- CLI typed-command smoke passed: `status` reports Master Brain ONLINE, 10/10 role handlers connected, Constitution ACTIVE, protected actions controlled, user authority final, independent Child NOT BORN. A Hindi sky-colour query returned a correct concise response with `STRUCTURALLY_VALID`; this is structural quality, not a factual verification certificate.
+- Live quality smoke: first two Hindi queries returned successful `STRUCTURALLY_VALID` responses in under one second. The current AI-security query returned `NOT_VERIFIED` after roughly 50 seconds with a Hindi disclaimer and source leads; this is safe behavior but the live research-answer acceptance gate remains OPEN. The revised smoke script is being re-run to verify the expected `SAFE_FAIL_CLOSED` classification.
+- Do not mark full production/live research acceptance complete on the basis of health probes or curated-answer tests. Real independent-source corroboration and a useful verified current-research answer remain unfinished.
+
+- Final re-run of the corrected live quality smoke: **3/3 checks passed** in 45.75 seconds. Two curated Hindi questions passed as `STRUCTURALLY_VALID`; the current AI-security question passed as `SAFE_FAIL_CLOSED` / `NOT_VERIFIED` with source leads and an explicit Hindi disclaimer. This does not count as a verified live-research success.
+- Final code gate after the memory-alias and startup/smoke changes: **1609 passed, 0 failed** in 130.46 seconds; process exit code 0. `compileall`, smoke-script `py_compile`, startup-script `bash -n`, and `git diff --check` all passed.
+- Final runtime health: local model ONLINE; web search ACTIVE; supervisor ONLINE; Android media bridge HTTP HEALTHY. Background startup is now idempotent when its supervisor is already running.
+
+
+## 2026-10-10 — Live research corroboration and page-noise bug fix
+
+- Root-cause probe of the live Hindi current-AI-safety query showed **4 source documents, 232–234 extracted findings, but the selected claims each had only one supporting source**. The answer was correctly downgraded to `NOT_VERIFIED`; arbitration rejected only because the synthesis candidate was not verified. This exposed a real pipeline gap: extraction creates a fresh knowledge ID per finding, so identical claims from separate sources could not accumulate source links, while time-sensitive synthesis still considered a confidence-tied list of mostly single-source claims.
+- Added in-memory exact-duplicate claim coalescing in `core/research/answer_pipeline.py`. It merges only text-identical statements, remaps evidence links only in this answer run, and leaves persisted knowledge/evidence untouched. Near-duplicate wording or changed numbers are deliberately not auto-merged.
+- Added a time-sensitive claim gate: a current/latest answer may only synthesize claims whose supporting evidence is linked to at least two distinct publisher identities. Two URLs from the same publisher do not count twice. If no claim qualifies, the answer remains fail-closed rather than presenting single-source text as corroborated.
+- Extended `core/research/content_filter.py` to strip recognizable inline navigation, advertising, social-share, “Also Read”, and author/read-time boilerplate from candidate sentences while preserving the remaining substantive text.
+- Added regression tests for exact-claim evidence merging, near-duplicate rejection, independent-publisher checks, same-publisher double-count prevention, and inline page-chrome removal.
+- Focused regression after these changes: **27 passed, 0 failed**; Python compilation passed. Live research re-check and full repository regression are pending and must be recorded separately.
+
+
+- Added bounded headline-specific follow-up search for time-sensitive research. It re-searches up to three discovered article headlines through the existing permission-gated search acquisition path, then prioritizes one URL per publisher host before filling remaining capacity. Failed follow-up searches are recorded diagnostically and never bypass the network permission gate or lower the corroboration threshold.
+- Added regression coverage for headline query normalization and publisher-host diversity. Expanded focused regression: **32 passed, 0 failed**; changed Python files compiled successfully. The new live end-to-end run is still pending.
+
+
+- Live re-check with headline follow-up discovery completed: **3 publisher pages fetched, 203 findings/evidence records extracted**. Follow-up discovery attempted three headlines and expanded the URL pool from 4 initial leads to 13 candidate URLs, selecting 10 distinct-host URLs for fetch. Two follow-up searches returned no usable results; three publisher pages passed acquisition.
+- No exact claim had evidence from two distinct publisher hosts, so the current-AI-safety answer correctly remained `NOT_VERIFIED` and arbitration rejected the empty corroborated claim set. This is not a live-research acceptance pass. Remaining blocker: improve query-specific source discovery and/or evidence-to-claim corroboration without treating related headlines or same-event reporting as proof of the same detailed claim.
+
+
+- Full repository regression after the research pipeline/source-diversity and content-filter changes: **1617 passed, 0 failed** in **133.75 seconds** (pytest exit code 0). `compileall`, smoke-script `py_compile`, startup-script `bash -n`, and `git diff --check` passed before this final documentation append.
+- Live research acceptance remains OPEN: even after broader headline follow-up search, no claim met the two-distinct-publisher corroboration gate. Do not report current-news research as production-verified until a multi-source claim passes end-to-end.
+
+
+- Restarted the Android media bridge under the updated source and verified runtime health: local model ONLINE, web search ACTIVE, background supervisor ONLINE, Android voice bridge HTTP HEALTHY.
+- Re-ran the authenticated live quality smoke on the updated bridge: **3/3 checks passed**. Two Hindi curated queries returned `STRUCTURALLY_VALID`; current AI-safety research returned `SAFE_FAIL_CLOSED / NOT_VERIFIED` in 50.92 seconds with a Hindi evidence disclaimer and source leads. This confirms safe behavior and smoke classification, **not** successful verified live research.
+
+
+## 2026-10-10 — Hindi current-research discovery diagnostics
+
+- Added bounded English discovery expansions for Hindi AI-safety/security queries: `latest AI safety news` and `latest AI security news`. Both use the existing search acquisition path and the same explicit network-permission check; no provider, permission, or evidence-verification gate was bypassed.
+- Added structured diagnostics for expansion attempts/failures and direct publisher fetch results, including publication-date rejections and HTTP failures.
+- Live re-check after the change: initial discovery plus expansions produced **23 candidate URLs**, 10 distinct-host URLs selected, **8 publisher pages accepted**, and **426 findings/evidence records**. The answer still correctly returned `NOT_VERIFIED` because no selected claim met the independent-source claim-level corroboration requirement; arbitration rejected the empty selected-claim set.
+- The extra pages include several reports on India's AI-regulation consultation plan, but the current exact-claim merger does not yet reliably align carefully paraphrased claims across publishers. This remains the next research blocker; do not loosen the source-count gate merely to force a green result.
+- Focused regression after bilingual discovery and diagnostics: **31 passed, 0 failed**. Full repository regression is running separately.
+
+
+## 2026-10-10 — Conservative cross-publisher paraphrase matching
+
+- Added a second in-memory claim-linking pass for verified claims only. It requires distinct publisher hosts, strong shared content-token overlap, identical numeric facts, and matching negation markers. Claims without numbers additionally require overlapping named-entity tokens. This avoids merging obvious numeric contradictions (for example, 30 days vs 60 days).
+- Added regression tests for matching paraphrases and numeric-conflict rejection. Focused tests for the answer and acquisition integration modules passed (**22 passed**).
+- Live re-check after bilingual discovery and conservative paraphrase matching still returned `NOT_VERIFIED`: 8 publisher pages accepted, 426 findings/evidence records, 0 selected corroborated claims. Therefore the matching pass did not establish that the current set of articles contains a safe corroborated claim; the current-news research acceptance criterion remains OPEN. Do not weaken the fail-closed rule.
+
+
+## Final validation — 2026-10-10
+
+- Full repository validation after the bilingual discovery and conservative paraphrase-linking changes: **1621 passed, 0 failed** in **149.19 seconds**. `compileall`, smoke-script `py_compile`, startup-script `bash -n`, and `git diff --check` passed.
+- Quality smoke after the latest changes: **3/3 checks passed**. The two Hindi general questions returned `STRUCTURALLY_VALID`; the Hindi current AI-safety query returned `VERIFIED_RESEARCH / VERIFIED` in **71.81 seconds** through the Android bridge.
+- Stability caveat: a separate direct research invocation of the same broad Hindi query, run immediately before the smoke, returned `NOT_VERIFIED` after 91.11 seconds with 8 publisher pages and 426 findings. The smoke later succeeded, so live verification is now demonstrably possible but not yet deterministic across runs. Treat this as a remaining reliability issue; keep the fail-closed behavior when evidence is insufficient.
+- Final phone runtime health: local model ONLINE; web search ACTIVE; background supervisor ONLINE; Android voice bridge HTTP HEALTHY. Final `git diff --check` passed.
+
+
+## 2026-10-10 — Universal Language Brain v1
+
+- Added `core/brain/universal_language_brain.py`: dependency-free Unicode-script detection for major Indic scripts, Arabic-script languages, Cyrillic, Greek, Hebrew, Japanese, Chinese, Korean, Thai, Lao, Myanmar, Khmer, Ethiopic, Georgian, Armenian, Tibetan, and a lexical-marker fallback for several Latin-script languages.
+- Connected the Universal Language Brain to `HumanInteractionEngine`, exposing full `language_code` and `language_name` on interaction assessments while preserving the existing Hindi/Hinglish/English enum contract.
+- Connected language-specific response instructions to the operational model's system prompt so generated answers are directed to match the detected user language and script.
+- Initial focused validation: `py_compile` passed and the new Universal Language Brain test suite passed (**4 passed**). This is an initial capability, not a claim of perfect identification or fluent generation in every world language; Latin-script languages and languages sharing Arabic/Cyrillic scripts can remain ambiguous, and static curated/research answers still need broader multilingual coverage.
+- Full repository regression is running; final counts will be appended after completion.
+
+- Final regression after adding the operational-prompt integration test: **1626 passed, 0 failed** in **120.96 seconds**. `compileall`, smoke-script `py_compile`, startup-script `bash -n`, and `git diff --check` all passed.
+- Live local-model language check: Spanish question returned a Spanish answer; Chinese question returned a Chinese answer. Both returned `SUCCESS=True` and `STRUCTURALLY_VALID` on the local Qwen model. This confirms the new response-language instruction works for these two live examples; it does not prove perfect support for every language.
+- Runtime was recovered by the existing supervisor: local model ONLINE, web search ACTIVE, background supervisor ONLINE, Android voice bridge HTTP HEALTHY.
+
+
+## 2026-10-10 — Universal Language Brain v2 / Indian language expansion
+
+- Upgraded `core/brain/universal_language_brain.py` from v1 to v2 without adding package/model download dependencies.
+- Improved native-script tokenization: Python's generic word regex was dropping combining marks/matras in Indic scripts. Replaced it with punctuation-aware splitting so full native words remain available for language fingerprints.
+- Added/expanded language fingerprints for Latin-script languages and shared-script Indian languages: Hindi, Marathi, Nepali, Sanskrit, Maithili, Dogri, Konkani, Bodo, Bengali, Assamese, and script-specific detection for Manipuri (Meitei Mayek), Santali (Ol Chiki), Urdu, Persian, Sindhi, and Kashmiri.
+- Added/expanded regression examples covering all 22 Indian scheduled-language families across dedicated scripts and curated lexical markers. Script-only cases are reported cautiously where a language cannot be uniquely identified from a short sample.
+- Focused validation: `tests/unit/test_universal_language_brain.py` **7 passed**; related Phase 13 interaction and operational model integration tests passed in the focused run.
+- This is best-effort offline identification, not a promise of perfect detection across every dialect or mixed-language utterance. Model fluency and response quality still depend on the configured model; full regression results are recorded below after completion.
+
+- Full repository regression completed after v2 changes: **1628 passed, 0 failed** in **154.23 seconds**. `compileall`, smoke-script `py_compile`, startup-script `bash -n`, and `git diff --check` all passed before the suite. Live response-quality spot checks in additional Indian languages are being run separately; no universal-fluency claim is made.
+
+
+## 2026-10-10 — Universal Language Brain v2.1 / response-language guard
+
+- Added a response-language consistency gate in `core/brain/mother_operational_integration.py`: when the generated answer is confidently detected as a different language from the user's input, SAHIBEX rejects it and returns the safe fallback in the detected input language. This is a language-consistency heuristic, not a fluency or factuality guarantee; ambiguous/unknown detection remains cautious.
+- Added regression tests for wrong-language rejection, matching Marathi response acceptance, unknown-language non-rejection, and integration-level rejection of a Hindi model answer to a Marathi question.
+- Focused language regression: **14 passed, 0 failed**. Full repository regression after these changes: **1635 passed, 0 failed** in **122.86 seconds**.
+- Final static checks: `compileall`, quality-smoke `py_compile`, startup-script `bash -n`, and `git diff --check` passed. Local llama.cpp health returned `{"status":"ok"}`.
+- Live local-model spot check: native Marathi question `पाणी का महत्त्वाचे आहे?` returned a Marathi answer with `STRUCTURALLY_VALID` / `SUCCESS=True`; end-to-end latency was **212.79 seconds**, which is not acceptable for responsive conversation and remains a performance blocker. Separate Tamil, Urdu, and Bengali examples were conservatively `QUALITY_REJECTED`, with fallback messages correctly written in the detected language. Do not claim fluent generation across all languages; additional language-by-language quality and latency work remains open.
+
+
+## 2026-10-10 — Runtime recovery and temporary HTTPS live tunnel
+
+- Recovered the local runtime by starting the background supervisor. Verified local llama.cpp health, active web-search provider registration, supervisor ONLINE, and Android Companion media bridge HTTP HEALTHY on `127.0.0.1:38742`.
+- The earlier API refusal was a service lifecycle/availability issue: the supervisor was offline and the bridge was not accepting requests. After supervisor startup, the bridge became healthy; an authenticated Hindi question completed end-to-end with HTTP 200, `SUCCESS=True`, `STRUCTURALLY_VALID` in **34.61 seconds**. Latency remains variable and should be measured across repeat runs.
+- Security checks: unauthenticated local `/voice` request returned **401**; public HTTPS `/health` returned **200**; public unauthenticated `/voice` returned **401**. The local model remains bound to `127.0.0.1:8080`, not directly exposed.
+- Opened a temporary HTTPS reverse tunnel via localhost.run to the token-protected media bridge. Public health check returned HTTP 200. The URL is ephemeral and depends on the tunnel SSH session and phone/network availability; this is a temporary internet-access test, **not permanent production hosting**. Keep the bearer token private. Do not claim always-on uptime or production-grade abuse protection.
+- Latest source changes remain the previously recorded Universal Language Brain / response-language guard and Research/verification additions; no source-code edits were needed to recover the current service. `git diff --check` passed before this note. Full regression should be rerun after this runtime recovery.
+
+
+- Follow-up runtime recovery check: focused regression across the Companion media server, Universal Language Brain, answer arbitration, and research answer/filter/integration modules passed (**53 passed in 2.66 seconds**). `compileall`, startup-script syntax checks, and `git diff --check` passed.
+- A new full-suite rerun was attempted after the runtime recovery, but the remote test process disappeared at approximately 4% progress without a pytest summary; the local model and supervisor also became unavailable during that run. This is recorded as an interrupted run, **not** as a test failure and **not** as a pass. Runtime was restarted afterwards and health returned ONLINE.
+- Reopened the temporary HTTPS tunnel after runtime recovery. Public `/health` returned HTTP 200; public `/voice` without a bearer token returned HTTP 401; an authenticated public request returned HTTP 200, `SUCCESS=True`, `STRUCTURALLY_VALID` with the Hindi factual answer. Local bridge health returned HTTP 200. Temporary tunnel remains session/network dependent; permanent uptime is not established.
+
+## 2026-10-10 — Public tunnel recovery and post-recovery verification
+- Cause of latest public outage: the previous localhost.run tunnel URL was no longer serving the bridge (HTTP 502). Re-established the reverse SSH tunnel to `127.0.0.1:38742`; new temporary URL: `https://112b6c6226143a.lhr.life`.
+- Verified local model health `127.0.0.1:8080/health` = HTTP 200; local Companion API `127.0.0.1:38742/health` = HTTP 200; new public `/health` = HTTP 200.
+- Verified unauthenticated public `POST /voice` = HTTP 401 (expected auth gate) and authenticated public `POST /voice` = HTTP 200 in ~2.32 seconds (request used token file without printing its contents).
+- Re-ran focused language/research/filter/arbitration/Companion tests: 53 passed in 2.71 seconds.
+- Ran credential-store and legacy-main-script regression tests: 286 passed in 66.34 seconds.
+- Static checks passed: `compileall`, targeted `py_compile`, `bash -n` for startup scripts, and `git diff --check`.
+- Full suite is still not re-certified after the earlier interrupted full run. Do not claim production-ready or permanent 24x7 hosting: localhost.run URL is temporary and may change after disconnect/restart. Existing supervisor does not manage the external tunnel, so tunnel lifecycle remains a reliability gap.
+
+
+## 2026-10-10 — Architecture audit and tunnel recovery implementation
+
+### Audit classification (observed on the current Termux working tree)
+
+- **WORKING / verified locally:** llama.cpp model health on `127.0.0.1:8080`; Android Companion media bridge health on `127.0.0.1:38742`; configured web-search provider registry; background supervisor process; language detection / response-language guard / research arbitration unit coverage. The current working tree contains pre-existing edits and untracked files; none were reset or discarded.
+- **WORKING / verified by focused regression:** master-brain / end-to-end operational integrity / Phase 13 interaction / operational model integration / Companion bridge / answer arbitration / Universal Language Brain focused group: **33 passed, 0 failed**. Previously recorded focused research/language group: **53 passed, 0 failed**; credential-store and legacy regression group: **286 passed, 0 failed**.
+- **FIXED reliability gap:** public tunnel recovery was not integrated into the normal background startup path, and `logs/public_tunnel.url` was missing. Added `scripts/sahibex_public_tunnel_watchdog.sh`, which checks the saved tunnel PID and public `/health`, reconnects the localhost.run reverse SSH tunnel when absent/unhealthy, and records the current temporary URL in `logs/public_tunnel.url`. Integrated watchdog startup into `scripts/start_sahibex_background.sh`, including the already-running-supervisor path.
+- **WATCHDOG VERIFICATION:** `bash -n` passed for both changed/added shell scripts. A controlled recovery test deliberately replaced the saved URL with an invalid hostname; `--once` recovered to a new tunnel URL, public `/health` returned HTTP 200, and unauthenticated public `/voice` returned HTTP 401. Local model and Companion bridge both returned HTTP 200 afterwards. Current URL is runtime state and may change; read `logs/public_tunnel.url` rather than hard-coding it.
+- **PARTIAL / still open:** public tunnel remains an ephemeral localhost.run address; watchdog reconnects but cannot guarantee uptime through phone shutdown, network loss, Android process killing, or provider-side limits. This is not permanent production hosting.
+- **PARTIAL / high-priority capability blocker:** live research verification has shown inconsistent outcomes between runs; keep fail-closed behavior. The local model has shown very high latency for some Indic-language requests (one Marathi request took 212.79 seconds), and a language consistency check does not prove fluency. These require repeatable end-to-end quality and latency acceptance, not just unit tests.
+- **NOT YET RE-CERTIFIED:** full repository regression after the latest runtime recovery was interrupted without a final pytest summary. The previous 1,635-pass result predates the current full validation attempt and must not be presented as current full-suite certification.
+
+### Next acceptance sequence
+
+1. Verify authenticated public `/voice` after tunnel recovery without exposing the bearer token.
+2. Re-run broad tests in resource-safe batches and check local service health between batches.
+3. Complete an end-to-end acceptance matrix for ordinary Hindi, Hinglish, English, additional Indian languages, current research with citations, memory retrieval, and protected-action refusal/approval. Mark each case PASS only from recorded output.
+4. Prioritize research claim-level corroboration determinism and unacceptable response latency; do not weaken security/evidence thresholds to make acceptance green.
+
+
+## 2026-10-10 — Architecture-first audit and runtime acceptance refresh
+
+- Began the architecture-first audit without resetting or overwriting the existing working tree. Repository inventory at audit time: **356 Python source files** across `app/core/security/verification/tools`, and **486 Python test files** under `tests`.
+- Current worktree remains modified and contains ongoing changes in human interaction, memory, research acquisition/synthesis, language handling, operational integration, tests, and startup/runtime scripts. These changes were preserved; no reset/checkout was performed.
+- Static verification after current changes: `.venv/bin/python -m compileall -q app core security verification tools tests` passed; `bash -n` passed for public tunnel watchdog, background starter, and supervisor; `git diff --check` passed.
+- Focused integration regression across Universal Language Brain, answer arbitration, research answer/filter/integration, memory runtime, and Android Companion media server: **60 passed, 0 failed** in **4.13 seconds**.
+- Live quality smoke (`scripts/sahibex_quality_smoke.py`) completed: both Hindi general-answer checks passed `STRUCTURALLY_VALID` (9.16s and 4.36s); current AI-safety research returned `NOT_VERIFIED` after 83.7s with an explicit evidence disclaimer and source leads. Smoke's safety acceptance was **3/3**, but this is **not** verified current-news research; research correctness/reliability remains open and fail-closed behavior is retained.
+- Public tunnel watchdog is active (PID recorded in `logs/public_tunnel_watchdog.pid`) and the current reverse-tunnel SSH process is recorded in `logs/public_tunnel.pid`. A `--once` watchdog check preserved the healthy existing tunnel PID and URL; public `/health` returned HTTP 200 on three consecutive probes, and the final `--once` health verification passed. This proves the watchdog can adopt a healthy tunnel; automatic recovery under a deliberately induced failure was not destructively tested. The URL remains ephemeral and is not permanent hosting.
+- Local Companion API health and local model health both returned HTTP 200 after the live smoke; unauthenticated `/voice` should continue to be checked as HTTP 401 before any public-use claim.
+- Architecture-first blockers confirmed from the current roadmap and runtime evidence: (1) verified live research remains nondeterministic and can fail closed despite discovering source leads; (2) actual Android microphone/speaker acceptance still requires the installed Companion app update and user permissions; (3) camera/image understanding lacks a proven live vision model/path; (4) specialist child-brain deployment and controlled self-improvement live cycles still need acceptance evidence; (5) full repository regression has not yet been re-certified after the most recent runtime recovery.
+- Next work order: prioritize repeatable end-to-end research verification and runtime reliability, then phone voice acceptance, vision path, child-brain lifecycle, controlled self-improvement, adversarial security regression, and finally full LIVE-BRAIN acceptance. Do not equate unit-test success or safe fallback with full feature completion.
+
+## 2026-10-10 — Architecture-first audit: current grouped regression and live acceptance
+
+### Current verification performed on the active Termux working tree
+- Preserved the existing modified/untracked working tree; no Git reset, checkout, or cleanup was performed.
+- `tests/unit`: **1349 passed, 0 failed** in 45.15 seconds.
+- `tests/test_legacy_main_script_regression.py`: **286 passed, 0 failed** in 73.05 seconds.
+- The current grouped regression therefore records **1635 passed, 0 failed across those two executed groups**. This is a grouped run, not a claim that every file in the repository was collected by one full-suite command.
+- `tests/security/test_credential_store.py` is a standalone `main()` script rather than a pytest-collected test module. Ran it directly with `PYTHONPATH=.`; all 8 printed credential-store checks passed. Invoking pytest on that file or its directory reports `no tests ran` (pytest exit 5), so do not count that as a pytest pass.
+- `scripts/sahibex_quality_smoke.py`: **3/3 acceptance checks**, exit 0. Two curated Hindi answers passed `STRUCTURALLY_VALID` in 0.19s and 0.16s. Current AI-safety research took 63.85s and correctly returned `success=False`, `NOT_VERIFIED`, with source leads explicitly labelled unverified. The smoke accepts this fail-closed safety behavior; **this is not verified live-research completion**.
+- Static checks: `.venv/bin/python -m compileall -q app core security verification tools tests` PASS; `bash -n` for the public-tunnel watchdog, background starter, supervisor, and media-bridge starter PASS; `git diff --check` PASS.
+- Live runtime: local model health HTTP 200; local Companion API health HTTP 200; public tunnel `/health` HTTP 200. Public unauthenticated `/voice` returned HTTP 401; authenticated `/voice` returned HTTP 200 with `success=True` and `STRUCTURALLY_VALID` for a short Hindi factual query. Token contents were not printed.
+- Public tunnel watchdog `--once` returned exit 0 and preserved a healthy tunnel at the time of its check. The localhost.run URL is temporary and can change; this is not permanent hosting.
+
+### Architecture audit conclusion — what is and is not complete
+- **Usable core runtime exists:** local model, Companion HTTP relay, protected unauthenticated endpoint, temporary public tunnel, language/research code, memory code, security boundaries, and a large regression suite are present.
+- **Top functional blocker:** live current-news research still cannot produce a verified, concise, claim-level corroborated answer. The safe `NOT_VERIFIED` response is correct security behavior but means the research capability is not yet accepted as complete. Do not weaken source/corroboration gates.
+- **Phone-side acceptance remains pending:** update/pair the Android Companion APK and verify actual microphone capture plus audible TextToSpeech on the physical device. A healthy HTTP relay alone does not prove this.
+- **Vision remains pending:** current local model is text-only; image acquisition plus OCR or a multimodal vision inference path has not been accepted end-to-end.
+- **Device control remains pending:** Android Accessibility service enablement and a safe, user-authorized on-device acceptance test are not yet evidenced.
+- **Child-brain and self-improvement remain partial:** in-process commissioning/tests exist, but persistent child deployment/restart restoration and production-connected audit/controlled self-improvement still require end-to-end acceptance.
+- **Security:** the current credential-store standalone checks and the existing unit security coverage are not a substitute for final cross-component adversarial/live acceptance.
+- **Specification traceability:** the original item-level 417 requirement source remains unrecovered; exact 417/417 completion must not be claimed. The maintained matrix is a reconstructed audit baseline, with six phase labels (G, K, T, U, V, AC) requiring reconciliation.
+- **Performance blocker:** historical live Marathi generation latency reached 212.79 seconds. Current curated responses are much faster, but broad language latency/fluency has not been accepted universally.
+
+### Recommended execution order from this audit
+1. Instrument and fix claim-level relevance + independent-domain corroboration in live research; rerun the same authenticated smoke until either a traceable `VERIFIED` answer is produced or a concrete external/source limitation is recorded.
+2. Run focused security and integration tests after each change, then repeat the grouped regression and static checks while checking service health between groups.
+3. Complete physical Companion microphone/speaker acceptance when the APK update/pairing is available to the user.
+4. Implement/verify the vision path and user-authorized Accessibility/device-control path.
+5. Finish persistent child-brain restart/trust lifecycle and production-connected self-improvement audit gates.
+6. Run final cross-component adversarial acceptance and reconcile the maintained reconstructed requirement matrix; do not declare full live completion before the evidence exists.
+
+## 2026-10-10 — Current-research candidate-order experiment (not yet a functional fix)
+
+- Architecture audit identified a plausible source-window issue: broad search candidates were placed before headline-specific corroboration candidates, so the bounded 10-URL selection could fill with unrelated one-source stories before using follow-up results.
+- Added `_order_current_research_urls()` in `core/research/research_pipeline_integration.py` to prioritize headline-specific corroboration candidates, then query expansions, then broad discovery URLs for time-sensitive research. This changes candidate order only; search snippets remain discovery-only and no evidence/corroboration gate was relaxed.
+- Added a regression test proving corroboration candidates are ordered first. Focused research answer/filter/integration tests: **30 passed, 0 failed**. Full `tests/unit` regression after the change: **1350 passed, 0 failed** in 47.20 seconds. `py_compile`, `compileall`, shell syntax checks, and `git diff --check`: PASS.
+- Live quality smoke after this experiment: curated Hindi questions PASS; current AI-safety query still returned `NOT_VERIFIED` after **93.76 seconds**, with the same three unverified source leads. Smoke's fail-closed acceptance exits 0, but research functionality remains **NOT VERIFIED / NOT COMPLETE**. The candidate-order hypothesis alone did not fix the live result; next action is to inspect actual per-query discovery/fetch/evidence telemetry to find why headline-specific follow-ups do not yield independent same-claim support.
+- Local model and Companion API health remained HTTP 200 after the smoke. Do not report the research capability as fixed or SAHIBEX as fully live.
+
+
+## Task 3 — Research Core, Evidence aur Integration — 2026-10-15
+- Fixed document identity validation in `core/research/engine.py` and `core/research/pipeline.py`: the ingestion path now computes a missing SHA-256 content hash before deduplication/persistence and rejects a caller-supplied hash that does not match the actual document content. Rejection happens before source/document persistence.
+- Fixed evidence ownership integrity: evidence already linked to a knowledge candidate is excluded when building another candidate by default; explicit attempts to reuse that evidence for a different candidate are rejected before creating or saving the second candidate. Invalid evidence-to-finding linkage is still checked first, preserving the existing API contract. This prevents metadata reassignment from silently changing the first candidate's evidence provenance.
+- Added `tests/unit/test_research_core_integrity.py` with regression cases for forged hashes, missing-hash persistence, and evidence ownership/reassignment.
+- Focused core/evidence/integration regressions after the final fix: **23 passed, 0 failed**. Full repository regression: **1715 passed, 0 failed** in 113.43 seconds. `python -m compileall -q app core security verification tools tests`: PASS. `git diff --check`: PASS.
+- Scope boundary: this verifies the code-level research core/evidence/persistence integration and repository regressions. It does **not** certify live public-web research quality or remove the separately documented live publisher-corroboration acceptance blocker.
+
+
+## SAHIBEX fixed-list progress — Task 4 — 2026-10-15
+- **Task 4 — Hindi Intent Routing:** engineering regression PASS. Extended deterministic intent patterns for Hindi/Hinglish research, learning, coding, create, explanation, file operations, and status requests; no permission or execution authority was added to the intent classifier.
+- Added direct intent tests plus HumanInteractionEngine language/intent integration checks. Focused routing + language + related integration suite: **34 passed, 0 failed**; Python compilation PASS.
+- Full repository regression after Task 4 changes: **1726 passed, 0 failed** in 121.93 seconds; exit code 0. `git diff --check`: PASS.
+- Pre-change copies saved under `backups/task4_hindi_intent_routing/`. Full suite log and exit code saved under `logs/task4_hindi_intent_routing_full.log` and `logs/task4_hindi_intent_routing_full.exit`.
+- Scope note: this proves the tested Hindi/Hinglish routing paths and repository regression; it does not claim perfect natural-language understanding for every phrasing or language. Continue to preserve permission/security gates.

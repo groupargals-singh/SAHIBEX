@@ -34,6 +34,24 @@ class ResearchContentFilter:
         re.compile(r"\ball rights reserved\b", re.I),
         re.compile(r"\baccept all cookies\b", re.I),
         re.compile(r"\bprivacy policy\s*[|•]\s*terms of use\b", re.I),
+        re.compile(r"^skip to content\b", re.I),
+        re.compile(r"^advertisement\b", re.I),
+        re.compile(r"\bmake us preferred source on google\b", re.I),
+        re.compile(r"\b(?:whatsapp|facebook|reddit|twitter|instagram)\b.*\bprint\b", re.I),
+        re.compile(r"\bstory continues below this ad\b", re.I),
+        re.compile(r"^also read\s*[|:]?", re.I),
+        re.compile(r"^by:\s*[^.]{1,80}\b\d+\s*min(?:ute)?s? read\b", re.I),
+    )
+
+    _INLINE_NOISE_PATTERNS = (
+        re.compile(r"\bskip to content\s+advertisement\b", re.I),
+        re.compile(r"^advertisement\b", re.I),
+        re.compile(r"\bskip to content\b", re.I),
+        re.compile(r"\bmake us preferred source on google\b", re.I),
+        re.compile(r"\bwhatsapp\s+twitter\s+facebook\s+reddit\s+print\b", re.I),
+        re.compile(r"\bstory continues below this ad\b", re.I),
+        re.compile(r"\balso read\s*[|:]\s*[^.!?।॥]*", re.I),
+        re.compile(r"\bby:\s*[^.]{1,80}\b\d+\s*min(?:ute)?s? read\b", re.I),
     )
 
     def evaluate(self, text: str) -> ContentFilterDecision:
@@ -42,6 +60,16 @@ class ResearchContentFilter:
         normalized = " ".join(text.split()).strip()
         if not normalized:
             return ContentFilterDecision(False, "empty", normalized)
+
+        # Strip recognizable inline page chrome before evaluating the remaining
+        # sentence; otherwise an otherwise useful claim can carry navigation,
+        # advertising, or social-share text into the knowledge graph.
+        for pattern in self._INLINE_NOISE_PATTERNS:
+            normalized = pattern.sub(" ", normalized)
+        normalized = " ".join(normalized.split()).strip()
+
+        if not normalized:
+            return ContentFilterDecision(False, "page_boilerplate", normalized)
         if len(normalized) < self.MIN_CHARS:
             return ContentFilterDecision(False, "too_short_for_claim", normalized)
         for pattern in self._BOILERPLATE_PATTERNS:

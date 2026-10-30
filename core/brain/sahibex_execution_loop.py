@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import hashlib
+import json
 import re
 from typing import Any
+from uuid import uuid4
 
 from core.brain.master_brain import BrainResult, MasterBrain
+from core.brain.operational_verification import OperationalVerificationRecovery
+from security.audit.execution_evidence import ExecutionEvidenceRecorder
 from core.brain.observability_expansion import (
     ObservationEvent,
     ObservabilityEngine,
@@ -61,6 +66,8 @@ class SahibexExecutionLoop:
         brain: MasterBrain | None = None,
         project_root: Path | None = None,
         registry: ToolRegistry | None = None,
+        evidence_recorder: ExecutionEvidenceRecorder | None = None,
+        verifier: OperationalVerificationRecovery | None = None,
     ) -> None:
         self.brain = brain or MasterBrain()
         self.project_root = (
@@ -72,6 +79,10 @@ class SahibexExecutionLoop:
             self.project_root,
             include_protected=False,
         )
+        self.evidence_recorder = evidence_recorder or ExecutionEvidenceRecorder(
+            self.project_root / "security" / "audit"
+        )
+        self.verifier = verifier or OperationalVerificationRecovery()
         self.discovery = ToolDiscovery(self.registry)
         self.tool_permissions = ToolPermissionGateway(
             self.brain.permission,
@@ -131,6 +142,23 @@ class SahibexExecutionLoop:
                 if brain_result.confirmation_required
                 else "BLOCKED"
             )
+            audit_recorded = self._record_evidence(
+                request=request,
+                tool=brain_result.action or "main_brain_action",
+                allowed=brain_result.permission_allowed,
+                confirmation_required=brain_result.confirmation_required,
+                confirmation_provided=(
+                    user_confirmation and brain_result.confirmation_required
+                ),
+                attempts=1,
+                result=None,
+                verification_status="NOT_EXECUTED",
+                recovery_status="BLOCKED",
+                final_status="BLOCKED",
+                error="Action blocked before tool execution.",
+                risk="high" if brain_result.confirmation_required else "medium",
+                reason=brain_result.message or "Main Brain blocked the action.",
+            )
             self._observe(
                 request=request,
                 brain=brain_result,
@@ -148,11 +176,78 @@ class SahibexExecutionLoop:
                 metadata={
                     "loop_version": self.VERSION,
                     "execution_skipped": True,
+                    "audit_recorded": audit_recorded,
                 },
             )
 
-        # Only explicit file-operation intent enters the automatic tool
-        # execution branch. Cognitive requests stay inside Master Brain.
+        # Protected actions are executed by MainBrain's Tool Brain only
+        # after its authority/permission gates. Do not mislabel them as
+        # cognitive answers: require the Tool Brain's authenticated audit.
+        if brain_result.action in {"write_file", "delete_file", "run_command"}:
+            tool_meta = brain_result.metadata.get("tool_brain_integration", {})
+            if not isinstance(tool_meta, dict):
+                tool_meta = {}
+            verified = brain_result.verification_status == "VERIFIED"
+            audit_recorded = tool_meta.get("audit_recorded") is True
+            if tool_meta.get("success") is True and verified and audit_recorded:
+                tool_name = str(tool_meta.get("tool") or brain_result.action)
+                self._observe(
+                    request=request,
+                    brain=brain_result,
+                    status="COMPLETED",
+                    tool_id=tool_name,
+                    result_status="SUCCESS",
+                    verification_status="VERIFIED",
+                )
+                return ExecutionLoopResult(
+                    success=True,
+                    status="COMPLETED",
+                    request=request,
+                    brain=brain_result,
+                    tool=None,
+                    recovery_state=self.recovery.state.value,
+                    observation_count=len(self.observability.snapshot()),
+                    response=brain_result.message,
+                    metadata={
+                        "loop_version": self.VERSION,
+                        "execution_kind": "protected_tool",
+                        "tool_name": tool_name,
+                        "verified": True,
+                        "audit_recorded": True,
+                    },
+                )
+
+            self._observe(
+                request=request,
+                brain=brain_result,
+                status="FAILED",
+                tool_id=str(tool_meta.get("tool") or brain_result.action),
+                result_status="FAILED",
+                verification_status=brain_result.verification_status,
+                error_class="ProtectedToolAuditOrVerificationFailure",
+            )
+            return ExecutionLoopResult(
+                success=False,
+                status="FAILED",
+                request=request,
+                brain=brain_result,
+                tool=None,
+                recovery_state=self.recovery.state.value,
+                observation_count=len(self.observability.snapshot()),
+                response=(
+                    "Protected action did not provide verified authenticated audit evidence. "
+                    "Inspect the target state before retrying."
+                ),
+                metadata={
+                    "loop_version": self.VERSION,
+                    "execution_kind": "protected_tool",
+                    "verified": False,
+                    "audit_recorded": audit_recorded,
+                },
+            )
+
+        # Only explicit read-only file-operation intent enters this loop's
+        # independent tool path. Cognitive requests stay inside MainBrain.
         if brain_result.action != "read_file":
             self._observe(
                 request=request,
@@ -183,6 +278,21 @@ class SahibexExecutionLoop:
         if tool_result is None:
             status = "BLOCKED"
             response = "No safe read-only tool matched the request."
+            audit_recorded = self._record_evidence(
+                request=request,
+                tool="tool_discovery",
+                allowed=False,
+                confirmation_required=False,
+                confirmation_provided=False,
+                attempts=max(1, attempts),
+                result=None,
+                verification_status="NOT_EXECUTED",
+                recovery_status="BLOCKED",
+                final_status="BLOCKED",
+                error="No safe read-only tool matched the request.",
+                risk="low",
+                reason="Tool discovery found no permitted candidate.",
+            )
             self._observe(
                 request=request,
                 brain=brain_result,
@@ -201,10 +311,31 @@ class SahibexExecutionLoop:
                 metadata={
                     "loop_version": self.VERSION,
                     "attempts": attempts,
+                    "audit_recorded": audit_recorded,
                 },
             )
 
-        if tool_result.success:
+        verification = self.verifier.verify_tool_result(tool_result)
+        accepted = verification.success and verification.verified
+        audit_recorded = self._record_evidence(
+            request=request,
+            tool=tool_result.tool,
+            allowed=tool_result.allowed,
+            confirmation_required=tool_result.requires_confirmation,
+            confirmation_provided=(
+                user_confirmation and tool_result.requires_confirmation
+            ),
+            attempts=max(1, attempts),
+            result=tool_result.result if accepted else None,
+            verification_status=verification.verification_status,
+            recovery_status=verification.recovery_status,
+            final_status="SUCCESS" if accepted else "FAILED",
+            error=tool_result.error if not accepted else None,
+            risk=tool_result.risk,
+            reason=verification.reason,
+        )
+
+        if accepted and audit_recorded:
             response = self._format_tool_response(tool_result)
             self.brain.context.add_turn(
                 user=request,
@@ -217,7 +348,7 @@ class SahibexExecutionLoop:
                 status="COMPLETED",
                 tool_id=tool_result.tool,
                 result_status="SUCCESS",
-                verification_status="VERIFIED",
+                verification_status=verification.verification_status,
             )
             return ExecutionLoopResult(
                 success=True,
@@ -233,17 +364,26 @@ class SahibexExecutionLoop:
                     "execution_kind": "read_only_tool",
                     "attempts": attempts,
                     "verified": True,
+                    "verification_status": verification.verification_status,
+                    "audit_recorded": True,
                 },
             )
 
+        failure_reason = (
+            verification.reason
+            if not accepted
+            else "Execution evidence could not be persisted; failing closed."
+        )
         self._observe(
             request=request,
             brain=brain_result,
             status="FAILED",
             tool_id=tool_result.tool,
             result_status="FAILED",
-            verification_status="NOT_VERIFIED",
-            error_class="ToolExecutionFailure",
+            verification_status=verification.verification_status,
+            error_class=(
+                "ToolVerificationFailure" if not accepted else "AuditWriteFailure"
+            ),
         )
         return ExecutionLoopResult(
             success=False,
@@ -253,12 +393,14 @@ class SahibexExecutionLoop:
             tool=tool_result,
             recovery_state=self.recovery.state.value,
             observation_count=len(self.observability.snapshot()),
-            response=tool_result.error or tool_result.reason,
+            response=failure_reason,
             metadata={
                 "loop_version": self.VERSION,
                 "execution_kind": "read_only_tool",
                 "attempts": attempts,
                 "verified": False,
+                "verification_status": verification.verification_status,
+                "audit_recorded": audit_recorded,
             },
         )
 
@@ -356,6 +498,63 @@ class SahibexExecutionLoop:
     @staticmethod
     def _format_tool_response(tool: ToolResult) -> str:
         return f"{tool.tool}: {tool.result!r}"
+
+    def _record_evidence(
+        self,
+        *,
+        request: str,
+        tool: str,
+        allowed: bool,
+        confirmation_required: bool,
+        confirmation_provided: bool,
+        attempts: int,
+        result: Any,
+        verification_status: str,
+        recovery_status: str,
+        final_status: str,
+        error: str | None,
+        risk: str,
+        reason: str,
+    ) -> bool:
+        """Persist authenticated evidence without storing tool output bodies."""
+        try:
+            serialized_result = json.dumps(
+                result,
+                sort_keys=True,
+                default=str,
+            ) if result is not None else "null"
+            result_summary = None
+            if result is not None:
+                encoded = serialized_result.encode("utf-8")
+                result_summary = {
+                    "type": type(result).__name__,
+                    "sha256": hashlib.sha256(encoded).hexdigest(),
+                    "size_bytes": len(encoded),
+                }
+            self.evidence_recorder.record_authenticated(
+                execution_id=str(uuid4()),
+                tool=tool or "unknown",
+                action="main_brain_tool_execution",
+                permission_allowed=bool(allowed),
+                confirmation_required=bool(confirmation_required),
+                confirmation_provided=bool(confirmation_provided),
+                attempts=max(1, int(attempts)),
+                result=result_summary,
+                verification_status=verification_status or "NOT_VERIFIED",
+                recovery_status=recovery_status or "FAILED",
+                final_status=final_status or "FAILED",
+                error=error,
+                risk=risk or "unknown",
+                reason=(
+                    f"request_sha256={hashlib.sha256(request.encode('utf-8')).hexdigest()}; "
+                    f"{reason or 'No additional detail.'}"
+                ),
+            )
+            return True
+        except Exception:
+            # The caller must not report a successful tool action when
+            # durable audit evidence could not be written.
+            return False
 
     def _observe(
         self,

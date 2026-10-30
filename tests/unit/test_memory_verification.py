@@ -118,3 +118,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+def test_memory_verification_smoke():
+    main()

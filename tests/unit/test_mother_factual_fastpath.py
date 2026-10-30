@@ -20,7 +20,7 @@ def test_curated_fact_fast_path_skips_language_model():
     assert result.success is True
     assert result.provider == "curated_local_knowledge:PHYS-SCATTER-001"
     assert "वायुमंडल" in result.response
-    assert result.verification_status == "STRUCTURALLY_VALID"
+    assert result.verification_status == "CURATED_KNOWLEDGE"
 
 
 def test_curated_compound_question_uses_complete_fact_without_model():
@@ -35,7 +35,7 @@ def test_curated_compound_question_uses_complete_fact_without_model():
     assert result.provider == "curated_local_knowledge:IN-CAPITAL-HISTORY-001"
     assert "नई दिल्ली" in result.response
     assert "1911" in result.response and "1931" in result.response
-    assert result.verification_status == "STRUCTURALLY_VALID"
+    assert result.verification_status == "CURATED_KNOWLEDGE"
 
 
 def test_photosynthesis_curated_fast_path_skips_weak_local_model():
@@ -55,4 +55,4 @@ def test_photosynthesis_curated_fast_path_skips_weak_local_model():
     assert result.provider == "curated_local_knowledge:BIO-PHOTOSYNTHESIS-001"
     assert "कार्बन डाइऑक्साइड" in result.response
     assert "ऑक्सीजन" in result.response
-    assert result.verification_status == "STRUCTURALLY_VALID"
+    assert result.verification_status == "CURATED_KNOWLEDGE"

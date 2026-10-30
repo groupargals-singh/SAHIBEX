@@ -37,6 +37,17 @@ def resolve_math_question(question: str) -> MathResponse | None:
     if not isinstance(question, str) or not question.strip() or len(question) > 300:
         return None
     text = question.replace("×", "*").replace("÷", "/").replace("−", "-").strip()
+    # Normalize narrowly recognized spoken arithmetic before the strict parser.
+    # Only single arithmetic forms are rewritten; arbitrary prose is not executed.
+    text = re.sub(r"\bplus\b", "+", text, flags=re.IGNORECASE)
+    text = re.sub(r"^\s*(?:reply\s+briefly|briefly\s+answer|please\s+answer)\s*[:,-]?\s*", "", text, flags=re.IGNORECASE)
+    hindi_digits = {"शून्य": "0", "एक": "1", "दो": "2", "तीन": "3", "चार": "4", "पाँच": "5", "पांच": "5", "छह": "6", "सात": "7", "आठ": "8", "नौ": "9", "दस": "10"}
+    spoken_hindi = re.fullmatch(
+        r"\s*(?:हिंदी\s+में\s+)?(?:संक्षेप\s+में\s+)?(?:बताओ\s*[:：]?\s*)?(शून्य|एक|दो|तीन|चार|पाँच|पांच|छह|सात|आठ|नौ|दस)\s+और\s+(शून्य|एक|दो|तीन|चार|पाँच|पांच|छह|सात|आठ|नौ|दस)\s*(?:(?:कितना|कितने)\s+)?(?:(?:होता|होते)\s+)?(?:है|हैं)?[?।.!]?\s*",
+        text, flags=re.IGNORECASE,
+    )
+    if spoken_hindi:
+        text = f"{hindi_digits[spoken_hindi.group(1)]} + {hindi_digits[spoken_hindi.group(2)]}"
     # Strip only clearly marked response-format instructions. The arithmetic
     # expression still has to pass the strict token allow-list below.
     format_suffixes = (
@@ -65,5 +76,6 @@ def resolve_math_question(question: str) -> MathResponse | None:
         except (SyntaxError, ValueError, ZeroDivisionError, OverflowError):
             continue
         rendered = f"{value:.10g}" if isinstance(value, float) and not value.is_integer() else str(int(value))
-        return MathResponse(answer=f"उत्तर: {rendered}", expression=expression)
+        answer = f"उत्तर: {rendered}" if re.search(r"[\u0900-\u097F]", question) else f"Answer: {rendered}"
+        return MathResponse(answer=answer, expression=expression)
     return None

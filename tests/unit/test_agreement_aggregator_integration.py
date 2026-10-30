@@ -34,23 +34,16 @@ def knowledge(
     )
 
 
-def source(
-    source_id: str,
-    reliability: float = 0.80,
-) -> ResearchSource:
-    now = datetime.now(timezone.utc)
 
+def source(source_id: str) -> ResearchSource:
     return ResearchSource(
         source_id=source_id,
         title=source_id,
         source_type="test",
-        locator=f"https://example.com/{source_id}",
-        publisher="test",
+        locator=f"https://{source_id}.example.com/{source_id}",
+        publisher=f"Publisher {source_id}",
         author=None,
-        published_at=None,
-        accessed_at=now,
-        reliability=reliability,
-        metadata={},
+        reliability=0.80,
     )
 
 
@@ -299,7 +292,7 @@ def main() -> None:
     print("[PASS] conflict pipeline remains intact")
 
     print(
-        "SAHIBEX 6G-4 AGREEMENT AGGREGATOR "
+        "SAHIBEX 6G-5 AGREEMENT AGGREGATOR "
         "INTEGRATION TEST: PASS"
     )
 

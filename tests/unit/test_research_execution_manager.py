@@ -313,3 +313,47 @@ if __name__ == "__main__":
     test_unknown_execution_protection()
 
     print("SAHIBEX RESEARCH EXECUTION MANAGER TEST: PASS")
+
+
+
+def test_execution_stops_remaining_steps_when_job_cancelled_during_handler():
+    calls = []
+    executor = ResearchExecutor()
+
+    def cancel_scope(step, job, plan):
+        calls.append(step.step_id)
+        job.cancel()
+        return {"scope": "completed before cancellation"}
+
+    def later_step(step, job, plan):
+        calls.append(step.step_id)
+        return {"unexpected": "must not run"}
+
+    for step_id in (
+        "research-scope",
+        "source-acquisition",
+        "evidence-extraction",
+        "verification",
+        "answer-synthesis",
+    ):
+        executor.register_step_handler(
+            step_id,
+            cancel_scope if step_id == "research-scope" else later_step,
+        )
+
+    manager = ResearchExecutionManager(executor=executor)
+    job = manager.create_job("job-cancel-mid-execution", "cancel in first stage")
+    manager.create_plan(job.job_id)
+    manager.start_job(job.job_id)
+
+    result = manager.execute("execution-cancel-mid-execution", job.job_id)
+
+    assert result.status == ResearchExecutionStatus.CANCELLED
+    assert result.completed_steps == ["research-scope"]
+    assert result.output["research-scope"] == {
+        "scope": "completed before cancellation"
+    }
+    assert result.metadata["cancelled_after_step"] == "research-scope"
+    assert calls == ["research-scope"]
+    assert job.status == ResearchJobStatus.CANCELLED
+    assert manager.is_terminal(job.job_id)

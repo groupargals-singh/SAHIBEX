@@ -75,6 +75,7 @@ class ToolInvoker:
         self.discovery = discovery
         self.permission_gateway = permission_gateway
         self.executor = executor
+        self.executor.bind_permission_gateway(permission_gateway)
 
     def invoke(
         self,

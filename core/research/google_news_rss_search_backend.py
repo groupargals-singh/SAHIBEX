@@ -113,7 +113,11 @@ class GoogleNewsRSSSearchBackend(SearchProviderBackend):
                     title=source.title,
                     url=source.locator,
                     snippet=snippet,
-                    publisher=source.publisher,
+                    # Google News RSS's publisher field can contain the
+                    # search query/feed label, not the actual publisher. The
+                    # wrapper URL is discovery-only, so defer identity to the
+                    # resolved publisher hostname downstream.
+                    publisher=None,
                     published_at=(str(source.published_at) if source.published_at else None),
                     rank=len(items) + 1,
                     metadata={

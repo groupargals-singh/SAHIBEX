@@ -68,3 +68,25 @@ htmlcov/
 
 # Unusual temporary Python file
 *.pym
+
+# Android local SDK / Gradle state and generated packages
+android_companion/local.properties
+android_companion/.gradle/
+android_companion/**/build/
+android_companion/build-*/
+android_companion/manual-build/
+*.apk
+*.aab
+
+# Local runtime databases, device pairing/control tokens, and private provenance key
+data/**/*.db
+data/**/*.sqlite*
+data/android_companion_*token
+security/audit/.sahibex_provenance.key
+
+# Historical scratch/backup copies are not source-of-truth files
+*.pre
+*.pre_*
+*.pre-*
+*.broken-copy
+*.before_*

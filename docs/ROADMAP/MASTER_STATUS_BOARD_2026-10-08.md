@@ -475,3 +475,19 @@ The previous regression baseline was 1136 passed before the latest two additiona
 - Current Companion voice APK versionCode 4 / versionName 0.2.0 is in Android Downloads; its SHA-256 matches the staged project APK. Physical install/update tap, pairing, real speech input and audible response still need user interaction.
 - Remaining gates: actual phone voice UI; vision/OCR or multimodal image model and E2E; user-enabled Accessibility service and Phase 6B device test; persistent child and self-improvement/audit acceptance; final cross-component adversarial acceptance; source reconciliation for the exact 417 requirements; final LIVE-BRAIN acceptance.
 - Exact historical 417-item source not found in project/home search or Git history. Exact 417/417 completion is not claimable; reconstructed matrix must remain explicitly labelled.
+
+## Re-verification addendum — 2026-10-21
+
+Evidence report: `logs/phase_p_series_reverification_20261021.md`.
+
+- Current full regression recheck: **2,015 passed in 186.71s**, exit 0 (`logs/p_series_final_full_pytest_20261021.log`); focused P-series regression **44 passed**.
+- Historical Phase 7–14 targeted recheck: **23 passed**; Phase 10 Continuous Learning, Phase 11 Security/Safety, and Phase 12 Brain Lifecycle tests are reverified PASS at test scope.
+- P1 live answer reliability smoke PASS; P2 live network edge acceptance PASS; Task 37 live MainBrain E2E PASS with `failed_checks: []`.
+- P3 safe persistence acceptance PASS for online backup/restore and disposable abrupt-process recovery; physical power-loss/maintenance-window restore remains pending.
+- P4 child lifecycle acceptance PASS (11 checks); managed worker runtime unit tests pass, but runtime is not yet wired into MainBrain child dispatch and independent live-model workers remain pending.
+- P5 controlled self-improvement focused recheck PASS (13 tests).
+- P6 physical voice, P7 camera/visual model and representative OCR accuracy, P8 physical-device acceptance, P9 full integrated adversarial/resource-pressure gate, P10 original 417-item specification reconciliation, and P11 release gate remain open as detailed in the current remaining-work register.
+
+This is a **verification refresh**, not a declaration that all phases or the entire SAHIBEX product are complete. Do not promote blocked/device-only requirements to PASS without the missing evidence.
+
+Authoritative phase gate registry: `docs/ROADMAP/SAHIBEX_PHASE_GATE_REGISTRY_2026-10-21.md`. Accepted gates are not to be re-run unless a defined reopen condition is met.

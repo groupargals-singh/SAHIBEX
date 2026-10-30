@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Callable
+from pathlib import Path
 from uuid import uuid4
 
 from core.brain.brain_registry import BrainRegistry
 from core.brain.child_brain_core import ChildBrainCore
 from core.brain.child_communication_runtime import ChildCommunicationRuntime
 from core.brain.child_memory_runtime import ChildMemoryRuntime
+from core.brain.child_instance_registry import ChildInstanceRegistry
 from core.brain.child_runtime_state import (
     ChildRuntimeState,
     ChildRuntimeStateManager,
@@ -74,7 +76,7 @@ class SpecialistChildBrainManager:
     belongs to the Mother Brain permission/tool pipeline.
     """
 
-    VERSION = "1.0"
+    VERSION = "1.1"
 
     SPECIALIST_PROFILES: dict[str, frozenset[BrainCapability]] = {
         "research": frozenset({
@@ -126,12 +128,37 @@ class SpecialistChildBrainManager:
         "computer-control": BrainCapability.PLAN,
     }
 
-    def __init__(self, *, registry: BrainRegistry | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        registry: BrainRegistry | None = None,
+        memory_database_path: str | None = None,
+        identity_database_path: str | None = None,
+    ) -> None:
         self.registry = registry or BrainRegistry()
+        self.memory_database_path = memory_database_path
         self._ensure_mother_identity()
+        self.instance_registry = (
+            ChildInstanceRegistry(identity_database_path)
+            if identity_database_path else None
+        )
+        if self.instance_registry is not None:
+            if not self.instance_registry.verify_integrity():
+                self.instance_registry.close()
+                raise RuntimeError("persistent_child_registry_integrity_failure")
+            mother = self.registry.get_mother_brain()
+            if mother is None or mother.brain_id != self.instance_registry.root_identity.BRAIN_ID:
+                self.instance_registry.close()
+                raise ValueError("persistent_child_registry_requires_canonical_mother_identity")
+            if self.memory_database_path is None:
+                self.memory_database_path = str(
+                    Path(identity_database_path).with_name("child_memory.sqlite3")
+                )
         self.dispatcher = OperationalSpecialistDispatcher(self.registry)
         self._records: dict[str, SpecialistChildRecord] = {}
         self._runtime = ChildRuntimeStateManager()
+        if self.instance_registry is not None:
+            self._restore_persisted_children()
 
     def _ensure_mother_identity(self) -> SpecialistBrain:
         existing = self.registry.get_mother_brain()
@@ -159,6 +186,40 @@ class SpecialistChildBrainManager:
             evidence="SAHIBEX root identity binding verified",
         )
         return mother
+
+    def _restore_persisted_children(self) -> None:
+        """Restore identity and isolated memory, but never trust or handlers."""
+        assert self.instance_registry is not None
+        for brain in self.instance_registry.list_children():
+            if brain.brain_role != BrainRole.CHILD_BRAIN:
+                continue
+            if self.registry.get(brain.brain_id) is None:
+                # A restart is a trust boundary: force a non-executing state
+                # and discard persisted trust for this runtime session.
+                brain.status = BrainStatus.READY
+                brain.set_trust_status(
+                    BrainTrustStatus.UNVERIFIED,
+                    evidence=None,
+                )
+                self.registry.register(brain)
+            else:
+                brain = self.registry.get(brain.brain_id)
+                if brain is None:
+                    continue
+                brain.status = BrainStatus.READY
+                brain.set_trust_status(BrainTrustStatus.UNVERIFIED, evidence=None)
+            memory = ChildMemoryRuntime(
+                child_brain_id=brain.brain_id,
+                memory_namespace=brain.memory_namespace,
+                database_path=self.memory_database_path,
+            )
+            self._records[brain.brain_id] = SpecialistChildRecord(
+                brain=brain,
+                runtime_state=ChildRuntimeState.PAUSED,
+                memory=memory,
+                core=ChildBrainCore(),
+                communication=ChildCommunicationRuntime(),
+            )
 
     @classmethod
     def specialist_profiles(cls) -> dict[str, frozenset[BrainCapability]]:
@@ -212,6 +273,7 @@ class SpecialistChildBrainManager:
         memory = ChildMemoryRuntime(
             child_brain_id=brain.brain_id,
             memory_namespace=brain.memory_namespace,
+            database_path=self.memory_database_path,
         )
         record = SpecialistChildRecord(
             brain=brain,
@@ -220,6 +282,16 @@ class SpecialistChildBrainManager:
             core=ChildBrainCore(),
             communication=ChildCommunicationRuntime(),
         )
+
+        # Persist identity while it is still REGISTERED. Persisted identity
+        # never includes executable handlers or grants authority.
+        if self.instance_registry is not None:
+            self.instance_registry.register(
+                brain,
+                mother_approved=True,
+                human_approved=True,
+                authorization_valid=True,
+            )
 
         # Birth lifecycle verification does not itself establish trust.
         # Trust stays UNVERIFIED until a separate evidence-backed approval.
@@ -243,6 +315,14 @@ class SpecialistChildBrainManager:
             raise ValueError(ready.reason)
         brain.transition_to(BrainStatus.READY)
         record.runtime_state = ChildRuntimeState.READY
+        if self.instance_registry is not None:
+            self.instance_registry.transition(
+                brain.brain_id,
+                BrainStatus.READY,
+                mother_approved=True,
+                verification_passed=True,
+                reason="child birth verification completed",
+            )
 
         # Register only after birth verification and the full lifecycle sequence.
         self.registry.register(brain)
@@ -287,6 +367,15 @@ class SpecialistChildBrainManager:
             BrainTrustStatus.VERIFIED,
             evidence=evidence.strip(),
         )
+        if self.instance_registry is not None:
+            self.instance_registry.update_trust(
+                brain_id,
+                BrainTrustStatus.VERIFIED,
+                evidence=evidence.strip(),
+                mother_approved=True,
+                human_approved=True,
+                reason="independent child trust verification passed",
+            )
         return record
 
     def activate(
@@ -314,6 +403,15 @@ class SpecialistChildBrainManager:
             raise ValueError(decision.reason)
         record.brain.transition_to(BrainStatus.ACTIVE)
         record.runtime_state = ChildRuntimeState.ACTIVE
+        if self.instance_registry is not None:
+            self.instance_registry.transition(
+                brain_id,
+                BrainStatus.ACTIVE,
+                mother_approved=True,
+                human_approved=True,
+                verification_passed=True,
+                reason="explicitly approved child activation",
+            )
         return record
 
     def suspend(
@@ -350,6 +448,24 @@ class SpecialistChildBrainManager:
             evidence=reason,
         )
         record.runtime_state = ChildRuntimeState.PAUSED
+        if self.instance_registry is not None:
+            persisted = self.instance_registry.get(brain_id)
+            if persisted is not None and persisted.status in {BrainStatus.READY, BrainStatus.ACTIVE}:
+                self.instance_registry.transition(
+                    brain_id,
+                    BrainStatus.PAUSED,
+                    mother_approved=mother_approved,
+                    human_approved=human_approved,
+                    reason=reason,
+                )
+            self.instance_registry.update_trust(
+                brain_id,
+                BrainTrustStatus.SUSPENDED,
+                evidence=reason,
+                mother_approved=True,
+                human_approved=True,
+                reason="child suspended",
+            )
         return record
 
     def resume(
@@ -388,6 +504,14 @@ class SpecialistChildBrainManager:
         elif record.brain.status != BrainStatus.READY:
             raise ValueError("Child identity is not in a resumable brain status.")
         record.runtime_state = ChildRuntimeState.READY
+        if self.instance_registry is not None:
+            self.instance_registry.transition(
+                brain_id,
+                BrainStatus.READY,
+                mother_approved=True,
+                verification_passed=True,
+                reason="explicitly approved child resume after fresh verification",
+            )
         self.verify_trust(
             brain_id,
             evidence=verification_evidence.strip(),
@@ -426,6 +550,16 @@ class SpecialistChildBrainManager:
             elif record.brain.status == BrainStatus.FAILED:
                 record.brain.transition_to(BrainStatus.DISABLED)
         record.runtime_state = ChildRuntimeState.RETIRED
+        if self.instance_registry is not None:
+            persisted = self.instance_registry.get(brain_id)
+            if persisted is not None and persisted.status != BrainStatus.DISABLED:
+                self.instance_registry.transition(
+                    brain_id,
+                    BrainStatus.DISABLED,
+                    mother_approved=True,
+                    human_approved=True,
+                    reason="human-approved child retirement",
+                )
         return record
 
     def replace(
@@ -483,6 +617,7 @@ class SpecialistChildBrainManager:
         *,
         metadata: dict[str, Any] | None = None,
         mother_approved: bool = False,
+        handler_executor: Callable[[SpecialistHandler, str, dict[str, Any]], Any] | None = None,
     ) -> SpecialistDispatchResult:
         record = self._require(brain_id)
         if record.runtime_state not in {
@@ -529,6 +664,8 @@ class SpecialistChildBrainManager:
             request=request,
             specialization=record.brain.specialization,
             metadata=metadata,
+            target_brain_id=record.brain.brain_id,
+            handler_executor=handler_executor,
         )
         record.performance.last_success = result.success
         if result.success:
@@ -562,6 +699,12 @@ class SpecialistChildBrainManager:
 
     def performance(self, brain_id: str) -> ChildPerformance:
         return self._require(brain_id).performance
+
+    def close(self) -> None:
+        for record in self._records.values():
+            record.memory.close()
+        if self.instance_registry is not None:
+            self.instance_registry.close()
 
     def can_child_grant_authority(self) -> bool:
         return False

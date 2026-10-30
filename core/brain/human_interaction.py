@@ -10,6 +10,7 @@ from core.brain.multimodal import InputModality, MultimodalInput
 from core.brain.voice import VoiceInput
 from core.brain.voice_output import VoiceOutput
 from core.brain.vision import VisionInput
+from core.brain.universal_language_brain import UniversalLanguageBrain
 
 
 class InteractionLanguage(str, Enum):
@@ -30,6 +31,8 @@ class InteractionAssessment:
     correction_detected: bool = False
     correction_text: str | None = None
     context_summary: dict = field(default_factory=dict)
+    language_code: str = "und"
+    language_name: str = "Undetermined"
 
     def __post_init__(self) -> None:
         if not isinstance(self.interaction_id, str) or not self.interaction_id.strip():
@@ -105,29 +108,23 @@ class HumanInteractionEngine:
     ) -> None:
         self.context = context or ContextManager()
         self.intent_engine = intent_engine or IntentEngine()
+        self.language_brain = UniversalLanguageBrain()
 
     def detect_language(self, text: str) -> InteractionLanguage:
         if not isinstance(text, str):
             raise TypeError("text must be a string.")
-        value = text.strip()
-        if not value:
-            return InteractionLanguage.UNKNOWN
-
-        devanagari = sum("\u0900" <= char <= "\u097f" for char in value)
-        letters = sum(char.isalpha() for char in value)
-        if devanagari and devanagari >= max(1, letters // 4):
+        assessment = self.language_brain.detect(text)
+        if assessment.language_code == "hi":
             return InteractionLanguage.HINDI
-
-        words = {
-            token.strip(".,!?;:()[]{}'\"").lower()
-            for token in value.split()
-        }
-        if words & self._HINGLISH_MARKERS:
+        if assessment.language_code == "hi-Latn":
             return InteractionLanguage.HINGLISH
-
-        if letters:
+        if assessment.language_code == "en":
             return InteractionLanguage.ENGLISH
         return InteractionLanguage.UNKNOWN
+
+    def assess_language(self, text: str):
+        """Return the full Universal Language Brain assessment."""
+        return self.language_brain.detect(text)
 
     def normalize_text(self, text: str) -> str:
         if not isinstance(text, str):
@@ -203,6 +200,8 @@ class HumanInteractionEngine:
             correction_detected=correction_detected,
             correction_text=correction_text,
             context_summary=self.context.summary(),
+            language_code=self.language_brain.detect(normalized).language_code,
+            language_name=self.language_brain.detect(normalized).language_name,
         )
 
     def record_turn(

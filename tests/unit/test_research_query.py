@@ -12,6 +12,7 @@ from core.research.query import ResearchQueryEngine
 
 
 def main() -> None:
+
     print("SAHIBEX RESEARCH QUERY TEST")
 
     with TemporaryDirectory() as temp_dir:
@@ -82,22 +83,32 @@ def main() -> None:
 
         query_engine = ResearchQueryEngine(engine)
 
+        # Default search must exclude unverified knowledge.
         result = query_engine.search(
             "AI security authentication"
         )
+        assert result.total_matches == 0
+        print("[PASS] default search excludes unverified knowledge")
 
+        # Explicit discovery can return it, but cannot promote it.
+        result = query_engine.search(
+            "AI security authentication",
+            verified_only=False,
+        )
         assert result.total_matches == 1
         assert result.matches[0].knowledge_id == (
             knowledge.knowledge_id
         )
-        assert result.matches[0].verified is True
+        assert result.matches[0].verified is False
+        print("[PASS] unverified search preserves verification status")
+
 
         print("[PASS] verified knowledge retrieval")
 
         result = query_engine.search(
-            "AI security"
+            "AI security",
+            verified_only=False,
         )
-
         assert result.total_matches == 1
 
         print("[PASS] query matching")
@@ -105,8 +116,8 @@ def main() -> None:
         result = query_engine.search(
             "authentication",
             limit=1,
+            verified_only=False,
         )
-
         assert result.total_matches == 1
 
         print("[PASS] result limit")

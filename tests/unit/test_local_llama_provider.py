@@ -38,3 +38,16 @@ def test_local_provider_allows_explicit_longer_output_limit():
 
     assert result.success is True
     assert payload["max_tokens"] == 256
+
+
+def test_local_provider_fails_closed_on_empty_content():
+    payload_response = {"choices": [{"message": {"content": "   "}}]}
+    response = BytesIO(json.dumps(payload_response).encode("utf-8"))
+    with patch("urllib.request.urlopen", return_value=response):
+        result = LocalLlamaProvider(
+            endpoint="http://127.0.0.1:8080/v1/chat/completions"
+        ).generate(ModelRequest(prompt="Answer briefly"))
+
+    assert result.success is False
+    assert result.text == ""
+    assert "empty content" in result.error.lower()

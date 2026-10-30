@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import socket
 from types import SimpleNamespace
 from urllib.parse import urlencode
 
@@ -15,6 +16,17 @@ class FakeRSSProvider:
     def acquire(self, request):
         self.request = request
         return SimpleNamespace(sources=self.sources)
+
+
+@pytest.fixture(autouse=True)
+def deterministic_public_dns(monkeypatch):
+    # These backend tests validate URL handling, not live DNS availability.
+    monkeypatch.setattr(
+        "core.research.web_provider.socket.getaddrinfo",
+        lambda hostname, *args, **kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+        ],
+    )
 
 
 def source(locator, published_at="Fri, 09 Oct 2026 12:00:00 GMT", title="AI safety report - Publisher"):
@@ -55,7 +67,7 @@ def test_rejects_spoofed_bing_redirect_host():
 
 
 def test_time_sensitive_query_discards_old_and_undated_articles():
-    recent = source(bing_url("https://www.google.com/recent"), datetime(2026, 10, 9, tzinfo=timezone.utc).isoformat())
+    recent = source(bing_url("https://www.google.com/recent"), (datetime.now(timezone.utc) - timedelta(days=1)).isoformat())
     old = source(bing_url("https://www.google.com/old"), "Tue, 01 Sep 2026 12:00:00 GMT")
     undated = source(bing_url("https://www.google.com/undated"), None)
     provider = FakeRSSProvider([recent, old, undated])

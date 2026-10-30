@@ -1,98 +1,61 @@
 from __future__ import annotations
-
 from dataclasses import dataclass
-import subprocess
+from pathlib import Path
+from types import SimpleNamespace
 
 from tools.computer_control import ComputerAction, ComputerControlRequest
-from tools.android_computer_control import (
-    AndroidComputerControlProvider,
-    AndroidControlConfig,
-)
-
+from tools.android_computer_control import AndroidComputerControlProvider, AndroidControlConfig
 
 @dataclass
-class Runner:
-    calls: list[list[str]]
-
-    def __call__(self, command: list[str]) -> subprocess.CompletedProcess[str]:
-        self.calls.append(command)
-        return subprocess.CompletedProcess(command, 0, "", "")
-
+class FakeBridgeClient:
+    calls: list[tuple[str, dict]]
+    def call(self, action: str, payload: dict):
+        self.calls.append((action, payload))
+        result = {"completed": True}
+        if action == "ui_tree": result["tree"] = []
+        return SimpleNamespace(success=True, result=result, error=None)
 
 def check(condition: bool, message: str) -> None:
-    if not condition:
-        raise AssertionError(message)
-
+    if not condition: raise AssertionError(message)
 
 def main() -> None:
-    runner = Runner([])
+    token = Path("data/test_android_control_token.tmp")
+    token.parent.mkdir(parents=True, exist_ok=True)
+    token.write_text("private-test-token", encoding="utf-8")
+    token.chmod(0o600)
+    client = FakeBridgeClient([])
     provider = AndroidComputerControlProvider(
-        config=AndroidControlConfig(
-            input_command="input",
-            screencap_command="screencap",
-        ),
-        command_runner=runner,
+        config=AndroidControlConfig(token_path=str(token)),
+        client_factory=lambda session: client,
     )
-    provider._available = lambda command: True  # type: ignore[method-assign]
+    try:
+        request = ComputerControlRequest(ComputerAction.CLICK, {"x": 100, "y": 200})
+        blocked = provider.execute(request)
+        check(not blocked.success, "Unauthorized control must be blocked.")
+        check("authorization" in (blocked.error or "").lower(), "Authorization error expected.")
+        check(not client.calls, "Blocked action must not reach bridge client.")
 
-    request = ComputerControlRequest(
-        ComputerAction.CLICK,
-        {"x": 100, "y": 200},
-    )
+        result = provider.execute(request, authorized=True)
+        check(result.success, "Authorized click should execute through bridge.")
+        check(client.calls[-1] == ("tap", {"x": 100, "y": 200}), "Click payload mismatch.")
 
-    blocked = provider.execute(request)
-    check(not blocked.success, "Unauthorized control must be blocked.")
-    check("authorization" in (blocked.error or "").lower(), "Authorization error expected.")
-    check(not runner.calls, "Blocked action must not reach OS runner.")
+        result = provider.execute(ComputerControlRequest(ComputerAction.MOVE_MOUSE,
+            {"x": 1, "y": 2, "end_x": 3, "end_y": 4, "duration_ms": 150}), authorized=True)
+        check(result.success, "Authorized swipe should execute.")
+        check(client.calls[-1] == ("swipe", {"x": 1, "y": 2, "end_x": 3, "end_y": 4, "duration_ms": 150}), "Swipe payload mismatch.")
 
-    result = provider.execute(request, authorized=True)
-    check(result.success, "Authorized click should execute through runner.")
-    check(runner.calls[-1] == ["input", "tap", "100", "200"], "Click command mismatch.")
+        result = provider.execute(ComputerControlRequest(ComputerAction.TYPE_TEXT, {"text": "SAHIBEX test"}), authorized=True)
+        check(result.success, "Authorized text input should execute.")
+        check(client.calls[-1] == ("type_text", {"text": "SAHIBEX test"}), "Text payload mismatch.")
 
-    runner.calls.clear()
-    result = provider.execute(
-        ComputerControlRequest(
-            ComputerAction.MOVE_MOUSE,
-            {"x": 1, "y": 2, "end_x": 3, "end_y": 4, "duration_ms": 150},
-        ),
-        authorized=True,
-    )
-    check(result.success, "Authorized touch movement should execute.")
-    check(
-        runner.calls[-1] == ["input", "swipe", "1", "2", "3", "4", "150"],
-        "Swipe command mismatch.",
-    )
+        result = provider.execute(ComputerControlRequest(ComputerAction.PRESS_KEY, {"key": "BACK"}), authorized=True)
+        check(result.success, "Supported BACK key should execute.")
+        check(client.calls[-1] == ("keyevent", {"keycode": 4}), "Key payload mismatch.")
 
-    runner.calls.clear()
-    result = provider.execute(
-        ComputerControlRequest(
-            ComputerAction.TYPE_TEXT,
-            {"text": "SAHIBEX test"},
-        ),
-        authorized=True,
-    )
-    check(result.success, "Authorized text input should execute.")
-    check(
-        runner.calls[-1] == ["input", "text", "SAHIBEX%stest"],
-        "Text command mismatch.",
-    )
-
-    runner.calls.clear()
-    result = provider.execute(
-        ComputerControlRequest(
-            ComputerAction.PRESS_KEY,
-            {"key": "ENTER"},
-        ),
-        authorized=True,
-    )
-    check(result.success, "Authorized key input should execute.")
-    check(
-        runner.calls[-1] == ["input", "keyevent", "ENTER"],
-        "Key command mismatch.",
-    )
-
+        unsupported = provider.execute(ComputerControlRequest(ComputerAction.PRESS_KEY, {"key": "ENTER"}), authorized=True)
+        check(not unsupported.success, "Unsupported global key must be rejected.")
+    finally:
+        token.unlink(missing_ok=True)
     print("SAHIBEX #15 ANDROID COMPUTER CONTROL ADAPTER TEST: PASS")
 
-
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()

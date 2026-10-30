@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from core.research.models import ResearchSource
@@ -56,19 +56,25 @@ class FreshnessAssessment:
                 "source_id cannot be empty"
             )
 
-        if self.reference_time.tzinfo is None:
+        if (
+            self.reference_time.tzinfo is None
+            or self.reference_time.utcoffset() is None
+        ):
             raise ValueError(
                 "reference_time must be timezone-aware"
             )
 
-        if self.accessed_time.tzinfo is None:
+        if (
+            self.accessed_time.tzinfo is None
+            or self.accessed_time.utcoffset() is None
+        ):
             raise ValueError(
                 "accessed_time must be timezone-aware"
             )
 
-        if (
-            self.publication_time is not None
-            and self.publication_time.tzinfo is None
+        if self.publication_time is not None and (
+            self.publication_time.tzinfo is None
+            or self.publication_time.utcoffset() is None
         ):
             raise ValueError(
                 "publication_time must be timezone-aware"
@@ -100,7 +106,10 @@ class FreshnessAssessment:
 
 
 def _ensure_aware(value: datetime, name: str) -> None:
-    if value.tzinfo is None:
+    if (
+        value.tzinfo is None
+        or value.utcoffset() is None
+    ):
         raise ValueError(
             f"{name} must be timezone-aware"
         )
@@ -302,3 +311,75 @@ def assess_source_freshness(
         status=status,
         publication_before_access=True,
     )
+
+
+def assess_query_source_freshness(
+    query: str,
+    sources,
+    *,
+    reference_time: datetime | None = None,
+) -> dict[str, object] | None:
+    """Hard-gate current-news claims on query-specific publication age.
+
+    Stable factual queries are exempt: old authoritative references can support
+    stable facts. Current-news queries fail closed when any selected source has
+    an unknown, invalid/future, or over-age publication timestamp.
+    """
+    text = " ".join(str(query or "").casefold().split())
+    today_terms = ("today", "tonight", "breaking", "आज", "आज की", "ताज़ा आज")
+    current_terms = (
+        "latest", "current", "recent", "news", "updates", "this week",
+        "last 7 days", "इस सप्ताह", "इस हफ्ते", "ताज़ा खबर", "ताजा खबर",
+        "समाचार", "खबरें", "ख़बरें", "हाल की खबर", "अभी की खबर",
+    )
+    is_today_query = any(term in text for term in today_terms)
+    if not is_today_query and not any(term in text for term in current_terms):
+        return None
+
+    max_age_seconds = 24 * 60 * 60 if is_today_query else 7 * 24 * 60 * 60
+    reference = reference_time or datetime.now(timezone.utc)
+    if reference.tzinfo is None or reference.utcoffset() is None:
+        raise ValueError("freshness gate reference time must be timezone-aware")
+
+    items = list(sources or ())
+    failures: list[dict[str, object]] = []
+    assessed: list[dict[str, object]] = []
+    if not items:
+        failures.append({"reason": "no_sources"})
+
+    for source in items:
+        source_id = str(getattr(source, "source_id", "") or "")[:120]
+        raw_published = getattr(source, "published_at", None)
+        published = raw_published if isinstance(raw_published, datetime) else None
+        if published is None and isinstance(raw_published, str) and raw_published.strip():
+            try:
+                published = datetime.fromisoformat(raw_published.strip().replace("Z", "+00:00"))
+            except (TypeError, ValueError):
+                published = None
+        if published is None:
+            assessed.append({"source_id": source_id, "status": "UNKNOWN"})
+            failures.append({"source_id": source_id, "reason": "publication_time_unknown"})
+            continue
+        if published.tzinfo is None or published.utcoffset() is None:
+            assessed.append({"source_id": source_id, "status": "INVALID"})
+            failures.append({"source_id": source_id, "reason": "publication_time_not_timezone_aware"})
+            continue
+        age_seconds = (reference - published).total_seconds()
+        if age_seconds < -300:
+            assessed.append({"source_id": source_id, "status": "INVALID", "age_seconds": round(age_seconds, 1)})
+            failures.append({"source_id": source_id, "reason": "publication_time_in_future"})
+            continue
+        age_seconds = max(0.0, age_seconds)
+        status = "FRESH" if age_seconds <= max_age_seconds else "STALE"
+        assessed.append({"source_id": source_id, "status": status, "age_seconds": round(age_seconds, 1)})
+        if status != "FRESH":
+            failures.append({"source_id": source_id, "reason": "source_exceeds_query_freshness_window", "age_seconds": round(age_seconds, 1)})
+
+    return {
+        "status": "PASS" if not failures else "REJECTED",
+        "query_window": "24_hours" if is_today_query else "7_days",
+        "max_age_seconds": max_age_seconds,
+        "source_count": len(items),
+        "assessments": assessed[:10],
+        "failures": failures[:10],
+    }

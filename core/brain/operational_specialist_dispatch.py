@@ -127,6 +127,8 @@ class OperationalSpecialistDispatcher:
         specialization: str | None = None,
         capability: BrainCapability | None = None,
         metadata: dict[str, Any] | None = None,
+        target_brain_id: str | None = None,
+        handler_executor: Callable[[SpecialistHandler, str, dict[str, Any]], Any] | None = None,
     ) -> SpecialistDispatchResult:
         if not isinstance(request, str):
             raise TypeError("request must be a string.")
@@ -139,22 +141,38 @@ class OperationalSpecialistDispatcher:
         if metadata is not None and not isinstance(metadata, dict):
             raise TypeError("metadata must be a dictionary when provided.")
 
-        selection = self.intelligence.select_brain(
-            specialization=specialization,
-            capability=capability,
-        )
-
-        if selection.selected_brain_id is None:
-            return SpecialistDispatchResult(
-                success=False,
-                brain_id=None,
-                request=normalized_request,
-                result=None,
-                error=selection.reason,
+        if target_brain_id is not None:
+            if not isinstance(target_brain_id, str) or not target_brain_id.strip():
+                raise ValueError("target_brain_id must be a non-empty string")
+            brain_id = target_brain_id.strip()
+            brain = self.registry.get(brain_id)
+            if brain is None:
+                return SpecialistDispatchResult(
+                    success=False, brain_id=brain_id, request=normalized_request,
+                    result=None, error="Target specialist brain is not registered.",
+                )
+            if specialization is not None and brain.specialization.strip().lower() != specialization.strip().lower():
+                return SpecialistDispatchResult(
+                    success=False, brain_id=brain_id, request=normalized_request,
+                    result=None, error="Target brain specialization does not match request.",
+                )
+            if capability is not None and not brain.has_capability(capability):
+                return SpecialistDispatchResult(
+                    success=False, brain_id=brain_id, request=normalized_request,
+                    result=None, error="Target brain lacks the requested capability.",
+                )
+        else:
+            selection = self.intelligence.select_brain(
+                specialization=specialization,
+                capability=capability,
             )
-
-        brain_id = selection.selected_brain_id
-        brain = self.registry.get(brain_id)
+            if selection.selected_brain_id is None:
+                return SpecialistDispatchResult(
+                    success=False, brain_id=None, request=normalized_request,
+                    result=None, error=selection.reason,
+                )
+            brain_id = selection.selected_brain_id
+            brain = self.registry.get(brain_id)
 
         if brain is None:
             return SpecialistDispatchResult(
@@ -209,10 +227,17 @@ class OperationalSpecialistDispatcher:
             handler_metadata["brain_id"] = brain_id
             handler_metadata["specialization"] = brain.specialization
 
-            handler_result = handler(
-                normalized_request,
-                handler_metadata,
-            )
+            if handler_executor is None:
+                handler_result = handler(
+                    normalized_request,
+                    handler_metadata,
+                )
+            else:
+                handler_result = handler_executor(
+                    handler,
+                    normalized_request,
+                    handler_metadata,
+                )
 
             return SpecialistDispatchResult(
                 success=True,

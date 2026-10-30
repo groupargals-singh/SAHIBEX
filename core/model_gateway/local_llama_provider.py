@@ -24,7 +24,7 @@ class LocalLlamaProvider(ModelProvider):
             endpoint
             or os.getenv("SAHIBEX_LOCAL_LLM_ENDPOINT", "http://127.0.0.1:8080/v1/chat/completions")
         )
-        self.model = model or os.getenv("SAHIBEX_LOCAL_LLM_MODEL", "Qwen3-1.7B-Q4_K_M.gguf")
+        self.model = model or os.getenv("SAHIBEX_LOCAL_LLM_MODEL", "Qwen3-4B-Q4_K_M.gguf")
         self.timeout = timeout or float(os.getenv("SAHIBEX_LOCAL_LLM_TIMEOUT", "180"))
 
     def generate(self, request: ModelRequest) -> ModelResponse:
@@ -57,6 +57,8 @@ class LocalLlamaProvider(ModelProvider):
             text = data["choices"][0]["message"]["content"]
             if not isinstance(text, str):
                 raise ValueError("Local model returned non-text content.")
+            if not text.strip():
+                raise ValueError("Local model returned empty content.")
             return ModelResponse(
                 text=text,
                 provider=self.name,

@@ -341,3 +341,34 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
+
+
+def test_same_timestamp_and_status_preserve_both_events() -> None:
+    storage = ResearchStorage(":memory:")
+    storage.save_knowledge(
+        make_knowledge(
+            "knowledge-same-time",
+            "A candidate with repeated verification attempts.",
+        )
+    )
+    timestamp = datetime(2026, 3, 1, tzinfo=timezone.utc)
+
+    for reason in (
+        "First verification attempt.",
+        "Second verification attempt.",
+    ):
+        storage.record_knowledge_verification(
+            knowledge_id="knowledge-same-time",
+            status="UNVERIFIED",
+            reason=reason,
+            verified_at=timestamp,
+        )
+
+    history = storage.knowledge_verification_history("knowledge-same-time")
+    assert len(history) == 2
+    assert {item["reason"] for item in history} == {
+        "First verification attempt.",
+        "Second verification attempt.",
+    }
+    assert len({item["event_id"] for item in history}) == 2
+    storage.close()

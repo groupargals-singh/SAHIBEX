@@ -116,8 +116,12 @@ class ReasoningCoordinator:
             base_confidence = (base_confidence + evidence_quality) / 2.0
         if conflicts:
             base_confidence = max(0.0, base_confidence - 0.15 * len(conflicts))
+        # Missing inputs and ambiguity are blockers in their own right; a low
+        # numeric uncertainty score must not silently override either flag.
         verified = (
             not conflicts
+            and not missing_information
+            and not ambiguous
             and not uncertainty.requires_verification
             and (not constraints or all(constraints))
         )
@@ -147,7 +151,9 @@ class ReasoningCoordinator:
             selected_strategy=strategy,
             confidence=round(base_confidence, 4),
             uncertainty=uncertainty.uncertainty,
-            needs_verification=uncertainty.requires_verification,
+            needs_verification=(
+                uncertainty.requires_verification or missing_information or ambiguous
+            ),
             conflicts=tuple(dict.fromkeys(conflicts)),
             verified=verified,
             corrected=corrected,
@@ -168,8 +174,14 @@ class ReasoningCoordinator:
     def verify(self, assessment: ReasoningAssessment) -> ReasoningAssessment:
         if not isinstance(assessment, ReasoningAssessment):
             raise TypeError("assessment must be ReasoningAssessment")
+        # Rechecking unchanged metadata is not new evidence. This method may
+        # revoke a prior verified flag when quality thresholds fail, but it may
+        # not promote an unverified assessment without an evidence-bearing
+        # assessment cycle.
         verified = (
-            not assessment.conflicts
+            assessment.verified
+            and not assessment.needs_verification
+            and not assessment.conflicts
             and assessment.uncertainty < 0.60
             and assessment.confidence >= 0.50
         )
@@ -183,7 +195,7 @@ class ReasoningCoordinator:
             selected_strategy=assessment.selected_strategy,
             confidence=assessment.confidence,
             uncertainty=assessment.uncertainty,
-            needs_verification=not verified,
+            needs_verification=assessment.needs_verification or not verified,
             conflicts=assessment.conflicts,
             verified=verified,
             corrected=assessment.corrected,

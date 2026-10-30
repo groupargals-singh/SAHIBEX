@@ -6,10 +6,12 @@ from tempfile import TemporaryDirectory
 
 from core.research.knowledge_conflict import (
     CONFLICT_TYPE_EXPLICIT_NEGATION,
+    CONFLICT_TYPE_NUMERIC_CONTRADICTION,
     RESOLUTION_RESOLVED,
     RESOLUTION_UNRESOLVED,
     KnowledgeConflictRecord,
 )
+from core.research.conflict_intelligence import ConflictIntelligenceAssessment
 from core.research.models import KnowledgeCandidate
 from core.research.storage import ResearchStorage
 
@@ -250,6 +252,31 @@ def test_unknown_conflict_returns_none() -> None:
         storage.close()
 
 
+def test_numeric_conflict_assessment_can_be_persisted():
+    with TemporaryDirectory() as temp_dir:
+        storage = ResearchStorage(Path(temp_dir) / "numeric_conflict.db")
+        storage.save_knowledge(_knowledge("numeric-a", "The count is 10.", 0.8))
+        storage.save_knowledge(_knowledge("numeric-b", "The count is 12.", 0.7))
+        assessment = ConflictIntelligenceAssessment(
+            first_knowledge_id="numeric-a",
+            second_knowledge_id="numeric-b",
+            conflict_type=CONFLICT_TYPE_NUMERIC_CONTRADICTION,
+            conflict_reason="The reported numeric values differ.",
+            resolution_status=RESOLUTION_UNRESOLVED,
+            selected_knowledge_id=None,
+            evidence_score_delta=0.1,
+            source_reliability_delta=0.0,
+            knowledge_confidence_delta=0.1,
+            resolution_reason="Insufficient evidence to select a value.",
+        )
+        storage.save_conflict_assessment(assessment)
+        loaded = storage.get_conflict_assessment("numeric-a", "numeric-b")
+        assert loaded is not None
+        assert loaded.conflict_type == CONFLICT_TYPE_NUMERIC_CONTRADICTION
+        assert loaded.resolution_status == RESOLUTION_UNRESOLVED
+        storage.close()
+
+
 def run() -> None:
     print(
         "SAHIBEX 6H-7B KNOWLEDGE CONFLICT "
@@ -276,6 +303,10 @@ def run() -> None:
         (
             "unknown conflict returns none",
             test_unknown_conflict_returns_none,
+        ),
+        (
+            "numeric conflict persistence",
+            test_numeric_conflict_assessment_can_be_persisted,
         ),
     ]
 

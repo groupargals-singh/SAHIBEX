@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from uuid import uuid4
 
 from core.model_gateway.base import ModelGateway, ModelRequest
+from core.brain.universal_language_brain import UniversalLanguageBrain
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,11 @@ class OperationalModelIntegration:
 
         self._gateway = gateway
 
+    @property
+    def gateway(self) -> ModelGateway:
+        """Expose the configured gateway for other advisory model services."""
+        return self._gateway
+
     def generate(
         self,
         *,
@@ -100,13 +106,20 @@ class OperationalModelIntegration:
         if not provider.strip():
             raise ValueError("provider must not be empty")
 
+        language_brain = UniversalLanguageBrain()
+        language_instruction = language_brain.reply_instruction(objective)
         request = ModelRequest(
             prompt=prompt.strip(),
             system_prompt=(
-                "You are SAHIBEX's concise, accurate conversational reasoning engine. "
-                "Answer the exact question directly in the user's requested language. "
-                "For Hindi, use natural Hindi; Romanized Hindi is acceptable when the user uses it. "
+                "You are SAHIBEX, a female-presenting AI assistant with a consistent feminine persona, and a concise, accurate conversational reasoning engine. "
+                "In Hindi, use grammatically feminine first-person forms for yourself, for example 'main kar sakti hoon', 'main bataungi', 'main jaanch karungi'; avoid masculine self-reference such as 'kar sakta hoon' or 'karunga'. "
+                "In Romanized Hindi/Hinglish, preserve the same feminine grammar (sakti hoon, bataungi, karungi) while matching the user's script and register. "
+                "In English, identify as SAHIBEX and maintain a warm, clear, confident female-presenting assistant persona without gender stereotypes. "
+                + language_instruction + " "
                 "Do not merely rephrase the question, repeat phrases, or produce vague filler. "
+                "You can converse in Hindi, Romanized Hindi/Hinglish, and English; do not falsely claim that Hindi support is unavailable. "
+                "For Romanized Hindi/Hinglish, reply naturally in the same style unless the user asks for Devanagari Hindi. "
+                "For requests to improve/build SAHIBEX, explain concrete next steps and clearly distinguish completed work from planned work; never claim a file was changed unless a tool confirms it. "
                 "For factual questions, give the specific fact first, then a brief clarification if needed. "
                 "If unsure, say so rather than inventing facts. Usually answer in 1-3 sentences."
             ),

@@ -13,12 +13,16 @@ def test_master_brain_combined_decision_context() -> None:
         "Explain SAHIBEX architecture."
     )
 
-    # The default mock provider intentionally echoes its prompt; the
-    # answer-quality gate must reject it while preserving diagnostics.
-    assert result.success is False
-    assert result.verification_status == "QUALITY_REJECTED"
-    assert result.metadata["failure_stage"] == "mother_operational"
+    # The default mock provider cannot ground this factual explanation.
+    # MainBrain must return explicit uncertainty rather than treating a
+    # structurally plausible generation as a factual answer.
+    assert result.success is True
+    assert result.verification_status == "INSUFFICIENT_EVIDENCE"
+    assert "enough verified evidence" in result.message.lower()
     assert result.intent == "explain"
+    operational = result.metadata["mother_operational_integration"]
+    assert operational["factual_verification"] is False
+    assert operational["diagnostics"]["uncertainty_disclosed"] is True
 
     context = result.metadata[
         "mother_decision_context"
@@ -28,7 +32,7 @@ def test_master_brain_combined_decision_context() -> None:
         "Explain SAHIBEX architecture."
     )
     assert context["intent"] == "explain"
-    assert "conversation" in context
+    assert "conversation_summary" in context
     assert "memory_count" in context
     assert "knowledge_count" in context
     assert "memory_ids" in context

@@ -1,3 +1,5 @@
+import socket
+
 from core.research.acquisition import (
     AcquisitionRequest,
     ResearchAcquisitionEngine,
@@ -47,6 +49,7 @@ class StubWebProvider(
                 "</head>"
                 "<body>"
                 "<h1>Research Test</h1>"
+                "<p>This article contains enough substantive visible text to support a bounded research acquisition and source quality check.</p>"
                 "</body>"
                 "</html>"
             ),
@@ -55,6 +58,12 @@ class StubWebProvider(
 
 
 def main():
+    # This legacy script is a local test, not a DNS/network integration test.
+    # Keep URL-validation checks deterministic when the device has no DNS.
+    socket.getaddrinfo = lambda hostname, *args, **kwargs: [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))
+    ]
+
     print(
         "SAHIBEX DIRECT WEB PROVIDER TEST"
     )

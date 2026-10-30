@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from tempfile import TemporaryDirectory
 from pathlib import Path
 
@@ -88,6 +89,12 @@ def main() -> None:
                     "source": "test",
                 },
             )
+        )
+        storage.record_knowledge_verification(
+            knowledge_id="knowledge-mother-brain",
+            status="VERIFIED",
+            reason="Test fixture explicitly seeds verified lifecycle state.",
+            verified_at=datetime.now(timezone.utc),
         )
 
         # ---------------------------------------------------------

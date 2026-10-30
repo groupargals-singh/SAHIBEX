@@ -371,6 +371,19 @@ class ChildInstanceRegistry:
                 return False
         return True
 
+    def list_children(self) -> list[SpecialistBrain]:
+        """Return integrity-checked child identities; this never restores handlers."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT brain_id FROM child_instances ORDER BY created_at, brain_id"
+            ).fetchall()
+        children: list[SpecialistBrain] = []
+        for row in rows:
+            child = self.get(str(row["brain_id"]))
+            if child is not None:
+                children.append(child)
+        return children
+
     def list_events(self, *, limit: int = 100) -> list[dict[str, Any]]:
         if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 10000:
             raise ValueError("limit must be between 1 and 10000")

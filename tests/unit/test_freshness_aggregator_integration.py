@@ -186,7 +186,7 @@ def test_freshness_aggregator_integration() -> None:
     print("[PASS] aggregation selection unchanged")
 
     assert result.agreement_assessments
-    print("[PASS] 6G-4 agreement remains available")
+    print("[PASS] 6G-5 agreement remains available")
 
     assert result.conflict_intelligence == []
     print("[PASS] 6G-5 conflict intelligence remains available")

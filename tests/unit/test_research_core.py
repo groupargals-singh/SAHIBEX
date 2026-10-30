@@ -89,16 +89,17 @@ def test_research_core() -> None:
         knowledge.knowledge_id
     )
 
-    assert verified.verified is True
-    assert verified.last_verified_at is not None
-
+    assert verified.verified is False
+    assert verified.last_verified_at is None
+    assert verified.metadata["verification_status"] == "UNVERIFIED"
+    assert verified.metadata["supporting_source_count"] == 1
     # Result
     result = engine.create_result(
         "How should research knowledge be represented?"
     )
 
     assert result.completed is True
-    assert result.verified is True
+    assert result.verified is False
     assert result.source_count == 1
     assert result.document_count == 1
     assert result.finding_count == 1
@@ -113,7 +114,59 @@ def test_research_core() -> None:
     assert summary["findings"] == 1
     assert summary["evidence"] == 1
     assert summary["knowledge_candidates"] == 1
-    assert summary["verified_knowledge"] == 1
+    assert summary["verified_knowledge"] == 0
+    assert summary["verified_knowledge"] == 0
+
+def test_evidence_cannot_claim_an_unrelated_publisher() -> None:
+    import pytest
+
+    engine = ResearchEngine()
+    source_a = ResearchSource(
+        source_id="source-a",
+        title="Publisher A",
+        source_type="web",
+        locator="https://a.example/article",
+        publisher="Publisher A",
+        reliability=0.9,
+    )
+    source_b = ResearchSource(
+        source_id="source-b",
+        title="Publisher B",
+        source_type="web",
+        locator="https://b.example/article",
+        publisher="Publisher B",
+        reliability=0.9,
+    )
+    engine.register_source(source_a)
+    engine.register_source(source_b)
+    document = ResearchDocument(
+        document_id="document-a",
+        source_id="source-a",
+        title="Publisher A article",
+        content="A claim reported by publisher A.",
+    )
+    engine.add_document(document)
+    finding = ResearchFinding(
+        finding_id="finding-a",
+        document_id="document-a",
+        claim="A claim reported by publisher A.",
+        confidence=0.8,
+    )
+    engine.add_finding(finding)
+
+    forged_evidence = Evidence(
+        evidence_id="forged-evidence",
+        finding_id="finding-a",
+        source_id="source-b",
+        evidence_text="A claim reported by publisher A.",
+        supports=True,
+        strength=0.99,
+    )
+
+    with pytest.raises(ValueError, match="does not match the finding document source"):
+        engine.add_evidence(forged_evidence)
+
+    assert "forged-evidence" not in engine.evidence
 
 
 def test_invalid_source_reliability() -> None:

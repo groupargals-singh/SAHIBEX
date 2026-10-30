@@ -89,6 +89,11 @@ class ToolPermissionGateway:
 
         tool = self.registry.get(tool_name)
 
+        if tool.read_only and tool.protected_action is not None:
+            raise PermissionError(
+                f"Conflicting read-only/protected-action metadata: {tool_name}"
+            )
+
         if tool.read_only:
             return self.DEFAULT_READ_ACTION
 
@@ -99,11 +104,32 @@ class ToolPermissionGateway:
             f"Tool has no protected action classification: {tool_name}"
         )
 
+    def action_for_request(self, tool_name: str, request: dict | None = None) -> ActionType:
+        """Resolve request-sensitive permissions for the unified control bridge."""
+        if tool_name == "sahibex_control_bridge":
+            if not isinstance(request, dict):
+                raise PermissionError("control bridge request is missing")
+            action = request.get("action")
+            action_map = {
+                "device_status": ActionType.READ_FILE,
+                "list_directory": ActionType.READ_FILE,
+                "read_file": ActionType.READ_FILE,
+                "write_file": ActionType.WRITE_FILE,
+                "run_command": ActionType.RUN_COMMAND,
+                "computer_control": ActionType.RUN_COMMAND,
+                "open_url": ActionType.NETWORK_ACCESS,
+            }
+            if action not in action_map:
+                raise PermissionError("unsupported control bridge action")
+            return action_map[action]
+        return self.action_for_tool(tool_name)
+
     def check(
         self,
         tool_name: str,
         *,
         confirmation: bool = False,
+        request: dict | None = None,
     ) -> ToolPermissionDecision:
         """
         Check whether a registered tool request
@@ -112,7 +138,10 @@ class ToolPermissionGateway:
         No tool execution happens here.
         """
 
-        action = self.action_for_tool(tool_name)
+        if not isinstance(confirmation, bool):
+            raise TypeError("confirmation must be a boolean.")
+
+        action = self.action_for_request(tool_name, request)
 
         decision: PermissionDecision = (
             self.permission_engine.check(

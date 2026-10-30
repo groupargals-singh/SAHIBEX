@@ -233,6 +233,59 @@ def test_no_match_returns_empty_list() -> None:
     storage.close()
 
 
+def test_natural_language_query_retrieves_related_knowledge_only() -> None:
+    storage = ResearchStorage(":memory:")
+    storage.save_knowledge(
+        make_knowledge("knowledge-capital", "New Delhi is the capital of India.")
+    )
+    storage.save_knowledge(
+        make_knowledge("knowledge-python", "Python is a programming language.")
+    )
+
+    results = storage.retrieve_knowledge("what is the capital of India")
+
+    assert [item.knowledge_id for item in results] == ["knowledge-capital"]
+    storage.close()
+
+
+def test_hindi_query_retrieves_related_knowledge() -> None:
+    storage = ResearchStorage(":memory:")
+    storage.save_knowledge(
+        make_knowledge("knowledge-hindi-capital", "भारत की राजधानी नई दिल्ली है।")
+    )
+    storage.save_knowledge(
+        make_knowledge("knowledge-hindi-python", "पायथन एक प्रोग्रामिंग भाषा है।")
+    )
+
+    results = storage.retrieve_knowledge("भारत की राजधानी कौन है")
+
+    assert [item.knowledge_id for item in results] == ["knowledge-hindi-capital"]
+    storage.close()
+
+
+def test_result_limit_is_applied_after_relevance_filtering() -> None:
+    storage = ResearchStorage(":memory:")
+    storage.save_knowledge(
+        make_knowledge(
+            "high-confidence-irrelevant",
+            "India is a large country.",
+            confidence=0.99,
+        )
+    )
+    storage.save_knowledge(
+        make_knowledge(
+            "lower-confidence-relevant",
+            "New Delhi is the capital of India.",
+            confidence=0.75,
+        )
+    )
+
+    results = storage.retrieve_knowledge("capital India", limit=1)
+
+    assert [item.knowledge_id for item in results] == ["lower-confidence-relevant"]
+    storage.close()
+
+
 def test_retrieval_survives_restart() -> None:
     import tempfile
 

@@ -79,6 +79,156 @@ class ResearchQueryEngine:
 
         return len(overlap) / len(query_words)
 
+    @staticmethod
+    def _metadata_verification_status(
+        knowledge: KnowledgeCandidate,
+    ) -> str:
+        metadata = getattr(knowledge, "metadata", {}) or {}
+        return str(
+            metadata.get("verification_status", "")
+        ).strip().upper()
+
+    @staticmethod
+    def _metadata_has_unresolved_conflict(
+        knowledge: KnowledgeCandidate,
+    ) -> bool:
+        metadata = getattr(knowledge, "metadata", {}) or {}
+        conflict_status = str(
+            metadata.get("conflict_status", "")
+        ).strip().upper()
+        try:
+            unresolved_count = int(
+                metadata.get("unresolved_conflict_count", 0) or 0
+            )
+        except (TypeError, ValueError):
+            # Malformed conflict metadata must not be treated as safe.
+            return True
+
+        return (
+            conflict_status in {"UNRESOLVED", "CONFLICTED"}
+            or unresolved_count > 0
+        )
+
+    def _passes_verification_gate(
+        self,
+        knowledge: KnowledgeCandidate,
+        *,
+        verified_only: bool,
+    ) -> bool:
+        """
+        Reject explicitly conflicted knowledge in every retrieval mode.
+
+        Trusted retrieval also rejects stale verification flags when the
+        candidate metadata or persisted verification history records a
+        non-VERIFIED outcome. Missing history remains compatible with
+        legacy candidates; the answer pipeline applies its stricter
+        recorded-history gate before a final answer is emitted.
+        """
+        status = self._metadata_verification_status(knowledge)
+
+        if status in {"CONFLICTED", "REJECTED", "INVALID"}:
+            return False
+
+        if self._metadata_has_unresolved_conflict(knowledge):
+            return False
+
+        if not verified_only:
+            # Explicit exploratory retrieval may include UNVERIFIED records,
+            # but never records explicitly marked conflicted/rejected.
+            if self.storage is not None:
+                conflict_context = self.storage.knowledge_verification_context(
+                    knowledge.knowledge_id
+                )
+                if isinstance(conflict_context, dict):
+                    conflict_status = str(
+                        conflict_context.get("conflict_status", "")
+                    ).strip().upper()
+                    try:
+                        unresolved_count = int(
+                            conflict_context.get(
+                                "unresolved_conflict_count", 0
+                            ) or 0
+                        )
+                    except (TypeError, ValueError):
+                        return False
+                    conflict_count = int(
+                        conflict_context.get("conflict_count", 0) or 0
+                    )
+                    selected_knowledge_id = conflict_context.get(
+                        "selected_knowledge_id"
+                    )
+                    if (
+                        conflict_status in {"UNRESOLVED", "CONFLICTED"}
+                        or unresolved_count > 0
+                        or (
+                            conflict_count > 0
+                            and selected_knowledge_id != knowledge.knowledge_id
+                        )
+                    ):
+                        return False
+                lifecycle = self.storage.knowledge_verification_lifecycle(
+                    knowledge.knowledge_id
+                )
+                if isinstance(lifecycle, dict) and str(
+                    lifecycle.get("verification_status", "")
+                ).strip().upper() == "CONFLICTED":
+                    return False
+            return True
+
+        if not knowledge.verified:
+            return False
+
+        # If a status is present, it must agree with the verified flag.
+        if status and status != "VERIFIED":
+            return False
+
+        if self.storage is not None:
+            lifecycle = self.storage.knowledge_verification_lifecycle(
+                knowledge.knowledge_id
+            )
+            if isinstance(lifecycle, dict):
+                event_count = int(
+                    lifecycle.get("verification_event_count", 0) or 0
+                )
+                lifecycle_status = str(
+                    lifecycle.get("verification_status", "")
+                ).strip().upper()
+                if event_count > 0 and lifecycle_status != "VERIFIED":
+                    return False
+
+            conflict_context = self.storage.knowledge_verification_context(
+                knowledge.knowledge_id
+            )
+            if isinstance(conflict_context, dict):
+                conflict_status = str(
+                    conflict_context.get("conflict_status", "")
+                ).strip().upper()
+                try:
+                    unresolved_count = int(
+                        conflict_context.get(
+                            "unresolved_conflict_count", 0
+                        ) or 0
+                    )
+                except (TypeError, ValueError):
+                    return False
+                conflict_count = int(
+                    conflict_context.get("conflict_count", 0) or 0
+                )
+                selected_knowledge_id = conflict_context.get(
+                    "selected_knowledge_id"
+                )
+                if (
+                    conflict_status in {"UNRESOLVED", "CONFLICTED"}
+                    or unresolved_count > 0
+                    or (
+                        conflict_count > 0
+                        and selected_knowledge_id != knowledge.knowledge_id
+                    )
+                ):
+                    return False
+
+        return True
+
     def _load_knowledge(self) -> list[KnowledgeCandidate]:
         """
         Load knowledge from both memory and persistent storage.
@@ -111,6 +261,7 @@ class ResearchQueryEngine:
         *,
         verified_only: bool = True,
         limit: int = 10,
+        _include_blocked_for_audit: bool = False,
     ) -> ResearchQueryResult:
         if not query or not query.strip():
             raise ValueError(
@@ -125,7 +276,13 @@ class ResearchQueryEngine:
         candidates = []
 
         for knowledge in self._load_knowledge():
-            if verified_only and not knowledge.verified:
+            if (
+                not _include_blocked_for_audit
+                and not self._passes_verification_gate(
+                    knowledge,
+                    verified_only=verified_only,
+                )
+            ):
                 continue
 
             score = self._score(

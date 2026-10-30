@@ -66,8 +66,8 @@ def main() -> None:
         )
 
         check(
-            resolution["status"] == "VERIFIED",
-            "resolution status is verified",
+            resolution["status"] == "PROPOSAL_ONLY",
+            "resolution status remains proposal only",
         )
 
         check(
@@ -113,4 +113,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    main()
+
+def test_memory_conflict_resolution_smoke():
     main()

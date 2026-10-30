@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -51,19 +52,18 @@ class AnswerTraceabilityEngine:
     6G-9C Answer Traceability Engine.
 
     Trace path:
-
         Answer Statement
             -> Knowledge
             -> Finding
             -> Evidence
             -> Source
 
-    Design guarantees:
+    Guarantees:
         - observational only
-        - deterministic
+        - deterministic output
         - no network access
         - no mutation of input objects
-        - missing links are explicitly reported
+        - missing and mismatched links are reported
         - traceability is not treated as truth verification
     """
 
@@ -76,6 +76,7 @@ class AnswerTraceabilityEngine:
         evidence_items: Sequence[Evidence],
         sources: Sequence[ResearchSource],
     ) -> AnswerTraceabilityResult:
+
         knowledge_by_id = {
             item.knowledge_id: item
             for item in knowledge_items
@@ -113,18 +114,16 @@ class AnswerTraceabilityEngine:
             if item.trace_complete
         )
 
-        incomplete_count = (
-            len(traces) - traceable_count
-        )
+        incomplete_count = len(traces) - traceable_count
 
         return AnswerTraceabilityResult(
             answer_id=self._answer_id(answer),
             traces=traces,
             traceable_claim_count=traceable_count,
             incomplete_claim_count=incomplete_count,
-            trace_complete=(
-                incomplete_count == 0
-            ),
+            # An empty answer has nothing to trace; do not report it as
+            # successfully traceable merely because no claims failed.
+            trace_complete=(bool(traces) and incomplete_count == 0),
         )
 
     def _trace_claim(
@@ -132,88 +131,108 @@ class AnswerTraceabilityEngine:
         *,
         assessment: AnswerClaimAssessment,
         knowledge_by_id: Mapping[
-            str,
-            KnowledgeCandidate,
+            str, KnowledgeCandidate
         ],
         findings_by_id: Mapping[
-            str,
-            ResearchFinding,
+            str, ResearchFinding
         ],
         evidence_by_id: Mapping[
-            str,
-            Evidence,
+            str, Evidence
         ],
         sources_by_id: Mapping[
-            str,
-            ResearchSource,
+            str, ResearchSource
         ],
     ) -> AnswerTrace:
-        knowledge_id = self._knowledge_id(
-            assessment
-        )
 
+        knowledge_id = self._knowledge_id(assessment)
         missing_links: list[str] = []
 
-        knowledge = None
-
-        if knowledge_id:
-            knowledge = knowledge_by_id.get(
-                knowledge_id
-            )
+        knowledge = (
+            knowledge_by_id.get(knowledge_id)
+            if knowledge_id
+            else None
+        )
 
         if knowledge is None:
-            missing_links.append(
-                "knowledge"
-            )
+            missing_links.append("knowledge")
 
         finding_ids: list[str] = []
         evidence_ids: list[str] = []
         source_ids: list[str] = []
 
         if knowledge is not None:
+            declared_finding_ids = set(knowledge.findings)
+
+            # Validate every declared finding.
             for finding_id in knowledge.findings:
                 if finding_id in findings_by_id:
-                    finding_ids.append(
-                        finding_id
-                    )
+                    finding_ids.append(finding_id)
                 else:
                     missing_links.append(
                         f"finding:{finding_id}"
                     )
 
+            # Evidence must exist and belong to a finding
+            # explicitly connected to this knowledge record.
             for evidence_id in knowledge.evidence:
-                if evidence_id in evidence_by_id:
-                    evidence_ids.append(
-                        evidence_id
-                    )
-                else:
+                evidence = evidence_by_id.get(evidence_id)
+
+                if evidence is None:
                     missing_links.append(
                         f"evidence:{evidence_id}"
                     )
+                    continue
 
+                if evidence.finding_id not in declared_finding_ids:
+                    missing_links.append(
+                        f"evidence_finding_mismatch:{evidence_id}"
+                    )
+                    continue
+
+                # A matching declared finding must also exist
+                # in the supplied finding registry.
+                if evidence.finding_id not in findings_by_id:
+                    missing_links.append(
+                        f"evidence_finding_missing:{evidence_id}"
+                    )
+                    continue
+
+                # If ownership metadata is present, it must
+                # identify this exact knowledge record.
+                linked_knowledge_id = (
+                    (evidence.metadata or {}).get("knowledge_id")
+                )
+
+                if (
+                    linked_knowledge_id is not None
+                    and linked_knowledge_id != ""
+                    and linked_knowledge_id != knowledge_id
+                ):
+                    missing_links.append(
+                        f"evidence_knowledge_mismatch:{evidence_id}"
+                    )
+                    continue
+
+                evidence_ids.append(evidence_id)
+
+        # Resolve sources only for validated evidence.
         for evidence_id in evidence_ids:
-            evidence = evidence_by_id[
-                evidence_id
-            ]
-
+            evidence = evidence_by_id[evidence_id]
             source_id = evidence.source_id
 
             if source_id in sources_by_id:
                 if source_id not in source_ids:
-                    source_ids.append(
-                        source_id
-                    )
+                    source_ids.append(source_id)
             else:
                 missing_links.append(
                     f"source:{source_id}"
                 )
 
-        # A complete trace requires every declared
-        # finding to exist, every declared evidence
-        # item to exist, and every evidence source
-        # to exist.
+        # Traceability means that the complete declared chain
+        # exists and no missing or mismatched links were found.
         trace_complete = (
             bool(knowledge_id)
+            and knowledge is not None
             and bool(finding_ids)
             and bool(evidence_ids)
             and bool(source_ids)
@@ -235,13 +254,9 @@ class AnswerTraceabilityEngine:
                 if knowledge is not None
                 else bool(assessment.verified)
             ),
-            supported=bool(
-                assessment.supported
-            ),
+            supported=bool(assessment.supported),
             trace_complete=trace_complete,
-            missing_links=tuple(
-                missing_links
-            ),
+            missing_links=tuple(missing_links),
         )
 
     @staticmethod
@@ -259,11 +274,7 @@ class AnswerTraceabilityEngine:
     def _answer_id(
         answer: QualityAwareAnswer,
     ) -> str:
-        value = getattr(
-            answer,
-            "answer_id",
-            None,
-        )
+        value = getattr(answer, "answer_id", None)
 
         if isinstance(value, str) and value.strip():
             return value.strip()

@@ -62,6 +62,10 @@ class PermissionEngine:
         action: ActionType,
         confirmation: bool = False,
     ) -> PermissionDecision:
+        if not isinstance(action, ActionType):
+            raise TypeError("action must be an ActionType.")
+        if not isinstance(confirmation, bool):
+            raise TypeError("confirmation must be a boolean.")
 
         risk = self.RISK_MAP[action]
 

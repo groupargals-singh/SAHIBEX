@@ -184,9 +184,11 @@ def test_phase10_continuous_learning_improvement() -> None:
     assert hasattr(main_brain, "continuous_learning")
     assert main_brain.continuous_learning.experience.count() >= 1
     assert main_brain.continuous_learning.analyze_outcomes().experience_count >= 1
-    # A prompt-echoing mock response must not be accepted as a real answer.
-    assert result.success is False
-    assert result.verification_status == "QUALITY_REJECTED"
+    # A prompt-echoing mock response must not become a factual claim.
+    # It is handled as explicit uncertainty by the factual evidence gate.
+    assert result.success is True
+    assert result.verification_status == "INSUFFICIENT_EVIDENCE"
+    assert "enough verified evidence" in result.message.lower()
 
 
 if __name__ == "__main__":

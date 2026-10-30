@@ -20,8 +20,8 @@ def build_source(
         source_id=source_id,
         title=f"Source {source_id}",
         source_type="document",
-        locator=f"test://{source_id}",
-        publisher="SAHIBEX Integration Test",
+        locator=f"https://{source_id}.example.com/{source_id}",
+        publisher=f"Publisher {source_id}",
         author=None,
         published_at=published_at,
         accessed_at=now,
@@ -164,7 +164,7 @@ def test_full_6g_pipeline() -> None:
     assert result.answer is not None
     assert result.answer.version == "6G-9"
 
-    # 6G-4 Multi-Source Agreement
+    # 6G-5 Multi-Source Agreement
     assert len(result.agreement_assessments) == 1
 
     agreement = result.agreement_assessments[0]
@@ -173,7 +173,7 @@ def test_full_6g_pipeline() -> None:
     assert agreement.supporting_source_count == 2
     assert agreement.contradicting_source_count == 0
     assert agreement.agreement_score == 1.0
-    assert agreement.version == "6G-4"
+    assert agreement.version == "6G-5"
 
     # 6G-5 Conflict Intelligence
     #
