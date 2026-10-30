@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-10-30",
+  "policy": {
+    "default_inference": "local_only",
+    "external_provider_enabled": false,
+    "model_download_automatic": false,
+    "model_training_automatic": false,
+    "allow_multiple_large_models_resident": false,
+    "require_license_review": true,
+    "require_artifact_integrity_check": true,
+    "require_ram_and_storage_gate": true,
+    "require_hindi_english_benchmark": true,
+    "require_mother_review_before_activation": true,
+    "require_human_approval_for_protected_changes": true
+  },
+  "models": [
+    {
+      "id": "qwen3-1.7b-q4-k-m",
+      "role": "language_reasoning_candidate",
+      "source": "local_file",
+      "path": "~/models/Qwen3-1.7B-Q4_K_M.gguf",
+      "status": "PRESENT_RUNTIME_OFFLINE_QUALITY_NOT_ACCEPTED",
+      "may_auto_start": false
+    },
+    {
+      "id": "qwen3-4b-q4-k-m",
+      "role": "language_reasoning_candidate",
+      "source": "local_file",
+      "path": "~/models/Qwen3-4B-Q4_K_M.gguf",
+      "status": "PRESENT_RUNTIME_OFFLINE_RAM_GATED",
+      "may_auto_start": false
+    },
+    {
+      "id": "qwen3-vl-8b-instruct",
+      "role": "vision_candidate",
+      "source": "external_model_candidate",
+      "status": "NOT_DOWNLOADED_NOT_CONNECTED",
+      "may_auto_start": false,
+      "activation_gates": ["license_review", "llama_cpp_vision_compatibility", "vision_projector_available", "ram_storage_budget", "image_corpus_acceptance", "mother_review"]
+    },
+    {
+      "id": "whisper-local-or-android-asr",
+      "role": "speech_recognition_candidate",
+      "source": "software_candidate",
+      "status": "NOT_SELECTED_FOR_PRODUCTION",
+      "may_auto_start": false,
+      "activation_gates": ["offline_availability", "hindi_hinglish_corpus", "latency_measurement", "physical_microphone_acceptance", "privacy_review"]
+    },
+    {
+      "id": "sahibex-native-model-v0.1",
+      "role": "native_language_model_development",
+      "source": "sahibex_training_lab",
+      "status": "PLANNED_NOT_TRAINED",
+      "may_auto_start": false,
+      "activation_gates": ["dataset_provenance", "license_review", "reproducible_training", "benchmark", "security_review", "mother_review", "human_approval"]
+    }
+  ]
+}
