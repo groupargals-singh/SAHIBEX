@@ -1,10 +1,9 @@
-
 """
 SAHIBEX AI - Ultimate Superpower Master Brain Dashboard (app.py)
 =================================================================
 Runs on Structure 10 (24/7 Streamlit + Render + UptimeRobot Hosting).
-Unifies all 10 Cloud Providers, 30+ Model Registry, and 9 Structures into a single dashboard:
-- Structure 1: 9 Cloud Brains + 30+ Specialized Model Registry
+Unifies all 10 Cloud Providers, 30+ Model Registry, Multimodal Super Agents, and 9 Structures into a single dashboard:
+- Structure 1: 9 Cloud Brains + 30+ Specialized Model Registry + Multimodal Super Agents
 - Structure 2-5: 200GB+ GPU, 16 TPU Cores, 78GB+ High-RAM & 1.5TB+ Disk
 - Structure 6: Object Storage (Supabase 1GB + Cloudinary 25GB)
 - Structure 7: Permanent SQL Memory (Turso 9GB, TiDB 5GB, Neon 500MB, Supabase 500MB)
@@ -47,6 +46,12 @@ try:
 except Exception:
     registry_loaded = False
 
+# 4. Load Multimodal Super Agents (Vision, Voice, Live Search, FLUX Studio)
+try:
+    from core.super_agents import super_agents
+except Exception:
+    super_agents = None
+
 # Streamlit Page Configuration
 st.set_page_config(
     page_title="SAHIBEX AI - Ultimate Super Brain",
@@ -77,6 +82,7 @@ menu = st.sidebar.selectbox(
     "Select Superpower Module",
     [
         "🤖 Autonomous Super Brain Chat (Auto-Learning)",
+        "👁️🎙️🎨 Multimodal Super Agents (Vision, Voice, Search & Studio)",
         "📊 Live Infrastructure Diagnostics",
         "📚 30+ Model Registry & Offline GGUF Vault",
         "🧠 Superpower Memory (Remember & Recall)",
@@ -89,6 +95,7 @@ menu = st.sidebar.selectbox(
 with st.sidebar.expander("⚙️ Brain & Memory Settings", expanded=True):
     active_session_id = st.text_input("Active Session ID", value="sahibex_master_session")
     auto_memory_sync = st.checkbox("Auto-Sync Learning Memory (SQL + Vector + Redis)", value=True)
+    enable_live_web = st.checkbox("🌐 Enable Live Internet Search in Chat", value=False)
     offline_gguf_mode = st.checkbox("100% Offline Local GGUF Mode (Port 8080)", value=False)
 
 
@@ -178,6 +185,16 @@ if menu == "🤖 Autonomous Super Brain Chat (Auto-Learning)":
             recalled_sql = []
             recalled_vector = []
 
+            # Optional Step 0: Live Internet Search Injection (if enabled in sidebar)
+            final_user_prompt = user_prompt
+            if enable_live_web and super_agents and not offline_gguf_mode:
+                with st.spinner("🌐 Searching Live Internet for real-time facts..."):
+                    web_context = super_agents.live_web_search(user_prompt)
+                    final_user_prompt = (
+                        f"[LIVE INTERNET SEARCH DATA]:\n{web_context}\n\n"
+                        f"[USER QUESTION]:\n{user_prompt}"
+                    )
+
             # Step 1: Auto-Recall Past Learning Memory from Structures 7, 8, 9
             if auto_memory_sync and memory_store:
                 with st.spinner("🧠 Recalling past knowledge from Redis, 15GB SQL & 8GB Vector Brain..."):
@@ -201,7 +218,7 @@ if menu == "🤖 Autonomous Super Brain Chat (Auto-Learning)":
                 if execution_engine == "🔥 Hugging Face Dedicated Power Models" and not offline_gguf_mode:
                     reply_text = brain_cluster.query_huggingface_power_model(
                         model_key=hf_model_choice,
-                        prompt=user_prompt,
+                        prompt=final_user_prompt,
                     )
                     provider_used = f"Hugging Face Power Hub ({hf_model_choice})"
                 else:
@@ -209,7 +226,7 @@ if menu == "🤖 Autonomous Super Brain Chat (Auto-Learning)":
                         {"role": m["role"], "content": m["content"]}
                         for m in st.session_state.sahibex_chat_history[-6:]
                     ]
-                    chat_messages.append({"role": "user", "content": user_prompt})
+                    chat_messages.append({"role": "user", "content": final_user_prompt})
 
                     reply_text, provider_used = brain_cluster.generate_response(
                         messages=chat_messages,
@@ -253,18 +270,128 @@ if menu == "🤖 Autonomous Super Brain Chat (Auto-Learning)":
 
 
 # =========================================================================
+# NEW MODULE A2: MULTIMODAL SUPER AGENTS (VISION, VOICE, SEARCH & STUDIO)
+# =========================================================================
+elif menu == "👁️🎙️🎨 Multimodal Super Agents (Vision, Voice, Search & Studio)":
+    st.subheader("👁️🎙️🎨 SAHIBEX Multimodal Superpowers (Eyes, Ears, Live Web & Visual Studio)")
+
+    if not super_agents:
+        st.error("⚠️ `core/super_agents.py` load nahi ho paya. Kripya GitHub mein file check karein.")
+    else:
+        tab_vis, tab_voice, tab_img, tab_web = st.tabs([
+            "👁️ Vision (Read Image / Screenshot)",
+            "🎙️ Voice Command (Whisper v3 Turbo)",
+            "🎨 FLUX.1 Image Studio",
+            "🌐 Live Internet Search Agent",
+        ])
+
+        # --- TAB 1: VISION ENGINE ---
+        with tab_vis:
+            st.markdown("### 👁️ SAHIBEX Vision (Upload Photo, Chart, Document, or Code Screenshot)")
+            vis_file = st.file_uploader("Upload Image (JPG, PNG, WEBP)", type=["png", "jpg", "jpeg", "webp"])
+            vis_prompt = st.text_input(
+                "Ask about this image:",
+                value="Is image ko detail mein samjhao. Agar isme koi text, chart, ya code hai toh poora nikaal kar do.",
+            )
+            if vis_file and st.button("👁️ Analyze Image with Vision Brain"):
+                st.image(vis_file, caption="Uploaded Image", width=350)
+                with st.spinner("Analyzing image via Gemini 2.0 / Llama-3.2 Vision..."):
+                    vis_reply, vis_provider = super_agents.analyze_image(vis_file.getvalue(), vis_prompt)
+                st.success(f"Vision Provider: **{vis_provider}**")
+                st.markdown(vis_reply)
+                if auto_memory_sync and memory_store:
+                    try:
+                        memory_store.remember(
+                            session_id=active_session_id,
+                            text=f"[Vision Analysis - {vis_file.name}]: {vis_reply}",
+                            role="assistant",
+                            metadata={"type": "vision_analysis"},
+                        )
+                    except Exception:
+                        pass
+
+        # --- TAB 2: VOICE ENGINE ---
+        with tab_voice:
+            st.markdown("### 🎙️ SAHIBEX Voice Command (Hindi / English Speech-to-Text + Brain Reply)")
+            audio_upload = st.file_uploader("Upload Voice Note / Audio File (WAV, MP3, M4A, OGG)", type=["wav", "mp3", "m4a", "ogg"])
+            if audio_upload and st.button("🎙️ Transcribe & Execute Voice Command"):
+                with st.spinner("Listening via Groq Whisper-Large-v3-Turbo..."):
+                    spoken_text = super_agents.speech_to_text(audio_upload.getvalue(), audio_upload.name)
+                st.info(f"🗣️ **Aapki Awaaz (Transcribed):** {spoken_text}")
+
+                if brain_cluster and not spoken_text.startswith("Voice"):
+                    with st.spinner("⚡ Generating Super Brain reply..."):
+                        voice_reply, voice_brain = brain_cluster.generate_response(
+                            messages=[{"role": "user", "content": spoken_text}]
+                        )
+                    st.success(f"🧠 **Brain Reply ({voice_brain}):**")
+                    st.markdown(voice_reply)
+
+        # --- TAB 3: VISUAL STUDIO (IMAGE GENERATION) ---
+        with tab_img:
+            st.markdown("### 🎨 SAHIBEX Visual Studio (Powered by FLUX.1 & Stable Diffusion)")
+            img_prompt = st.text_area(
+                "Describe the image, logo, or UI mockup you want to generate:",
+                placeholder="Example: A futuristic AI command center hologram glowing in dark blue and gold, ultra-realistic 8k...",
+            )
+            save_to_vault = st.checkbox("Auto-Save generated image to 26GB Cloud Vault (Cloudinary/Supabase)", value=True)
+            if st.button("🎨 Generate High-Res Image"):
+                if img_prompt.strip():
+                    with st.spinner("Rendering image on Cloud GPU via FLUX.1..."):
+                        img_bytes, model_used = super_agents.generate_image(img_prompt)
+                    if img_bytes:
+                        st.success(f"✨ Generated using `{model_used}`")
+                        st.image(img_bytes, caption=img_prompt)
+                        st.download_button(
+                            "⬇️ Download Image (PNG)",
+                            data=img_bytes,
+                            file_name="sahibex_generated.png",
+                            mime="image/png",
+                        )
+                        if save_to_vault and memory_store:
+                            try:
+                                vault_res = memory_store.upload_object(
+                                    file_name=f"flux_{int(time.time())}.png",
+                                    file_bytes=img_bytes,
+                                    content_type="image/png",
+                                )
+                                if "public_url" in vault_res:
+                                    st.markdown(f"☁️ **Saved to 26GB Cloud Vault:** [Open Permanent Link]({vault_res['public_url']})")
+                            except Exception:
+                                pass
+                    else:
+                        st.warning(model_used)
+                else:
+                    st.warning("Kripya image ka description likhein.")
+
+        # --- TAB 4: LIVE WEB SEARCH ---
+        with tab_web:
+            st.markdown("### 🌐 Real-Time Internet Search Engine")
+            web_q = st.text_input("Search live news, stock data, or fresh facts:")
+            if st.button("🌐 Search Live Web"):
+                if web_q.strip():
+                    with st.spinner("Fetching live data from web..."):
+                        live_res = super_agents.live_web_search(web_q)
+                    st.markdown(live_res)
+                else:
+                    st.warning("Search query likhein.")
+
+
+# =========================================================================
 # MODULE 1: INFRASTRUCTURE HEALTH & STATUS (All Structures Diagnostics)
 # =========================================================================
 elif menu == "📊 Live Infrastructure Diagnostics":
     st.subheader("🌐 Real-Time Multi-Cloud Cluster Status")
     st.info("Checking connection health across all active cloud brains, databases, vector stores, object storage, and RAM caches...")
 
-    # Structure 1: 9 Cloud Brains + 30+ Model Registry Diagnostics
+    # Structure 1: 9 Cloud Brains + 30+ Model Registry + Super Agents Diagnostics
     if brain_cluster:
-        st.markdown("### 🤖 Structure 1: 9-Cloud AI Brain Cluster & 30+ Model Registry")
+        st.markdown("### 🤖 Structure 1: 9-Cloud AI Brain Cluster, 30+ Registry & Super Agents")
         col_b1, col_b2 = st.columns(2)
         with col_b1:
-            st.json(brain_cluster.cluster_status())
+            status_data = brain_cluster.cluster_status()
+            status_data["Multimodal Super Agents Ready"] = bool(super_agents)
+            st.json(status_data)
         with col_b2:
             if registry_loaded:
                 st.json(get_registry_summary())
@@ -446,8 +573,8 @@ st.sidebar.markdown("---")
 st.sidebar.markdown(
     """
     <div style='text-align: center; color: #6B7280; font-size: 0.9rem;'>
-    <b>SAHIBEX AI Super Brain v3.0</b><br>
-    10 Cloud Providers | 30+ Models<br>
+    <b>SAHIBEX AI Super Brain v4.0</b><br>
+    10 Cloud Providers | 30+ Models | Multimodal Agents<br>
     🚀 100% Operational
     </div>
     """,
