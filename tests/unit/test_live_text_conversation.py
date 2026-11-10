@@ -7,6 +7,15 @@ def test_greeting_works_without_model_quality_gate():
     assert "नमस्ते" in result.message
     assert result.metadata["response_source"] == "deterministic_text_conversation"
     assert result.verification_status == "STRUCTURALLY_VALID"
+    assert result.plan_created is False
+
+
+def test_roman_hindi_greeting_uses_deterministic_text_path():
+    result = MasterBrain().process("Namaste Sahibex")
+    assert result.success is True
+    assert result.metadata["response_source"] == "deterministic_text_conversation"
+    assert result.plan_created is False
+    assert result.task_count == 0
 
 
 def test_capabilities_are_truthful_about_text_only_scope():

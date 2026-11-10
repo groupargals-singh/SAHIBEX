@@ -413,3 +413,15 @@ This update records existing evidence and policy only. No code changed, no produ
 - The 2,317-test repository regression is PASS for the current software snapshot.
 - No P-series gate is promoted by this test run.
 - Next engineering work should address one NOT VERIFIED integration edge at a time, beginning with runtime wiring design for the existing ExecutionLoop and persistent graph, without duplicating existing engines or bypassing MasterBrain authority.
+
+
+## 2026-11-10 — Text-Chat / Mother Brain Integration Gate (first slice)
+- Live `MasterBrain()` introspection: **61/61 internal specialist role handlers registered**. This is one Mother Brain's in-process role registry, not 61 independent models/processes/child brains; registration is not proof of per-role selection or semantic task acceptance.
+- Fixed Roman Hindi greeting routing: `Namaste Sahibex` now uses the deterministic conversation path and creates no unnecessary plan/tasks.
+- Fixed Roman-script Hinglish arithmetic: `2 + 2 kitna hota hai?` now resolves through the strict safe arithmetic parser without requiring the model endpoint.
+- Focused tests: 126 passed. Full repository regression: **2,320 passed in 168.82s**, exit 0. Changed-file compile checks and `git diff --check` PASS.
+- Actual Termux CLI text session accepted greeting, Hinglish arithmetic, status and exit; runtime reported 61/61 registered role handlers.
+- General free-form model-backed Q&A remains NOT VERIFIED; local model API 8080 was previously OFFLINE. Do not mark the Text-Chat Brain complete from deterministic greeting/arithmetic coverage.
+- No P-series gate promoted; no voice/camera/semantic-vision/Accessibility/device-control acceptance claimed.
+- Next: trace the complete general text path through intent/context, specialist selection/dispatch, model gateway/provider, answer quality/confidence verification and conversation persistence; then build role-by-role dispatch acceptance. Preserve Mother Brain authority and existing security gates.
+- Detailed evidence: `docs/STATUS/SAHIBEX_TEXT_CHAT_MOTHER_BRAIN_GATE_2026-11-10.md`.

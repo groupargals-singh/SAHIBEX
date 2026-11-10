@@ -63,6 +63,10 @@ def resolve_math_question(question: str) -> MathResponse | None:
         "उत्तर", "निकालो", "गणना", "करो", "का", "क्या", "हैं",
         "what", "is", "the", "sum", "of", "calculate", "please",
         "equals", "answer", "result", "how", "much",
+        # Common Roman-script Hindi/Hinglish question words. Keep this list
+        # narrow so unrelated prose still fails closed.
+        "kitna", "kitne", "kitni", "hai", "hain", "hota", "hote",
+        "batao", "bataiye", "jodo", "jod", "yog", "ka", "kya",
     }
     words = re.findall(r"[A-Za-z]+|[\u0900-\u097F]+", text.casefold())
     if any(word not in allowed_words for word in words):

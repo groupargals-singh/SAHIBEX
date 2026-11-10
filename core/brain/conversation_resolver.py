@@ -19,7 +19,7 @@ class ConversationResponse:
 _RULES = (
     (
         re.compile(
-            r"(?:नमस्ते|नमस्कार|प्रणाम|हेलो|हाय|hello|hi|hey)"
+            r"(?:नमस्ते|नमस्कार|प्रणाम|namaste|namaskar|pranam|हेलो|हाय|hello|hi|hey)"
             r"(?:\s+(?:sahibex|\u0938\u093e\u0939\u093f\u092c\u0947\u0915\u094d\u0938))?"
             r"(?:[,،]?\s*(?:एक छोटे वाक्य में हिंदी में जवाब दो|"
             r"हिंदी में जवाब दो|एक वाक्य में जवाब दो|"

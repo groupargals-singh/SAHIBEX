@@ -8,6 +8,20 @@ def test_resolves_hindi_arithmetic_question():
     assert result.answer == "उत्तर: 4"
 
 
+def test_resolves_roman_hinglish_arithmetic_question():
+    result = resolve_math_question("2 + 2 kitna hota hai?")
+    assert result is not None
+    assert result.answer == "Answer: 4"
+
+
+def test_master_brain_answers_roman_hinglish_arithmetic_without_model():
+    brain = MasterBrain()
+    result = brain.process("2 + 2 kitna hota hai?")
+    assert result.success
+    assert result.message == "Answer: 4"
+    assert result.metadata["response_source"] == "safe_arithmetic_resolver"
+
+
 def test_supports_parentheses_and_precedence():
     assert resolve_math_question("(3 + 5) * 2 कितना है?").answer == "उत्तर: 16"
     assert resolve_math_question("10 / 4 कितना है?").answer == "उत्तर: 2.5"
