@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.brain.semantic_intent_brain import SemanticIntentBrain
+from core.brain.semantic_intent_brain import SemanticIntentBrain, SemanticIntentResult
 from core.model_gateway.base import ModelGateway, ModelProvider, ModelRequest, ModelResponse
 from core.policies.approval import ActionType
 
@@ -164,3 +164,180 @@ def test_master_brain_routes_semantic_foreign_language_delete_through_security_g
     assert result.confirmation_required is True
     assert result.verification_status == "NOT_EXECUTED"
     assert result.metadata.get("tool_execution") is not True
+
+
+def test_independent_language_perception_overrides_model_language_guess():
+    brain, provider = build_brain(payload(language_code="en"))
+    result = brain.classify("Mujhe ye samjhao", expected_language_code="hi-Latn")
+    assert result is not None
+    assert result.language_code == "hi-Latn"
+    assert "EXPECTED_LANGUAGE_CODE_JSON" in provider.last_request.prompt
+    assert provider.last_request.metadata["timeout_seconds"] == 45
+
+
+def test_offline_local_semantic_provider_fails_fast_before_generation():
+    class OfflineFixtureProvider(FixtureProvider):
+        def __init__(self):
+            super().__init__(payload())
+            self.health_checks = 0
+
+        def is_available(self, *, timeout=1.0):
+            self.health_checks += 1
+            assert timeout == 1.0
+            return False
+
+    gateway = ModelGateway()
+    provider = OfflineFixtureProvider()
+    gateway.register_provider(provider)
+    brain = SemanticIntentBrain(gateway, provider=provider.name)
+    assert brain.classify("Mujhe ye samjhao") is None
+    assert provider.health_checks == 1
+    assert provider.last_request is None
+
+
+def test_master_brain_uses_semantic_fallback_for_medium_confidence_hinglish_intent(tmp_path):
+    from core.brain.master_brain import MasterBrain
+    from core.brain.mother_operational_integration import MotherOperationalIntegration
+    from core.research.storage import ResearchStorage
+    from security.audit.audit_logger import AuditLogger
+
+    class SemanticFixture:
+        def __init__(self):
+            self.calls = []
+
+        def classify(self, text, *, expected_language_code="und"):
+            self.calls.append((text, expected_language_code))
+            return SemanticIntentResult(
+                intent="explain",
+                action=ActionType.RESPOND,
+                confidence=0.91,
+                needs_clarification=False,
+                clarification_question="",
+                language_code=expected_language_code,
+                rationale="Fixture confirms the explanation intent.",
+                provider="semantic-fixture",
+                model="fixture-v1",
+            )
+
+    semantic = SemanticFixture()
+    brain = MasterBrain(
+        mother_operational=MotherOperationalIntegration(
+            storage=ResearchStorage(tmp_path / "semantic-medium-confidence.db")
+        ),
+        semantic_intent_brain=semantic,
+        audit_logger=AuditLogger(tmp_path / "audit"),
+    )
+    result = brain.process("Thoda explain karo")
+
+    assert semantic.calls == [("Thoda explain karo", "hi-Latn")]
+    assert result.intent == "explain"
+
+
+def test_master_brain_semantic_clarification_stops_medium_confidence_search(tmp_path):
+    from core.brain.master_brain import MasterBrain
+    from core.brain.mother_operational_integration import MotherOperationalIntegration
+    from core.research.storage import ResearchStorage
+    from security.audit.audit_logger import AuditLogger
+
+    class SemanticFixture:
+        def classify(self, text, *, expected_language_code="und"):
+            return SemanticIntentResult(
+                intent="search",
+                action=ActionType.RESEARCH,
+                confidence=0.88,
+                needs_clarification=True,
+                clarification_question="किस विषय पर जानकारी खोजूँ?",
+                language_code=expected_language_code,
+                rationale="The subject is missing.",
+                provider="semantic-fixture",
+                model="fixture-v1",
+            )
+
+    brain = MasterBrain(
+        mother_operational=MotherOperationalIntegration(
+            storage=ResearchStorage(tmp_path / "semantic-search-clarification.db")
+        ),
+        semantic_intent_brain=SemanticFixture(),
+        audit_logger=AuditLogger(tmp_path / "audit"),
+    )
+    brain.context.add_turn(
+        user="We are discussing Python programming.",
+        assistant="Python is a programming language.",
+        intent="explain",
+    )
+    result = brain.process("Is topic par latest jankari khojo")
+
+    assert result.verification_status == "CLARIFICATION_REQUIRED"
+    assert "किस विषय" in result.message
+    assert result.permission_allowed is False
+    assert result.plan_created is False
+    assert result.metadata.get("tool_execution") is not True
+
+
+def test_semantic_classifier_rejects_a_model_echo_as_a_clarification():
+    brain, _ = build_brain(
+        payload(
+            intent="search",
+            action="respond",
+            confidence=0.90,
+            needs_clarification=True,
+            clarification_question="Is topic par latest jankari khojo",
+        )
+    )
+    assert brain.classify("Is topic par latest jankari khojo") is None
+
+
+def test_semantic_classifier_rejects_non_question_text_when_clarification_is_flagged():
+    brain, _ = build_brain(
+        payload(
+            intent="search",
+            action="respond",
+            confidence=0.90,
+            needs_clarification=True,
+            clarification_question="Mujhe ye samjhao",
+        )
+    )
+    assert brain.classify("Is topic par latest jankari khojo") is None
+
+
+def test_master_brain_enables_semantic_fallback_by_default_for_local_provider(tmp_path, monkeypatch):
+    from core.brain.master_brain import MasterBrain
+    from core.brain.mother_operational_integration import MotherOperationalIntegration
+    from core.model_gateway.local_llama_provider import LocalLlamaProvider
+    from core.research.storage import ResearchStorage
+    from security.audit.audit_logger import AuditLogger
+
+    monkeypatch.delenv("SAHIBEX_SEMANTIC_INTENT_ENABLED", raising=False)
+    gateway = ModelGateway()
+    gateway.register_provider(LocalLlamaProvider(model="fixture-local-model"))
+    operational = MotherOperationalIntegration(
+        storage=ResearchStorage(tmp_path / "semantic-default-local.db"),
+        model_gateway=gateway,
+    )
+    brain = MasterBrain(
+        mother_operational=operational,
+        audit_logger=AuditLogger(tmp_path / "audit"),
+    )
+    assert brain.semantic_intent_brain is not None
+    assert brain.semantic_intent_brain.provider == "local"
+
+
+def test_master_brain_respects_explicit_semantic_fallback_disable(tmp_path, monkeypatch):
+    from core.brain.master_brain import MasterBrain
+    from core.brain.mother_operational_integration import MotherOperationalIntegration
+    from core.model_gateway.local_llama_provider import LocalLlamaProvider
+    from core.research.storage import ResearchStorage
+    from security.audit.audit_logger import AuditLogger
+
+    monkeypatch.setenv("SAHIBEX_SEMANTIC_INTENT_ENABLED", "0")
+    gateway = ModelGateway()
+    gateway.register_provider(LocalLlamaProvider(model="fixture-local-model"))
+    operational = MotherOperationalIntegration(
+        storage=ResearchStorage(tmp_path / "semantic-disabled-local.db"),
+        model_gateway=gateway,
+    )
+    brain = MasterBrain(
+        mother_operational=operational,
+        audit_logger=AuditLogger(tmp_path / "audit"),
+    )
+    assert brain.semantic_intent_brain is None

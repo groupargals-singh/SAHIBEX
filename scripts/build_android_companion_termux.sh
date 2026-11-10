@@ -27,9 +27,9 @@ fi
 
 DOWNLOADS="$HOME/storage/downloads"
 if [[ -d "$DOWNLOADS" && -w "$DOWNLOADS" ]]; then
-  cp "$APK" "$DOWNLOADS/SAHIBEX-Android-Companion-P8-debug.apk"
-  sha256sum "$DOWNLOADS/SAHIBEX-Android-Companion-P8-debug.apk"
-  echo "APK copied to: $DOWNLOADS/SAHIBEX-Android-Companion-P8-debug.apk"
+  cp "$APK" "$DOWNLOADS/SAHIBEX-Master-Brain-0.3.6-debug.apk"
+  sha256sum "$DOWNLOADS/SAHIBEX-Master-Brain-0.3.6-debug.apk"
+  echo "APK copied to: $DOWNLOADS/SAHIBEX-Master-Brain-0.3.6-debug.apk"
 else
   echo "Downloads folder unavailable; APK remains at: $APK"
 fi

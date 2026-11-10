@@ -24,6 +24,8 @@ class MotherDecisionContext:
     retrieval_summary: str
     research_available: bool = True
     learning_available: bool = True
+    working_memory_ids: tuple[str, ...] = ()
+    working_memory_items: tuple[dict[str, Any], ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.request, str) or not self.request.strip():
@@ -46,6 +48,12 @@ class MotherDecisionContext:
 
         if not isinstance(self.knowledge_items, tuple):
             raise TypeError("knowledge_items must be a tuple")
+        if not isinstance(self.working_memory_ids, tuple):
+            raise TypeError("working_memory_ids must be a tuple")
+        if not isinstance(self.working_memory_items, tuple):
+            raise TypeError("working_memory_items must be a tuple")
+        if len(self.working_memory_ids) != len(self.working_memory_items):
+            raise ValueError("working_memory_ids must correspond to working_memory_items")
 
         if len(self.memory_ids) != len(self.memory_items):
             raise ValueError(
@@ -98,6 +106,9 @@ class MotherDecisionContext:
             "knowledge_count": self.knowledge_count,
             "memory_ids": self.memory_ids,
             "knowledge_ids": self.knowledge_ids,
+            "working_memory_count": len(self.working_memory_ids),
+            "working_memory_ids": self.working_memory_ids,
+            "working_memory_items": self.working_memory_items,
             "retrieval_id": self.retrieval_id,
             "retrieval_summary": self.retrieval_summary,
             "research_available": self.research_available,

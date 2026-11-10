@@ -6,12 +6,19 @@ from typing import Any, Callable
 from uuid import uuid4
 import os
 import math
+from datetime import datetime, timezone
 
 from security.audit.audit_logger import AuditLogger
 
 from core.brain.context import ContextManager
+from core.brain.attention import AttentionEngine, AttentionInput
 from core.brain.intent import IntentEngine, IntentResult
 from core.brain.semantic_intent_brain import SemanticIntentBrain
+from core.brain.input_normalization import InputNormalizationEngine
+from core.brain.perception_language_brain import PerceptionLanguageBrain
+from core.brain.universal_language_brain import UniversalLanguageBrain
+from core.brain.contextual_input_understanding import ContextualInputUnderstandingBrain
+from core.brain.confidence_verification_brain import ConfidenceVerificationBrain
 from core.brain.mother_learning_integration import MotherLearningIntegration
 from core.brain.mother_decision_context import MotherDecisionContext
 from core.brain.mother_runtime_state import (
@@ -57,6 +64,7 @@ from core.brain.memory_brain import MemoryBrain
 from core.brain.knowledge_brain import KnowledgeBrain
 from core.brain.research_learning_brain import ResearchLearningBrain
 from core.brain.tool_brain import ToolBrain
+from core.brain.dynamic_tool_creation_brain import DynamicToolCandidate
 from core.agent.autonomous_work_brain import AutonomousWorkBrain
 from core.agent_goal import AgentGoal
 from core.brain.specialist_child_manager import SpecialistChildBrainManager
@@ -223,6 +231,7 @@ class MasterBrain:
         mother_learning: MotherLearningIntegration | None = None,
         semantic_intent_brain: SemanticIntentBrain | None = None,
         audit_logger: AuditLogger | None = None,
+        tool_project_root: Path | None = None,
     ) -> None:
         self.audit_logger = audit_logger or AuditLogger(
             Path(__file__).resolve().parents[2] / "security" / "audit"
@@ -252,6 +261,10 @@ class MasterBrain:
             if context_manager is not None
             else ContextManager()
         )
+
+        # Advisory cognitive focus only; this engine never grants permission
+        # and never suppresses a request or changes execution authority.
+        self.attention_engine = AttentionEngine()
 
         self.planner = (
             planner
@@ -376,11 +389,38 @@ class MasterBrain:
             else MotherOperationalIntegration()
         )
 
-        # Semantic inference is opt-in. The default mock provider is not a real
-        # language model; remote inference needs a separate explicit opt-in.
+        # Unified language perception runs before deterministic routing.
+        # Only curated high-confidence corrections are automatic; uncertain
+        # dictionary matches remain suggestions and never silently rewrite.
+        self.input_normalization_engine = InputNormalizationEngine()
+        self.perception_language_brain = PerceptionLanguageBrain()
+        self.universal_language_brain = UniversalLanguageBrain()
+        self.confidence_verification_brain = ConfidenceVerificationBrain()
+        self.contextual_input_understanding_brain = None
+        language_provider = self.mother_operational.default_provider
+        contextual_enabled = os.getenv(
+            "SAHIBEX_CONTEXTUAL_INPUT_ENABLED",
+            "1" if language_provider == "local" else "0",
+        ).strip() == "1"
+        if contextual_enabled:
+            remote_language_allowed = os.getenv(
+                "SAHIBEX_CONTEXTUAL_INPUT_ALLOW_REMOTE", "0"
+            ).strip() == "1"
+            if language_provider != "mock" and (
+                language_provider != "remote" or remote_language_allowed
+            ):
+                self.contextual_input_understanding_brain = ContextualInputUnderstandingBrain(
+                    self.mother_operational.model.gateway,
+                    provider=language_provider,
+                )
+
+        # Semantic inference defaults on for the local provider, but remains
+        # opt-in for remote providers. Mock output is never treated as real
+        # semantic understanding; local health checks fail closed when offline.
         self.semantic_intent_brain = semantic_intent_brain
         if self.semantic_intent_brain is None and os.getenv(
-            "SAHIBEX_SEMANTIC_INTENT_ENABLED", "0"
+            "SAHIBEX_SEMANTIC_INTENT_ENABLED",
+            "1" if self.mother_operational.default_provider == "local" else "0",
         ).strip() == "1":
             provider = self.mother_operational.default_provider
             remote_allowed = os.getenv(
@@ -467,8 +507,13 @@ class MasterBrain:
         self.tool_brain = ToolBrain(
             permission_engine=self.permission,
             emergency_stop=self.emergency_stop,
+            project_root=tool_project_root,
+            audit_logger=self.audit_logger,
         )
-        self.autonomous_work_brain = AutonomousWorkBrain()
+        checkpoint_path = os.getenv("SAHIBEX_AUTONOMOUS_CHECKPOINT_PATH", "").strip()
+        self.autonomous_work_brain = AutonomousWorkBrain(
+            checkpoint_path=checkpoint_path or None
+        )
 
         # Wire only capabilities that already have concrete, bounded runtime
         # implementations. Other role names remain visibly unwired until a
@@ -1298,10 +1343,14 @@ class MasterBrain:
             intent = "general_request"
         if action not in allowed_actions:
             action = "respond"
+        decision_context = context.get("decision_context", {})
+        if not isinstance(decision_context, dict):
+            decision_context = {}
         result = self.mother_reasoning.analyze_approved_request(
             user_input=request,
             intent=intent,
             action=action,
+            decision_context=decision_context,
         )
         quality = assess_answer(request, result.reasoning_response)
         return {
@@ -1310,6 +1359,8 @@ class MasterBrain:
             "status": "STRUCTURALLY_VALID" if quality.acceptable else "QUALITY_REJECTED",
             "quality_reasons": quality.reasons,
             "factual_verification": False,
+            "decision_context": result.context_summary,
+            "reasoning_assessment": result.reasoning_assessment,
             "_reasoning_result": result,
         }
 
@@ -1395,9 +1446,29 @@ class MasterBrain:
         requested_intent = context.get("intent", "general_request")
         allowed_intents = {"search", "learn", "create", "code", "explain", "general_request"}
         intent = requested_intent if requested_intent in allowed_intents else "general_request"
+        decision_context = context.get("decision_context", {})
+        if not isinstance(decision_context, dict):
+            decision_context = {}
         result = self._build_plan(request.strip(), intent)
+        # Carry read-only context provenance into the plan record. The
+        # planner still creates tasks only; this metadata grants no authority.
+        result.metadata["decision_context"] = decision_context
+        result.metadata["context_memory_ids"] = tuple(
+            decision_context.get("memory_ids", ())
+        )
+        result.metadata["context_knowledge_ids"] = tuple(
+            decision_context.get("knowledge_ids", ())
+        )
+        result.metadata["context_working_memory_ids"] = tuple(
+            decision_context.get("working_memory_ids", ())
+        )
+        result.metadata["context_retrieval_id"] = decision_context.get(
+            "retrieval_id"
+        )
+        result.metadata["context_aware"] = True
         return {
             "success": result.success,
+            "decision_context": decision_context,
             "status": "PLAN_CREATED_NOT_EXECUTED" if result.success else "PLAN_FAILED",
             "intent": intent,
             "goal_id": getattr(result.goal, "goal_id", None),
@@ -1728,6 +1799,8 @@ class MasterBrain:
 
     def _internal_web_tools_handler(self, request: str, context: dict):
         """Discover registered tool candidates only; never execute or authorize a tool."""
+        if context.get("action") == "propose_dynamic_tool":
+            return self._internal_dynamic_tool_creation_handler(request, context)
         query = context.get("query", request)
         limit = context.get("max_results", 10)
         if not isinstance(query, str) or not query.strip() or len(query) > 500:
@@ -1755,6 +1828,70 @@ class MasterBrain:
             "permissions_granted": False,
             "protected_actions_authorized": False,
         }
+
+    def _internal_dynamic_tool_creation_handler(self, request: str, context: dict):
+        """Create a reviewed proposal only; this handler never approves or activates."""
+        try:
+            candidate = self.propose_dynamic_tool(request, context=context)
+        except (ValueError, TypeError, KeyError) as exc:
+            return {
+                "success": False,
+                "status": "DYNAMIC_TOOL_PROPOSAL_REJECTED",
+                "reason": str(exc)[:300],
+                "tool_activated": False,
+                "approval_required": True,
+            }
+        return self._dynamic_tool_candidate_summary(candidate)
+
+    @staticmethod
+    def _dynamic_tool_candidate_summary(candidate: DynamicToolCandidate) -> dict:
+        return {
+            "success": candidate.status in {"STAGED", "ACTIVE", "ROLLED_BACK"},
+            "status": candidate.status,
+            "candidate_id": candidate.candidate_id,
+            "name": candidate.spec.name,
+            "description": candidate.spec.description,
+            "operations": [
+                {"operation": step.operation, "arguments": dict(step.arguments)}
+                for step in candidate.spec.steps
+            ],
+            "sha256": candidate.sha256,
+            "findings": list(candidate.findings),
+            "approval_required": True,
+            "tool_activated": candidate.status == "ACTIVE",
+            "next_action": "Review the exact proposal, then call approve_dynamic_tool_candidate with explicit user approval.",
+        }
+
+    def propose_dynamic_tool(self, request: str, *, context: dict | None = None) -> DynamicToolCandidate:
+        """Mother Brain proposal entry point. It can stage but cannot activate."""
+        return self.tool_brain.dynamic_tool_creation.propose_from_request(
+            request, context=context
+        )
+
+    def approve_dynamic_tool_candidate(self, candidate_id: str, *, user_approved: bool = False) -> dict:
+        """Explicit user-controlled activation boundary; no LLM may set approval."""
+        candidate = self.tool_brain.dynamic_tool_creation.approve(
+            candidate_id, user_approved=user_approved
+        )
+        return self._dynamic_tool_candidate_summary(candidate)
+
+    def rollback_dynamic_tool_candidate(self, candidate_id: str, *, user_approved: bool = False) -> dict:
+        candidate = self.tool_brain.dynamic_tool_creation.rollback(
+            candidate_id, user_approved=user_approved
+        )
+        return self._dynamic_tool_candidate_summary(candidate)
+
+    def verify_dynamic_tool_candidate(self, candidate_id: str) -> dict:
+        """Static candidate verification; never executes the proposed tool."""
+        return self.tool_brain.dynamic_tool_creation.verify_candidate(candidate_id)
+
+    def dynamic_tool_creation_status(self) -> dict:
+        """Read-only lifecycle and capability diagnostics for the tool builder."""
+        return self.tool_brain.dynamic_tool_creation.lifecycle_status()
+
+    def design_dynamic_tool(self, request: str, *, context: dict | None = None) -> dict:
+        """Create a staged design report; activation still requires separate approval."""
+        return self.tool_brain.dynamic_tool_creation.design_report(request, context=context)
 
     @staticmethod
     def _internal_audio_handler(request: str, context: dict):
@@ -2591,6 +2728,148 @@ class MasterBrain:
             max_steps=max_steps,
         )
 
+    def _prepare_user_input(self, text: str) -> tuple[str, dict[str, Any]]:
+        """Normalize and understand text without granting authority or guessing silently."""
+        normalized = self.input_normalization_engine.normalize(
+            modality="text",
+            content=text,
+            source_id="user-text",
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            confidence=1.0,
+            metadata={"channel": "master_brain"},
+        )
+        original = normalized.content
+        try:
+            perception = self.perception_language_brain.assess(original)
+        except (TypeError, ValueError):
+            language = self.universal_language_brain.detect(original)
+            return original, {
+                "status": "PERCEPTION_SKIPPED_INPUT_LIMIT_OR_INVALID",
+                "input_id": normalized.input_id,
+                "input_confidence": normalized.confidence,
+                "input_confidence_basis": "text_payload_integrity_only; ASR confidence unavailable",
+                "original_text": original,
+                "normalized_text": original,
+                "language_code": language.language_code,
+                "language_name": language.language_name,
+                "script": language.script,
+                "language_confidence": language.confidence,
+                "mixed_language": language.mixed,
+                "corrections": [],
+                "suggestions_not_applied": [],
+                "known_terms": [],
+                "contextual_repair_status": "SKIPPED_INPUT_VALIDATION",
+                "contextual_repair_confidence": None,
+                "permission_granted": False,
+                "action_executed": False,
+                "raw_input_preserved": True,
+            }
+        candidate = perception.normalized_text
+        correction_rows = [
+            {
+                "original": item.original,
+                "corrected": item.corrected,
+                "reason": item.reason,
+                "confidence": item.confidence,
+            }
+            for item in perception.corrections
+        ]
+        suggestion_rows = [
+            {
+                "original": item.original,
+                "suggested": item.corrected,
+                "reason": item.reason,
+                "confidence": item.confidence,
+            }
+            for item in perception.suggestions
+        ]
+        contextual_status = "DISABLED_BY_DEFAULT"
+        contextual_confidence = None
+
+        # Model-based repair is an optional second opinion. It is never used
+        # with the mock provider and its own numeric/negation/similarity guards
+        # must pass before a candidate can enter the main request pipeline.
+        contextual = self.contextual_input_understanding_brain
+        if contextual is not None and (
+            perception.suggestions or len(perception.corrections) >= 2
+        ):
+            contextual_result = contextual.understand(candidate)
+            contextual_status = contextual_result.status
+            contextual_confidence = contextual_result.confidence
+            if contextual_result.changed:
+                safe_candidate = contextual_result.corrected_text
+                if (
+                    ContextualInputUnderstandingBrain._numbers(original)
+                    == ContextualInputUnderstandingBrain._numbers(safe_candidate)
+                    and ContextualInputUnderstandingBrain._negations(original)
+                    == ContextualInputUnderstandingBrain._negations(safe_candidate)
+                ):
+                    repaired = self.perception_language_brain.assess(
+                        safe_candidate,
+                        language_code=contextual_result.language_code,
+                    )
+                    candidate = repaired.normalized_text
+                    correction_rows.extend(
+                        {
+                            "original": item.original,
+                            "corrected": item.corrected,
+                            "reason": "contextual_model_" + item.reason,
+                            "confidence": item.confidence,
+                        }
+                        for item in repaired.corrections
+                    )
+                    if safe_candidate != original:
+                        correction_rows.append({
+                            "original": original,
+                            "corrected": safe_candidate,
+                            "reason": "contextual_model_repair",
+                            "confidence": contextual_result.confidence,
+                        })
+                else:
+                    contextual_status = "REJECTED_INDEPENDENT_SAFETY_CHECK"
+        elif contextual is not None:
+            contextual_status = "SKIPPED_NO_AMBIGUOUS_SPELLING"
+
+        # Last independent guard: even curated normalization may not alter
+        # numbers or explicit negation. Keep the exact original if it does.
+        if (
+            ContextualInputUnderstandingBrain._numbers(original)
+            != ContextualInputUnderstandingBrain._numbers(candidate)
+            or ContextualInputUnderstandingBrain._negations(original)
+            != ContextualInputUnderstandingBrain._negations(candidate)
+        ):
+            candidate = original
+            correction_rows = []
+            status = "REJECTED_SAFETY_MISMATCH"
+        elif candidate != original:
+            status = "CURATED_OR_VERIFIED_REPAIR_APPLIED"
+        else:
+            status = "NO_SAFE_CORRECTION_NEEDED"
+
+        language = self.universal_language_brain.detect(candidate)
+        trace: dict[str, Any] = {
+            "status": status,
+            "input_id": normalized.input_id,
+            "input_confidence": normalized.confidence,
+            "input_confidence_basis": "text_payload_integrity_only; ASR confidence unavailable",
+            "original_text": original,
+            "normalized_text": candidate,
+            "language_code": language.language_code,
+            "language_name": language.language_name,
+            "script": language.script,
+            "language_confidence": language.confidence,
+            "mixed_language": language.mixed,
+            "corrections": correction_rows,
+            "suggestions_not_applied": suggestion_rows,
+            "known_terms": list(perception.known_terms),
+            "contextual_repair_status": contextual_status,
+            "contextual_repair_confidence": contextual_confidence,
+            "permission_granted": False,
+            "action_executed": False,
+            "raw_input_preserved": True,
+        }
+        return candidate, trace
+
     def process(
         self,
         text: str,
@@ -2598,6 +2877,8 @@ class MasterBrain:
         user_confirmation: bool = False,
     ) -> BrainResult:
         self.runtime_state = MotherBrainState()
+        raw_text = text if isinstance(text, str) else ""
+        input_trace: dict[str, Any] | None = None
 
         # ---------------------------------------------------------
         # EMPTY REQUEST
@@ -2628,13 +2909,117 @@ class MasterBrain:
                 verification_status="NOT_EXECUTED",
             )
 
-            self._record_context(text, result)
+            self._record_context(raw_text, result, input_understanding=input_trace)
             return result
 
         # ---------------------------------------------------------
         # RECEIVE REQUEST
         # ---------------------------------------------------------
         self.runtime_state.begin(text)
+        text, input_trace = self._prepare_user_input(text)
+
+        # Resolve only context-grounded references. If a word has multiple
+        # common meanings or a demonstrative has no prior referent, ask before
+        # entering a resolver, planner, model, or tool path.
+        recent_turns = self.context.recent(3)
+        context_parts: list[str] = []
+        seen_context_users: set[str] = set()
+
+        def append_context_turn(user_value: str, assistant_value: str) -> None:
+            user_value = str(user_value or "").strip()[:2000]
+            assistant_value = str(assistant_value or "").strip()[:2000]
+            if not user_value or user_value.casefold() in seen_context_users:
+                return
+            seen_context_users.add(user_value.casefold())
+            # A prior clarification question lists alternatives; it is not
+            # evidence that the user selected one of those meanings.
+            assistant_is_clarification = (
+                assistant_value.rstrip().endswith(("?", "؟"))
+                or "do you mean" in assistant_value.casefold()
+                or "which file" in assistant_value.casefold()
+                or "किस चीज़" in assistant_value
+                or "किस फ़ाइल" in assistant_value
+                or "किस विषय" in assistant_value
+            )
+            context_parts.append(
+                user_value if assistant_is_clarification
+                else user_value + " " + assistant_value
+            )
+
+        for turn in reversed(recent_turns):
+            append_context_turn(turn.user, turn.assistant)
+
+        # ContextManager is intentionally in-memory. Recover a small, newest-first
+        # conversation window from persistent MemoryBrain after process restart.
+        try:
+            persisted_turns = self.memory_brain.retrieve_recent_conversations(limit=5)
+        except Exception:
+            persisted_turns = []
+        for memory in persisted_turns:
+            content = str(getattr(memory, "content", ""))
+            if "\nSAHIBEX: " in content:
+                user_part, assistant_part = content.split("\nSAHIBEX: ", 1)
+                user_part = user_part.removeprefix("User: ")
+                append_context_turn(user_part, assistant_part)
+            else:
+                append_context_turn(content, "")
+
+        prior_context = " ".join(context_parts)[-4000:]
+        ambiguous, ambiguity_question, ambiguity_reasons = (
+            self.confidence_verification_brain.detect_ambiguity(
+                text,
+                context_text=prior_context,
+                language_code=str(input_trace.get("language_code", "und")),
+            )
+        )
+        if ambiguous:
+            language_confidence = float(
+                input_trace.get("language_confidence", 0.0)
+            )
+            confidence_decision = self.confidence_verification_brain.assess(
+                input_id=str(input_trace.get("input_id", "master-input")),
+                text=text,
+                intent_confidence=0.30,
+                language_confidence=language_confidence,
+                input_confidence=float(input_trace.get("input_confidence", 1.0)),
+                ambiguity_question=ambiguity_question,
+                ambiguity_reasons=ambiguity_reasons,
+                missing_information=True,
+            )
+            self.runtime_state.transition(MotherRuntimeState.UNDERSTANDING)
+            self.runtime_state.set_request_context(
+                intent="general_request", action="respond", risk="low"
+            )
+            self.runtime_state.set_authority(
+                permission_allowed=False, confirmation_required=False
+            )
+            self.runtime_state.block("Clarification required before proceeding.")
+            result = self._blocked_result(
+                text=text,
+                intent="general_request",
+                intent_confidence=0.30,
+                action=ActionType.RESPOND,
+                action_confidence=0.30,
+                risk="low",
+                authority_decision=ActionDecision.DENY.value,
+                confirmation_required=False,
+                message=confidence_decision.clarification_question,
+                verification_status="CLARIFICATION_REQUIRED",
+                permission_allowed=False,
+                metadata={
+                    "confidence_verification": confidence_decision.to_dict(),
+                    "ambiguity_detection": {
+                        "status": "AMBIGUOUS",
+                        "reasons": list(ambiguity_reasons),
+                        "prior_context_used": bool(prior_context),
+                    },
+                    "action_executed": False,
+                    "grants_authority": False,
+                },
+            )
+            result.metadata["mother_runtime_state"] = self.runtime_state.snapshot()
+            self._record_context(raw_text, result, input_understanding=input_trace)
+            return result
 
         # SAFE ARITHMETIC: deterministic and independent of language-model quality.
         math_response = resolve_math_question(text)
@@ -2669,7 +3054,7 @@ class MasterBrain:
             )
             self.runtime_state.complete("safe arithmetic resolved")
             result.metadata["mother_runtime_state"] = self.runtime_state.snapshot()
-            self._record_context(text, result)
+            self._record_context(raw_text, result, input_understanding=input_trace)
             return result
 
         # FAST, CURATED FACT: resolve only exact supported questions.
@@ -2719,7 +3104,7 @@ class MasterBrain:
             result.metadata["mother_runtime_state"] = (
                 self.runtime_state.snapshot()
             )
-            self._record_context(text, result)
+            self._record_context(raw_text, result, input_understanding=input_trace)
             return result
 
         # BASIC TEXT CONVERSATION: deterministic greetings, capability, and
@@ -2759,7 +3144,7 @@ class MasterBrain:
             )
             self.runtime_state.complete("basic text conversation answered")
             result.metadata["mother_runtime_state"] = self.runtime_state.snapshot()
-            self._record_context(text, result)
+            self._record_context(raw_text, result, input_understanding=input_trace)
             return result
 
         # SAFE, EXACT TEXT TASKS: deterministic answers for validated common
@@ -2781,19 +3166,30 @@ class MasterBrain:
             )
             self.runtime_state.complete("deterministic text task answered")
             result.metadata["mother_runtime_state"] = self.runtime_state.snapshot()
-            self._record_context(text, result)
+            self._record_context(raw_text, result, input_understanding=input_trace)
             return result
 
         # ---------------------------------------------------------
         # INTENT + OPTIONAL MULTILINGUAL SEMANTIC FALLBACK
         # ---------------------------------------------------------
-        intent_result = self.intent_engine.detect(text)
+        contextual_intent_detector = getattr(self.intent_engine, "detect_with_context", None)
+        intent_result = (
+            contextual_intent_detector(text, context_text=prior_context)
+            if callable(contextual_intent_detector)
+            else self.intent_engine.detect(text)
+        )
         semantic_result = None
         if (
             self.semantic_intent_brain is not None
-            and (intent_result.intent == "general_request" or intent_result.confidence < 0.50)
+            and (
+                intent_result.intent == "general_request"
+                or intent_result.confidence < SemanticIntentBrain.MIN_CONFIDENCE
+            )
         ):
-            semantic_result = self.semantic_intent_brain.classify(text)
+            semantic_result = self.semantic_intent_brain.classify(
+                text,
+                expected_language_code=str(input_trace.get("language_code", "und")),
+            )
             if semantic_result is not None and semantic_result.needs_clarification:
                 clarification_action = semantic_result.action
                 clarification_risk = self.permission.RISK_MAP[clarification_action]
@@ -2813,6 +3209,9 @@ class MasterBrain:
                         "semantic_intent": {
                             "status": "CLARIFICATION_REQUIRED",
                             "language_code": semantic_result.language_code,
+                            "confidence": semantic_result.confidence,
+                            "needs_clarification": True,
+                            "clarification_question": semantic_result.clarification_question,
                             "provider": semantic_result.provider,
                             "model": semantic_result.model,
                             "grants_authority": False,
@@ -2830,7 +3229,7 @@ class MasterBrain:
                     confirmation_required=False,
                     reason="Semantic classifier requested clarification; no action executed.",
                 )
-                self._record_context(text, result)
+                self._record_context(raw_text, result, input_understanding=input_trace)
                 return result
             if semantic_result is not None and semantic_result.accepted:
                 intent_result = IntentResult(
@@ -2852,8 +3251,9 @@ class MasterBrain:
         # ---------------------------------------------------------
         # ACTION CLASSIFICATION
         # ---------------------------------------------------------
+        action_input = text if raw_text == text else raw_text + "\n" + text
         action, constitution_action = self._classify_action(
-            text,
+            action_input,
             intent_result.intent,
         )
         # Semantic classification may refine an otherwise non-protected route,
@@ -2868,7 +3268,7 @@ class MasterBrain:
             constitution_action = self._action_class_for_semantic(action)
 
         action_confidence = self._action_confidence(
-            text,
+            action_input,
             action,
         )
         if (
@@ -3011,7 +3411,7 @@ class MasterBrain:
                 risk=risk.value, confirmation_required=False,
                 reason=authority.reason,
             )
-            self._record_context(text, result)
+            self._record_context(raw_text, result, input_understanding=input_trace)
             return result
 
         # ---------------------------------------------------------
@@ -3048,7 +3448,7 @@ class MasterBrain:
                 risk=risk.value, confirmation_required=True,
                 reason="Protected action requires explicit user confirmation.",
             )
-            self._record_context(text, result)
+            self._record_context(raw_text, result, input_understanding=input_trace)
             return result
 
         # ---------------------------------------------------------
@@ -3081,7 +3481,7 @@ class MasterBrain:
                 confirmation_required=permission.requires_confirmation,
                 reason=permission.reason,
             )
-            self._record_context(text, result)
+            self._record_context(raw_text, result, input_understanding=input_trace)
             return result
 
         # ---------------------------------------------------------
@@ -3117,7 +3517,7 @@ class MasterBrain:
                 confirmation_required=permission.requires_confirmation,
                 reason="Request failed safety verification.",
             )
-            self._record_context(text, result)
+            self._record_context(raw_text, result, input_understanding=input_trace)
             return result
 
         # ---------------------------------------------------------
@@ -3131,6 +3531,27 @@ class MasterBrain:
             self.mother_operational.memory_knowledge.retrieve(
                 query=text,
             )
+        )
+
+        active_working_entries = self.memory_brain.working_memory.entries()[:5]
+        working_memory_ids = tuple(
+            entry.memory.memory_id for entry in active_working_entries
+        )
+        working_memory_items = tuple(
+            {
+                "memory_id": entry.memory.memory_id,
+                "content": str(entry.memory.content)[:300],
+                "memory_type": str(entry.memory.memory_type),
+                "confidence": float(entry.memory.confidence),
+                "verification_status": str(
+                    entry.memory.metadata.get("verification_status", "UNVERIFIED")
+                    if isinstance(entry.memory.metadata, dict)
+                    else "UNVERIFIED"
+                ),
+                "source": "bounded_working_memory",
+                "is_verified_evidence": False,
+            }
+            for entry in active_working_entries
         )
 
         decision_context = MotherDecisionContext(
@@ -3153,6 +3574,8 @@ class MasterBrain:
             retrieval_summary=decision_retrieval.summary,
             research_available=True,
             learning_available=True,
+            working_memory_ids=working_memory_ids,
+            working_memory_items=working_memory_items,
         )
 
         # ---------------------------------------------------------
@@ -3169,7 +3592,11 @@ class MasterBrain:
         reasoning_dispatch = self.dispatch_internal_brain(
             "reasoning",
             text,
-            {"intent": intent_result.intent, "action": action.value},
+            {
+                "intent": intent_result.intent,
+                "action": action.value,
+                "decision_context": decision_context.summary(),
+            },
             authorization_passed=permission.allowed,
             verification_passed=verification.verified,
         )
@@ -3194,7 +3621,7 @@ class MasterBrain:
                 verification_status="NOT_EXECUTED",
                 permission_allowed=permission.allowed,
             )
-            self._record_context(text, result)
+            self._record_context(raw_text, result, input_understanding=input_trace)
             return result
 
         if not reasoning_result.success:
@@ -3220,7 +3647,7 @@ class MasterBrain:
                 permission_allowed=permission.allowed,
             )
 
-            self._record_context(text, result)
+            self._record_context(raw_text, result, input_understanding=input_trace)
             return result
 
         # ---------------------------------------------------------
@@ -3238,7 +3665,10 @@ class MasterBrain:
         orchestration_dispatch = self.dispatch_internal_brain(
             "orchestration",
             text,
-            {"intent": intent_result.intent},
+            {
+                "intent": intent_result.intent,
+                "decision_context": decision_context.summary(),
+            },
             authorization_passed=permission.allowed,
             verification_passed=verification.verified,
         )
@@ -3262,7 +3692,7 @@ class MasterBrain:
                 verification_status="NOT_EXECUTED",
                 permission_allowed=permission.allowed,
             )
-            self._record_context(text, result)
+            self._record_context(raw_text, result, input_understanding=input_trace)
             return result
 
         internal_role_trace = {
@@ -3324,7 +3754,7 @@ class MasterBrain:
                     permission_allowed=tool_result.allowed,
                     plan=plan,
                 )
-                self._record_context(text, result)
+                self._record_context(raw_text, result, input_understanding=input_trace)
                 return result
 
         # ---------------------------------------------------------
@@ -3370,7 +3800,7 @@ class MasterBrain:
                     permission_allowed=tool_result.allowed,
                     plan=plan,
                 )
-                self._record_context(text, result)
+                self._record_context(raw_text, result, input_understanding=input_trace)
                 return result
 
         # ---------------------------------------------------------
@@ -3488,7 +3918,7 @@ class MasterBrain:
                     },
                 )
 
-                self._record_context(text, result)
+                self._record_context(raw_text, result, input_understanding=input_trace)
                 return result
 
         # ---------------------------------------------------------
@@ -3592,7 +4022,7 @@ class MasterBrain:
                     },
                 )
 
-                self._record_context(text, result)
+                self._record_context(raw_text, result, input_understanding=input_trace)
                 return result
 
         # ---------------------------------------------------------
@@ -3639,7 +4069,7 @@ class MasterBrain:
                         permission_allowed=permission.allowed,
                         plan=plan,
                     )
-                    self._record_context(text, result)
+                    self._record_context(raw_text, result, input_understanding=input_trace)
                     return result
             else:
                 operational_result = (
@@ -3690,7 +4120,7 @@ class MasterBrain:
                     },
                 )
 
-                self._record_context(text, result)
+                self._record_context(raw_text, result, input_understanding=input_trace)
                 return result
 
         # ---------------------------------------------------------
@@ -3805,6 +4235,15 @@ class MasterBrain:
                     "response": (
                         reasoning_result.reasoning_response
                     ),
+                    "context_reused": bool(
+                        reasoning_result.reasoning_assessment
+                        and reasoning_result.reasoning_assessment.reusable_context.get(
+                            "working_memory_items"
+                        )
+                    ),
+                    "needs_verification": bool(
+                        reasoning_result.reasoning_assessment.needs_verification
+                    ) if reasoning_result.reasoning_assessment else True,
                 },
                 "mother_operational_integration": {
                     "success": (
@@ -3988,6 +4427,44 @@ class MasterBrain:
                         else "NOT_USED"
                     ),
                 },
+                "cognitive_flow_trace": {
+                    "context_built": True,
+                    "working_memory_available": bool(working_memory_ids),
+                    "working_memory_items_passed": (
+                        len(decision_context.working_memory_items)
+                    ),
+                    "context_passed_to_reasoning": True,
+                    "context_passed_to_planning": True,
+                    "reasoning_context_received": bool(
+                        reasoning_dispatch.result.get("decision_context")
+                    ) if isinstance(reasoning_dispatch.result, dict) else False,
+                    "reasoning_context_reused": bool(
+                        getattr(
+                            reasoning_dispatch.result.get("reasoning_assessment"),
+                            "reusable_context",
+                            {},
+                        ).get("working_memory_items")
+                    ) if isinstance(reasoning_dispatch.result, dict) else False,
+                    "reasoning_assessment_needs_verification": bool(
+                        getattr(
+                            reasoning_dispatch.result.get("reasoning_assessment"),
+                            "needs_verification",
+                            True,
+                        )
+                    ) if isinstance(reasoning_dispatch.result, dict) else True,
+                    "planning_context_received": bool(
+                        orchestration_dispatch.result.get("decision_context")
+                    ) if isinstance(orchestration_dispatch.result, dict) else False,
+                    "plan_context_aware": bool(
+                        plan.metadata.get("context_aware")
+                    ),
+                    "planning_context_reference_count": (
+                        len(plan.metadata.get("context_memory_ids", ()))
+                        + len(plan.metadata.get("context_knowledge_ids", ()))
+                        + len(plan.metadata.get("context_working_memory_ids", ()))
+                    ),
+                    "execution_authority_changed": False,
+                },
                 "mother_decision_context": {
                     "request": decision_context.request,
                     "intent": decision_context.intent,
@@ -4036,6 +4513,7 @@ class MasterBrain:
         self._record_context(
             text,
             result,
+            input_understanding=input_trace,
         )
 
         return result
@@ -4346,14 +4824,137 @@ class MasterBrain:
             metadata=dict(metadata or {}),
         )
 
+    @staticmethod
+    def _bounded_cognitive_score(value: Any, default: float = 0.0) -> float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return default
+        return max(0.0, min(1.0, float(value)))
+
+    def _attention_trace(
+        self,
+        text: str,
+        result: BrainResult,
+    ) -> dict[str, Any]:
+        # Scores are transparent routing heuristics, not calibrated
+        # probabilities, factual confidence, permission or execution gates.
+        intent_confidence = self._bounded_cognitive_score(
+            result.intent_confidence, 0.0
+        )
+        risk_scores = {
+            "low": 0.0,
+            "medium": 0.5,
+            "high": 0.8,
+            "critical": 1.0,
+        }
+        risk_score = risk_scores.get(str(result.risk).lower(), 0.0)
+        normalized = " ".join((text or "").casefold().split())
+        urgency_terms = (
+            "urgent", "emergency", "asap", "immediately", "critical",
+            "तुरंत", "अभी", "आपातकाल", "जरूरी", "जल्दी",
+            "urgent hai", "abhi karo", "turant",
+        )
+        urgency = 1.0 if any(term in normalized for term in urgency_terms) else 0.0
+        recent_intents = self.context.summary().get("recent_intents", [])
+        if isinstance(recent_intents, list) and recent_intents:
+            goal_relevance = sum(
+                1 for item in recent_intents if item == result.intent
+            ) / len(recent_intents)
+        else:
+            goal_relevance = 0.5
+        priority = max(intent_confidence, urgency, risk_score)
+        attention_input = AttentionInput(
+            content=(text or "empty request")[:4096],
+            relevance=intent_confidence,
+            urgency=urgency,
+            risk=risk_score,
+            goal_relevance=self._bounded_cognitive_score(goal_relevance, 0.5),
+            priority=self._bounded_cognitive_score(priority, 0.0),
+        )
+        assessment = self.attention_engine.evaluate(attention_input)
+        return {
+            "version": self.attention_engine.VERSION,
+            "decision": assessment.decision.value,
+            "attention_score": assessment.attention_score,
+            "input_id": assessment.input_id,
+            "reason": assessment.reason,
+            "signals": {
+                "relevance_from_intent_confidence": intent_confidence,
+                "urgency_keyword_heuristic": urgency,
+                "risk_from_action_risk_class": risk_score,
+                "goal_relevance_from_recent_intent_overlap": goal_relevance,
+                "priority_heuristic": priority,
+            },
+            "advisory_only": True,
+            "permission_granted": False,
+            "action_executed": False,
+            "execution_gated_by_attention": False,
+            "confidence_is_calibrated_probability": False,
+        }
+
     def _record_context(
         self,
         text: str,
         result: BrainResult,
+        input_understanding: dict[str, Any] | None = None,
     ) -> None:
         # A common post-decision cognitive trace covers normal and fast paths.
         # It is observability/routing advice only: authority remains governed
         # by Constitution, PermissionGateway, and the existing safety brain.
+        if isinstance(input_understanding, dict):
+            result.metadata.setdefault(
+                "input_understanding", dict(input_understanding)
+            )
+
+        # Confidence about request interpretation is kept separate from
+        # factual truth. The verifier only labels a fact evidence-verified
+        # when an upstream component explicitly supplies that evidence status.
+        if "confidence_verification" not in result.metadata:
+            trace = input_understanding if isinstance(input_understanding, dict) else {}
+            semantic = result.metadata.get("semantic_intent", {})
+            if not isinstance(semantic, dict):
+                semantic = {}
+            semantic_confidence = semantic.get("confidence")
+            if isinstance(semantic_confidence, bool) or not isinstance(semantic_confidence, (int, float)):
+                semantic_confidence = None
+            factual_status = self.confidence_verification_brain.factual_status_for_response(
+                result.verification_status, result.metadata
+            )
+            ambiguity = result.metadata.get("ambiguity_detection", {})
+            if not isinstance(ambiguity, dict):
+                ambiguity = {}
+            confidence_decision = self.confidence_verification_brain.assess(
+                input_id=str(trace.get("input_id", "master-input")),
+                text=text or "",
+                intent_confidence=float(result.intent_confidence),
+                language_confidence=float(trace.get("language_confidence", 0.0)),
+                input_confidence=float(trace.get("input_confidence", 1.0)),
+                semantic_confidence=semantic_confidence,
+                semantic_needs_clarification=bool(
+                    semantic.get("needs_clarification", False)
+                ),
+                semantic_question=str(
+                    semantic.get("clarification_question", "")
+                ),
+                ambiguity_question=str(
+                    result.metadata.get("clarification_question", "")
+                ),
+                ambiguity_reasons=tuple(ambiguity.get("reasons", ())),
+                factual_claim_status=factual_status,
+            )
+            result.metadata["confidence_verification"] = confidence_decision.to_dict()
+
+        result.metadata.setdefault(
+            "factual_verification_assessment",
+            {
+                "status": result.metadata["confidence_verification"]["factual_claim_status"],
+                "verified": result.metadata["confidence_verification"]["factual_claim_status"] == "EVIDENCE_VERIFIED",
+                "note": "Routing/permission verification is not proof of factual truth.",
+            },
+        )
+        result.metadata.setdefault(
+            "cognitive_attention",
+            self._attention_trace(text, result),
+        )
         try:
             assessment = self.cognitive_neural_architecture.assess(
                 request=text or "",
@@ -4404,6 +5005,36 @@ class MasterBrain:
             action=result.action,
             verification_status=result.verification_status,
         )
+        # Report the real bounded working-memory state after the interaction
+        # has been activated. This is a read-only snapshot, not a promotion.
+        try:
+            working_memory = self.memory_brain.working_memory
+            active_entries = working_memory.entries()
+            result.metadata.setdefault(
+                "working_memory",
+                {
+                    "capacity": working_memory.capacity,
+                    "active_count": working_memory.count(),
+                    "bounded": True,
+                    "long_term_storage": False,
+                    "top_active_memory_ids": [
+                        entry.memory.memory_id for entry in active_entries[:5]
+                    ],
+                    "snapshot_after_interaction_activation": True,
+                    "promotes_to_long_term": False,
+                    "grants_permission": False,
+                    "executes_actions": False,
+                },
+            )
+        except (AttributeError, TypeError, ValueError):
+            result.metadata.setdefault(
+                "working_memory",
+                {
+                    "status": "snapshot_unavailable",
+                    "grants_permission": False,
+                    "executes_actions": False,
+                },
+            )
 
         # Phase 10 experience collection is deliberately observational.
         # A failed/blocked result becomes a learning signal; it never

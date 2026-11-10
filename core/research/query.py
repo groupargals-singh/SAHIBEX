@@ -118,11 +118,10 @@ class ResearchQueryEngine:
         """
         Reject explicitly conflicted knowledge in every retrieval mode.
 
-        Trusted retrieval also rejects stale verification flags when the
-        candidate metadata or persisted verification history records a
-        non-VERIFIED outcome. Missing history remains compatible with
-        legacy candidates; the answer pipeline applies its stricter
-        recorded-history gate before a final answer is emitted.
+        Verified-only retrieval requires an explicit VERIFIED status and,
+        when persistent storage is configured, at least one persisted VERIFIED
+        lifecycle event. A legacy candidate flag without lifecycle evidence is
+        never sufficient to enter a verified-only result set.
         """
         status = self._metadata_verification_status(knowledge)
 
@@ -186,16 +185,26 @@ class ResearchQueryEngine:
             lifecycle = self.storage.knowledge_verification_lifecycle(
                 knowledge.knowledge_id
             )
-            if isinstance(lifecycle, dict):
-                event_count = int(
-                    lifecycle.get("verification_event_count", 0) or 0
-                )
-                lifecycle_status = str(
-                    lifecycle.get("verification_status", "")
-                ).strip().upper()
-                if event_count > 0 and lifecycle_status != "VERIFIED":
-                    return False
+            if not isinstance(lifecycle, dict):
+                return False
+            event_count = int(
+                lifecycle.get("verification_event_count", 0) or 0
+            )
+            lifecycle_status = str(
+                lifecycle.get("verification_status", "")
+            ).strip().upper()
+            if event_count <= 0 or lifecycle_status != "VERIFIED":
+                return False
+        elif (
+            status != "VERIFIED"
+            or getattr(knowledge, "last_verified_at", None) is None
+        ):
+            # In-memory candidates have no persisted event store. Require both
+            # explicit VERIFIED metadata and a real verification timestamp;
+            # the legacy boolean alone is never sufficient.
+            return False
 
+        if self.storage is not None:
             conflict_context = self.storage.knowledge_verification_context(
                 knowledge.knowledge_id
             )

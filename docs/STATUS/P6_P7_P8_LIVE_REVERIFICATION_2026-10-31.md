@@ -32,3 +32,30 @@
 - No reset, git clean, backup deletion, database deletion, permission grant, token rotation, or constitution change was performed.
 - The bridge remains loopback-only; pairing/control tokens were not displayed or committed.
 - Android microphone, camera and Accessibility permissions were not granted by automation.
+
+
+## 2026-10-31 — Companion permanent pairing software correction
+- Corrected the repeated-pairing UX and credential handling in Android Companion: Android Keystore AES-GCM encryption, one-time plaintext-preference migration, hidden pairing form after a saved token is found, and authenticated session auto-check on app resume with 15-second foreground retries.
+- Added authenticated `GET /session`; live no-token request 401, correct local token 200; live loopback `/health` 200.
+- Companion v0.3.6 / versionCode 14 built successfully; APK v2 signature PASS; SHA-256 `2ff0213ccbef467d4505ecaf482c645ee052dbf660c738d761af7153e0725c3a`; build and Downloads copy hashes match.
+- Full repository regression: **2202 passed in 213.89s**, exit 0; targeted media bridge tests 19 passed; compileall, build script shell syntax and `git diff --check` PASS.
+- Physical install confirmation and actual app UI migration/reopen test still require the user to accept the in-place APK update and open the app. P6 remains PARTIAL until physical mic → ASR → transcript confirmation → Main Brain → audible neural TTS succeeds. No P-series gate promoted.
+
+
+## Main Brain deterministic identity format correction — 2026-10-31
+- Fixed strict resolver suffix matching for the exact Hinglish request format; full regression **2205 passed**, focused suite 17 passed.
+- Live authenticated `/voice` exact Hinglish request returned HTTP 200, `success=true`, `CURATED_KNOWLEDGE`, three numbered points in 0.22s after Media Bridge restart.
+- This validates only the curated identity fast path. General factual evidence retrieval, general model response quality, Android app installation acceptance, and physical microphone-to-speaker acceptance remain open. P6 remains PARTIAL; no P-series gate promoted.
+- Detailed evidence: `docs/STATUS/MAIN_BRAIN_IDENTITY_FORMAT_FIX_2026-10-31.md`.
+
+
+## 2026-10-31 — Shared text/voice understanding pipeline
+- Companion `/voice` now sends the raw ASR transcript to `MasterBrain.process()`; typed and voice inputs share the same normalization, conservative spelling correction, language detection and ambiguity-triggered contextual repair path.
+- Voice response `heard_text` remains the original transcript; `processed_text`, language, corrections and suggestions are read from the Master Brain's `input_understanding` trace.
+- Focused language/voice suite: 47 passed; full regression: **2210 passed in 187.19s**, exit 0. Scoped software integration PASS.
+- This does not verify physical phone microphone capture, ASR transcript accuracy, audible TTS playback, or a complete round-trip. P6 remains PARTIAL/PENDING physical acceptance; no P-series promotion.
+- Evidence: `docs/STATUS/LANGUAGE_UNDERSTANDING_BRAIN_INTEGRATION_2026-10-31.md`.
+
+- Live authenticated Companion `/voice` text-route smoke after source restart: HTTP 200, raw `sahibaks kya hai?` preserved, normalized `SAHIBEX kya hai?`, Hindi input/output and `CURATED_KNOWLEDGE`. This does not constitute physical microphone capture, ASR quality, or audible speaker playback.
+
+- Final runtime constraint: local model endpoint `127.0.0.1:8080/health` was connection-refused; available RAM was approximately 1.6 GiB. No model was started or RAM guard bypassed. Deterministic language/spelling pipeline remains live; model-backed contextual repair and general semantic-intent accuracy remain pending until a suitable model is safely available.

@@ -46,7 +46,7 @@ def make_knowledge(
         verified=verified,
         created_at=now(),
         last_verified_at=now() if verified else None,
-        metadata={},
+        metadata={"verification_status": "VERIFIED"} if verified else {},
     )
 
 

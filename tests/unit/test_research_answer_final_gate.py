@@ -83,7 +83,7 @@ def test_end_to_end_gate_rejects_verified_answer_with_incomplete_trace():
         verified=True,
         created_at=_now(),
         last_verified_at=_now(),
-        metadata={"source_id": source.source_id},
+        metadata={"source_id": source.source_id, "verification_status": "VERIFIED"},
     )
     engine.knowledge[knowledge.knowledge_id] = knowledge
 

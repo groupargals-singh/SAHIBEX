@@ -60,3 +60,19 @@ def test_ignores_english_response_format_instruction():
     fact = resolve_local_fact("What is the capital of India? Answer briefly.")
     assert fact is not None
     assert fact.fact_id == "IN-CAPITAL-001"
+
+
+def test_resolves_sahibex_with_hinglish_numbered_points_format():
+    fact = resolve_local_fact("SAHIBEX kya hai? Hindi mein 3 numbered points mein batao.")
+    assert fact is not None
+    assert fact.fact_id == "SAHIBEX-PROJECT-IDENTITY-001"
+    assert "Main Brain" in fact.answer
+    assert "vikasadhin" in fact.answer
+
+
+def test_resolves_sahibex_with_english_numbered_points_format():
+    fact = resolve_local_fact("What is SAHIBEX? Explain in 3 numbered points.")
+    assert fact is not None
+    assert fact.fact_id == "SAHIBEX-PROJECT-IDENTITY-001-EN"
+    assert "Main Brain" in fact.answer
+    assert "still under development" in fact.answer

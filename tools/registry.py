@@ -69,6 +69,13 @@ class ToolRegistry:
     def has(self, name: str) -> bool:
         return name in self._tools
 
+    def unregister(self, name: str) -> ToolDefinition:
+        """Remove one registered tool; lifecycle ownership stays with caller."""
+        try:
+            return self._tools.pop(name)
+        except KeyError as exc:
+            raise KeyError(f"Unknown SAHIBEX tool: {name}") from exc
+
     def list_tools(self) -> list[ToolDefinition]:
         return list(self._tools.values())
 

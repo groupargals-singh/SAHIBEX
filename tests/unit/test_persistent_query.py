@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import tempfile
 from pathlib import Path
 
@@ -30,6 +31,13 @@ def main() -> None:
         )
 
         storage.save_knowledge(knowledge)
+        storage.record_knowledge_verification(
+            knowledge_id=knowledge.knowledge_id,
+            status="VERIFIED",
+            reason="Test fixture records an explicit verified lifecycle event.",
+            verified_at=datetime.now(timezone.utc),
+            metadata={"independent_source_count": 2, "supporting_source_count": 2},
+        )
 
         assert storage.knowledge_count() == 1
         print("[PASS] knowledge persisted")

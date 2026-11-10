@@ -34,6 +34,27 @@ def test_memory_brain_persists_and_reactivates_interaction() -> None:
         storage.close()
 
 
+def test_memory_brain_retrieves_recent_conversation_turns_newest_first() -> None:
+    with TemporaryDirectory() as temp:
+        storage = ResearchStorage(Path(temp) / "memory.db")
+        brain = MemoryBrain(storage=storage)
+        brain.remember_interaction(
+            user_text="The first topic was a Python bug.",
+            assistant_text="I noted the Python bug.",
+            intent="code", action="create", verification_status="INSUFFICIENT_EVIDENCE",
+        )
+        brain.remember_interaction(
+            user_text="The second topic was a Hindi voice issue.",
+            assistant_text="I noted the voice issue.",
+            intent="general_request", action="respond", verification_status="INSUFFICIENT_EVIDENCE",
+        )
+        recent = brain.retrieve_recent_conversations(limit=2)
+        assert len(recent) == 2
+        assert "Hindi voice issue" in recent[0].content
+        assert "Python bug" in recent[1].content
+        storage.close()
+
+
 def test_memory_brain_supports_fact_memory_and_working_memory() -> None:
     with TemporaryDirectory() as temp:
         storage = ResearchStorage(Path(temp) / "memory.db")

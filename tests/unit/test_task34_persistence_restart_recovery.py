@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from core.research.memory_object import MemoryCandidate
 from core.research.models import KnowledgeCandidate
 from core.research.storage import ResearchStorage
@@ -15,6 +17,13 @@ def test_restart_repairs_same_count_but_stale_knowledge_search_index(tmp_path):
             confidence=0.95,
             verified=True,
         )
+    )
+    storage.record_knowledge_verification(
+        knowledge_id="knowledge-1",
+        status="VERIFIED",
+        reason="Test fixture includes an explicit VERIFIED lifecycle event.",
+        verified_at=datetime.now(timezone.utc),
+        metadata={"independent_source_count": 2},
     )
     # Simulate a legacy writer/crash that committed the canonical record but
     # did not refresh its FTS companion. Counts remain equal.

@@ -48,6 +48,7 @@ def build_verified_knowledge(
         last_verified_at=now(),
         metadata={
             "source_id": source.source_id,
+            "verification_status": "VERIFIED",
         },
     )
 

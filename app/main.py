@@ -89,7 +89,16 @@ def _read_input(timeout: float | None) -> str | None:
 
 def main() -> None:
     os.environ.setdefault("SAHIBEX_MODEL_PROVIDER", "local")
+    # Enable the optional model-backed semantic fallback by default only for
+    # the local provider. SemanticIntentBrain performs a 1s health preflight,
+    # so an offline model never causes a long request stall.
+    if os.getenv("SAHIBEX_MODEL_PROVIDER", "").strip().lower() == "local":
+        os.environ.setdefault("SAHIBEX_SEMANTIC_INTENT_ENABLED", "1")
     os.environ.setdefault("SAHIBEX_SEARCH_BACKEND", "google_news_rss")
+    os.environ.setdefault(
+        "SAHIBEX_AUTONOMOUS_CHECKPOINT_PATH",
+        str(Path(__file__).resolve().parents[1] / "data" / "runtime" / "autonomous_work_checkpoints.json"),
+    )
     os.environ.setdefault(
         "SAHIBEX_SELF_IMPROVEMENT_AUDIT_DB",
         str(Path(__file__).resolve().parents[1] / "data" / "runtime" / "self_improvement_audit.sqlite3"),

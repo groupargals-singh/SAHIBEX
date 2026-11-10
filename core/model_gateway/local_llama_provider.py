@@ -24,8 +24,39 @@ class LocalLlamaProvider(ModelProvider):
             endpoint
             or os.getenv("SAHIBEX_LOCAL_LLM_ENDPOINT", "http://127.0.0.1:8080/v1/chat/completions")
         )
-        self.model = model or os.getenv("SAHIBEX_LOCAL_LLM_MODEL", "Qwen3-4B-Q4_K_M.gguf")
+        configured_model = model or os.getenv("SAHIBEX_LOCAL_LLM_MODEL")
+        self.model = configured_model or self._discover_active_model() or "Qwen3-4B-Q4_K_M.gguf"
         self.timeout = timeout or float(os.getenv("SAHIBEX_LOCAL_LLM_TIMEOUT", "180"))
+
+    def _api_root(self) -> str:
+        return self.endpoint.split("/v1/", 1)[0].rstrip("/")
+
+    def _discover_active_model(self) -> str | None:
+        """Use the actually loaded llama.cpp model ID when the server is online."""
+        try:
+            request = urllib.request.Request(self._api_root() + "/v1/models", method="GET")
+            with urllib.request.urlopen(request, timeout=1.0) as response:
+                data = json.loads(response.read().decode("utf-8"))
+            records = data.get("data") or data.get("models") or []
+            if isinstance(records, list):
+                for item in records:
+                    if isinstance(item, dict):
+                        model_id = item.get("id") or item.get("name") or item.get("model")
+                        if isinstance(model_id, str) and model_id.strip():
+                            return model_id.strip()
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError, AttributeError, json.JSONDecodeError):
+            return None
+        return None
+
+    def is_available(self, *, timeout: float = 1.0) -> bool:
+        """Fast health preflight; avoids waiting for a long inference timeout offline."""
+        try:
+            request = urllib.request.Request(self._api_root() + "/health", method="GET")
+            with urllib.request.urlopen(request, timeout=max(0.1, min(float(timeout), 3.0))) as response:
+                status = getattr(response, "status", 200)
+                return 200 <= status < 300
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+            return False
 
     def generate(self, request: ModelRequest) -> ModelResponse:
         messages = []
@@ -51,8 +82,17 @@ class LocalLlamaProvider(ModelProvider):
             method="POST",
         )
 
+        request_timeout = request.metadata.get("timeout_seconds", self.timeout)
+        if (
+            isinstance(request_timeout, bool)
+            or not isinstance(request_timeout, (int, float))
+            or request_timeout <= 0
+        ):
+            request_timeout = self.timeout
+        request_timeout = min(float(request_timeout), self.timeout)
+
         try:
-            with urllib.request.urlopen(http_request, timeout=self.timeout) as response:
+            with urllib.request.urlopen(http_request, timeout=request_timeout) as response:
                 data = json.loads(response.read().decode("utf-8"))
             text = data["choices"][0]["message"]["content"]
             if not isinstance(text, str):

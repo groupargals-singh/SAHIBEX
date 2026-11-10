@@ -8,6 +8,13 @@ from core.brain.mother_decision_context import (
 
 def test_master_brain_combined_decision_context() -> None:
     brain = MasterBrain()
+    brain.memory_brain.remember_interaction(
+        user_text="We are building the SAHIBEX cognitive loop.",
+        assistant_text="Working memory should inform the next reasoning turn.",
+        intent="explain",
+        action="respond",
+        verification_status="STRUCTURALLY_VALID",
+    )
 
     result = brain.process(
         "Explain SAHIBEX architecture."
@@ -42,6 +49,20 @@ def test_master_brain_combined_decision_context() -> None:
     assert context["research_available"] is True
     assert context["learning_available"] is True
 
+    flow = result.metadata["cognitive_flow_trace"]
+    assert flow["context_built"] is True
+    assert flow["working_memory_available"] is True
+    assert flow["working_memory_items_passed"] >= 1
+    assert flow["context_passed_to_reasoning"] is True
+    assert flow["context_passed_to_planning"] is True
+    assert flow["reasoning_context_received"] is True
+    assert flow["reasoning_context_reused"] is True
+    assert flow["reasoning_assessment_needs_verification"] is True
+    assert flow["planning_context_received"] is True
+    assert flow["plan_context_aware"] is True
+    assert flow["planning_context_reference_count"] >= 1
+    assert flow["execution_authority_changed"] is False
+
 
 def test_mother_decision_context_is_read_only_snapshot() -> None:
     context = MotherDecisionContext(
@@ -67,6 +88,8 @@ def test_mother_decision_context_is_read_only_snapshot() -> None:
     assert summary["memory_count"] == 1
     assert summary["knowledge_count"] == 1
     assert summary["retrieval_id"] == "retrieval-1"
+    assert summary["working_memory_count"] == 0
+    assert summary["working_memory_items"] == ()
 
 
 if __name__ == "__main__":

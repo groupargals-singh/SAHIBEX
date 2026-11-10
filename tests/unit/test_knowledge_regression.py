@@ -403,6 +403,14 @@ def test_knowledge_retrieval():
                 verified=True,
             )
         )
+        for knowledge_id in ("knowledge-retrieval-1", "knowledge-retrieval-2"):
+            storage.record_knowledge_verification(
+                knowledge_id=knowledge_id,
+                status="VERIFIED",
+                reason="Test fixture includes an explicit VERIFIED lifecycle event.",
+                verified_at=datetime.now(timezone.utc),
+                metadata={"independent_source_count": 2},
+            )
 
         storage.save_knowledge(
             build_knowledge(

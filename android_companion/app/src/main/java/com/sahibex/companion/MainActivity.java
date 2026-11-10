@@ -43,6 +43,14 @@ import javax.crypto.spec.SecretKeySpec;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import android.content.SharedPreferences;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Base64;
+import java.security.KeyStore;
+import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.GCMParameterSpec;
 
 public final class MainActivity extends Activity {
     private TextView status;
@@ -65,6 +73,15 @@ public final class MainActivity extends Activity {
     private Button sendChatButton;
     private Button cameraButton;
     private volatile MediaPlayer activeNeuralPlayer;
+    private static final String MEDIA_KEY_ALIAS = "SAHIBEX_MEDIA_TOKEN_V1";
+    private final Handler mediaHandler = new Handler(Looper.getMainLooper());
+    private final AtomicBoolean mediaCheckRunning = new AtomicBoolean(false);
+    private final Runnable mediaHealthPoll = new Runnable() {
+        @Override public void run() {
+            verifyMediaBridgeConnection();
+            mediaHandler.postDelayed(this, 15000L);
+        }
+    };
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -205,18 +222,27 @@ public final class MainActivity extends Activity {
         mediaTokenInput.setHint("SAHIBEX media pairing token");
         mediaTokenInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT
             | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        mediaTokenInput.setText(p.getString("media_token", ""));
+        boolean alreadyPaired = getMediaToken().length() >= 40;
+        mediaTokenInput.setText("");
+        mediaTokenInput.setVisibility(alreadyPaired ? View.GONE : View.VISIBLE);
         Button saveMediaToken = new Button(this);
         saveMediaToken.setText("Save Voice Pairing Token");
+        saveMediaToken.setVisibility(alreadyPaired ? View.GONE : View.VISIBLE);
         saveMediaToken.setOnClickListener(v -> {
             String mediaToken = mediaTokenInput.getText().toString().trim();
             if (mediaToken.length() < 40) {
                 mediaStatus.setText("Pairing token invalid; paste the full token from Termux.");
                 return;
             }
-            getSharedPreferences("sahibex", MODE_PRIVATE).edit()
-                .putString("media_token", mediaToken).apply();
-            mediaStatus.setText("Pairing token saved locally. Voice requests remain permission-gated.");
+            if (!storeMediaToken(mediaToken)) {
+                mediaStatus.setText("Secure pairing storage failed. The token was not saved.");
+                return;
+            }
+            mediaTokenInput.setText("");
+            mediaTokenInput.setVisibility(View.GONE);
+            saveMediaToken.setVisibility(View.GONE);
+            mediaStatus.setText("Pairing saved securely on this phone. Checking local bridge…");
+            verifyMediaBridgeConnection();
         });
         voiceInputButton = new Button(this);
         voiceInputButton.setText("VOICE");
@@ -229,7 +255,9 @@ public final class MainActivity extends Activity {
         cameraButton.setBackground(panelBackground());
         cameraButton.setOnClickListener(v -> startCameraConversation());
         mediaStatus = new TextView(this);
-        mediaStatus.setText("Voice bridge: waiting for pairing and microphone action.");
+        mediaStatus.setText(alreadyPaired
+            ? "Saved secure pairing found. Checking local bridge…"
+            : "One-time pairing is required before first use.");
         mediaStatus.setTextColor(Color.rgb(180, 197, 220));
         mediaStatus.setTextSize(13);
         mediaStatus.setPadding(dp(12), dp(10), dp(12), dp(10));
@@ -415,13 +443,126 @@ public final class MainActivity extends Activity {
         }).start();
     }
 
+    private SecretKey getOrCreateMediaEncryptionKey() throws Exception {
+        KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
+        keyStore.load(null);
+        if (keyStore.containsAlias(MEDIA_KEY_ALIAS)) {
+            return (SecretKey) keyStore.getKey(MEDIA_KEY_ALIAS, null);
+        }
+        KeyGenerator generator = KeyGenerator.getInstance(
+            android.security.keystore.KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
+        generator.init(new android.security.keystore.KeyGenParameterSpec.Builder(
+            MEDIA_KEY_ALIAS,
+            android.security.keystore.KeyProperties.PURPOSE_ENCRYPT
+                | android.security.keystore.KeyProperties.PURPOSE_DECRYPT)
+            .setKeySize(256)
+            .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setRandomizedEncryptionRequired(true)
+            .build());
+        return generator.generateKey();
+    }
+
+    private boolean storeMediaToken(String token) {
+        if (token == null || token.length() < 40) return false;
+        try {
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.ENCRYPT_MODE, getOrCreateMediaEncryptionKey());
+            byte[] encrypted = cipher.doFinal(token.getBytes(StandardCharsets.UTF_8));
+            byte[] iv = cipher.getIV();
+            byte[] packed = new byte[iv.length + encrypted.length];
+            System.arraycopy(iv, 0, packed, 0, iv.length);
+            System.arraycopy(encrypted, 0, packed, iv.length, encrypted.length);
+            return getSharedPreferences("sahibex", MODE_PRIVATE).edit()
+                .putString("media_token_enc", Base64.encodeToString(packed, Base64.NO_WRAP))
+                .remove("media_token")
+                .commit();
+        } catch (Exception error) {
+            return false;
+        }
+    }
+
+    private String getMediaToken() {
+        SharedPreferences prefs = getSharedPreferences("sahibex", MODE_PRIVATE);
+        String encrypted = prefs.getString("media_token_enc", "");
+        if (!encrypted.isEmpty()) {
+            try {
+                byte[] packed = Base64.decode(encrypted, Base64.NO_WRAP);
+                if (packed.length > 28) {
+                    byte[] iv = java.util.Arrays.copyOfRange(packed, 0, 12);
+                    byte[] ciphertext = java.util.Arrays.copyOfRange(packed, 12, packed.length);
+                    Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+                    cipher.init(Cipher.DECRYPT_MODE, getOrCreateMediaEncryptionKey(),
+                        new GCMParameterSpec(128, iv));
+                    String token = new String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8);
+                    if (token.length() >= 40) return token;
+                }
+            } catch (Exception ignored) { }
+        }
+        // One-time migration from v0.3.5 plaintext preferences; preserve the
+        // existing pairing and immediately re-encrypt it with Android Keystore.
+        String legacy = prefs.getString("media_token", "");
+        if (legacy.length() >= 40) {
+            storeMediaToken(legacy);
+            return legacy;
+        }
+        return "";
+    }
+
+    private void verifyMediaBridgeConnection() {
+        final String token = getMediaToken();
+        if (token.length() < 40 || !mediaCheckRunning.compareAndSet(false, true)) return;
+        new Thread(() -> {
+            HttpURLConnection connection = null;
+            String state;
+            try {
+                connection = (HttpURLConnection) new URL(
+                    "http://127.0.0.1:38742/session").openConnection();
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(1800);
+                connection.setReadTimeout(2500);
+                connection.setRequestProperty("Authorization", "Bearer " + token);
+                int code = connection.getResponseCode();
+                InputStream stream = code >= 400
+                    ? connection.getErrorStream() : connection.getInputStream();
+                String raw = readAll(stream);
+                JSONObject response = raw.isEmpty() ? new JSONObject() : new JSONObject(raw);
+                state = code == 200 && response.optBoolean("authenticated", false)
+                    ? "CONNECTED • secure pairing saved • local bridge authenticated"
+                    : (code == 401
+                        ? "PAIRING REJECTED • check the local Termux token"
+                        : "BRIDGE UNAVAILABLE • saved pairing retained; retrying automatically");
+            } catch (Exception error) {
+                state = "BRIDGE OFFLINE • saved pairing retained; retrying automatically";
+            } finally {
+                if (connection != null) connection.disconnect();
+                mediaCheckRunning.set(false);
+            }
+            final String display = state;
+            runOnUiThread(() -> {
+                if (mediaStatus != null && !isFinishing()) mediaStatus.setText(display);
+            });
+        }, "sahibex-media-auto-connect").start();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        mediaHandler.removeCallbacks(mediaHealthPoll);
+        verifyMediaBridgeConnection();
+        mediaHandler.postDelayed(mediaHealthPoll, 15000L);
+    }
+
+    @Override protected void onPause() {
+        mediaHandler.removeCallbacks(mediaHealthPoll);
+        super.onPause();
+    }
+
     private void startVoiceRequest() {
         if (recordingActive) {
             stopVoiceRecording();
             return;
         }
-        String token = getSharedPreferences("sahibex", MODE_PRIVATE)
-            .getString("media_token", "");
+        String token = getMediaToken();
         if (token.length() < 40) {
             mediaStatus.setText("Save the SAHIBEX media pairing token first.");
             return;
@@ -578,8 +719,7 @@ public final class MainActivity extends Activity {
     }
 
     private void transcribeCapturedAudio(final byte[] wavBytes) {
-        final String token = getSharedPreferences("sahibex", MODE_PRIVATE)
-            .getString("media_token", "");
+        final String token = getMediaToken();
         new Thread(() -> {
             HttpURLConnection connection = null;
             try {
@@ -653,7 +793,7 @@ public final class MainActivity extends Activity {
         if (chatInput == null || sendChatButton == null) return;
         final String message = chatInput.getText().toString().trim();
         if (message.isEmpty()) return;
-        final String token = getSharedPreferences("sahibex", MODE_PRIVATE).getString("media_token", "");
+        final String token = getMediaToken();
         if (token.length() < 40) {
             appendChat("SYSTEM", "Pair the local media bridge first using the token from Termux.");
             mediaStatus.setText("Typing is ready, but the local SAHIBEX bridge is not paired.");
@@ -708,8 +848,7 @@ public final class MainActivity extends Activity {
     }
 
     private void loadDiagnostics() {
-        final String token = getSharedPreferences("sahibex", MODE_PRIVATE)
-            .getString("media_token", "");
+        final String token = getMediaToken();
         if (token.length() < 40) {
             new AlertDialog.Builder(this).setTitle("SAHIBEX Diagnostics")
                 .setMessage("Media bridge pairing is required. Save the private media pairing token in the app first.")
@@ -1040,8 +1179,7 @@ public final class MainActivity extends Activity {
     }
 
     private void sendVoiceTranscript(final String transcript) {
-        final String token = getSharedPreferences("sahibex", MODE_PRIVATE)
-            .getString("media_token", "");
+        final String token = getMediaToken();
         mediaStatus.setText("Sending selected words to the local SAHIBEX brain...");
         new Thread(() -> {
             HttpURLConnection connection = null;
@@ -1109,8 +1247,7 @@ public final class MainActivity extends Activity {
     }
 
     private void requestNeuralSpeech(final String answer, final String language, final String display) {
-        final String token = getSharedPreferences("sahibex", MODE_PRIVATE)
-            .getString("media_token", "");
+        final String token = getMediaToken();
         new Thread(() -> {
             HttpURLConnection connection = null;
             File audioFile = null;

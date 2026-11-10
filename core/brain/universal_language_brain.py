@@ -58,7 +58,7 @@ class UniversalLanguageBrain:
     # Lexical fingerprints; deliberately use full words to avoid substring guesses.
     _LATIN_MARKERS = {
         "en": ("the", "what", "please", "hello", "how", "is", "can", "you", "why", "with", "your", "explain", "this", "that", "file", "delete", "open", "show", "close", "run", "execute", "help", "tell", "capital", "from"),
-        "hi-Latn": ("kya", "hai", "mujhe", "mujhko", "mera", "meri", "mere", "batao", "kaise", "nahi", "karo", "chahiye", "kyun", "hain", "ko", "mein", "me", "ke", "liye", "banao", "bana", "samajhne", "samajh", "samjho", "samjhao", "wala", "wali", "wale", "sunne", "suno", "sahi", "theek", "thik", "pura", "poora", "abhi", "bahut", "apne", "jaisa", "jese", "dalo", "karna", "karke", "tum", "aap", "kese"),
+        "hi-Latn": ("kya", "hai", "mujhe", "mujhko", "mera", "meri", "mere", "batao", "kaise", "nahi", "karo", "chahiye", "kyun", "hain", "ko", "mein", "me", "ke", "liye", "banao", "bana", "samajhne", "samajh", "samjho", "samjhao", "wala", "wali", "wale", "sunne", "suno", "sahi", "theek", "thik", "pura", "poora", "abhi", "bahut", "apne", "jaisa", "jese", "dalo", "karna", "karke", "tum", "aap", "kese", "par", "khojo", "khoj", "jankari", "jaankari", "bataiye", "kis", "kaun", "kyunki", "agar", "lekin", "isse", "uske", "iske", "ispar", "isspar", "topic par", "jankari khojo"),
         "es": ("hola", "qué", "como", "gracias", "por", "para", "está", "quiero", "cómo", "usted", "borra", "archivo", "este", "esta", "eliminar", "borrar"),
         "fr": ("bonjour", "merci", "avec", "pour", "est", "vous", "comment", "je", "une", "pas", "supprime", "fichier", "efface", "supprimer"),
         "pt": ("olá", "obrigado", "você", "como", "para", "não", "uma", "que", "por favor"),

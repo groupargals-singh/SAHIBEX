@@ -71,6 +71,61 @@ def test_latest_unverified_history_cannot_be_overridden_by_stale_verified_flag()
     storage.close()
 
 
+def test_legacy_verified_flag_without_lifecycle_history_is_not_verified_only_retrievable() -> None:
+    storage = ResearchStorage(":memory:")
+    candidate = _candidate("legacy-verified-without-history", verified=True)
+    storage.save_knowledge(candidate)
+
+    query = ResearchQueryEngine(ResearchEngine(), storage=storage)
+    result = query.search("trusted verified research", verified_only=True)
+
+    assert result.matches == []
+    storage.close()
+
+
+def test_in_memory_verified_flag_without_explicit_status_is_not_verified_only_retrievable() -> None:
+    engine = ResearchEngine()
+    candidate = _candidate("memory-legacy-verified-flag", verified=True)
+    engine.knowledge[candidate.knowledge_id] = candidate
+
+    result = ResearchQueryEngine(engine).search(
+        "trusted verified research",
+        verified_only=True,
+    )
+    assert result.matches == []
+
+
+def test_in_memory_verification_timestamp_without_verified_status_is_rejected() -> None:
+    engine = ResearchEngine()
+    candidate = _candidate("memory-timestamp-only")
+    candidate.last_verified_at = datetime.now(timezone.utc)
+    engine.knowledge[candidate.knowledge_id] = candidate
+
+    result = ResearchQueryEngine(engine).search(
+        "trusted verified research",
+        verified_only=True,
+    )
+    assert result.matches == []
+
+
+def test_in_memory_explicit_verified_status_and_timestamp_are_required() -> None:
+    engine = ResearchEngine()
+    candidate = _candidate(
+        "memory-explicit-verified",
+        metadata={"verification_status": "VERIFIED"},
+    )
+    candidate.last_verified_at = datetime.now(timezone.utc)
+    engine.knowledge[candidate.knowledge_id] = candidate
+
+    result = ResearchQueryEngine(engine).search(
+        "trusted verified research",
+        verified_only=True,
+    )
+    assert [item.knowledge_id for item in result.matches] == [
+        "memory-explicit-verified"
+    ]
+
+
 def test_explicit_unverified_metadata_cannot_pass_verified_only_gate() -> None:
     engine = ResearchEngine()
     candidate = _candidate(

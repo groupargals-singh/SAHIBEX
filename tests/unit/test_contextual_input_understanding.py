@@ -87,3 +87,32 @@ def test_contextual_repair_provider_failure_fails_closed():
     assert not result.changed
     assert result.corrected_text == "original words"
     assert result.status == "UNCHANGED_NO_MODEL_RESULT"
+
+
+class OfflineFixtureProvider(FixtureProvider):
+    def __init__(self):
+        super().__init__(result_payload("must not be used"))
+        self.health_checks = 0
+        self.generate_calls = 0
+
+    def is_available(self, *, timeout=1.0):
+        self.health_checks += 1
+        assert timeout == 1.0
+        return False
+
+    def generate(self, request: ModelRequest) -> ModelResponse:
+        self.generate_calls += 1
+        raise AssertionError("offline provider must not be called")
+
+
+def test_contextual_repair_skips_offline_model_without_waiting():
+    gateway = ModelGateway()
+    provider = OfflineFixtureProvider()
+    gateway.register_provider(provider)
+    brain = ContextualInputUnderstandingBrain(gateway, provider=provider.name)
+    result = brain.understand("Pahle ise sahi kro")
+
+    assert result.corrected_text == "Pahle ise sahi kro"
+    assert result.status == "UNCHANGED_NO_MODEL_RESULT"
+    assert provider.health_checks == 1
+    assert provider.generate_calls == 0

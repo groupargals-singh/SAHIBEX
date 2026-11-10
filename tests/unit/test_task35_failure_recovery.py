@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import sqlite3
 
 import pytest
@@ -18,6 +19,13 @@ def test_knowledge_index_write_failure_rolls_back_canonical_update(tmp_path):
         verified=True,
     )
     storage.save_knowledge(original)
+    storage.record_knowledge_verification(
+        knowledge_id=original.knowledge_id,
+        status="VERIFIED",
+        reason="Test fixture includes an explicit VERIFIED lifecycle event.",
+        verified_at=datetime.now(timezone.utc),
+        metadata={"independent_source_count": 2},
+    )
     storage._connection.execute("DROP TABLE knowledge_search")
     storage._connection.commit()
 

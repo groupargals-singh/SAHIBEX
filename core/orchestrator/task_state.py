@@ -268,9 +268,44 @@ class TaskManager:
     It does not execute tools or commands.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, storage: Any | None = None) -> None:
         self.goals: dict[str, Goal] = {}
         self.tasks: dict[str, Task] = {}
+        self.storage = storage
+        if self.storage is not None:
+            # Rehydrate the complete graph before accepting new work.
+            for goal in self.storage.list_goals():
+                recovered = False
+                for task in goal.tasks:
+                    if task.status == TaskStatus.RUNNING:
+                        task.status = TaskStatus.READY
+                        task.metadata = dict(task.metadata)
+                        task.metadata["recovered_after_restart"] = True
+                        recovered = True
+                self._attach_goal(goal)
+                if recovered:
+                    self.storage.save_planning_graph(goal)
+            # Older stores may have task rows not embedded in their goal row.
+            for task in self.storage.list_tasks():
+                if task.task_id not in self.tasks:
+                    owner = next((g for g in self.storage.list_goals()
+                                  if any(t.task_id == task.task_id for t in g.tasks)), None)
+                    if owner is not None:
+                        self.tasks[task.task_id] = task
+
+    def _attach_goal(self, goal: Goal) -> None:
+        self.goals[goal.goal_id] = goal
+        for task in goal.tasks:
+            self.tasks[task.task_id] = task
+
+    def persist_goal(self, goal_id: str) -> None:
+        """Atomically persist a goal's full task graph through ResearchStorage."""
+        if self.storage is None:
+            return
+        goal = self.get_goal(goal_id)
+        if goal is None:
+            raise KeyError(f"Unknown goal: {goal_id}")
+        self.storage.save_planning_graph(goal)
 
     def create_goal(
         self,
@@ -289,6 +324,7 @@ class TaskManager:
         )
 
         self.goals[goal.goal_id] = goal
+        self.persist_goal(goal.goal_id)
 
         return goal
 
@@ -328,6 +364,7 @@ class TaskManager:
         self.tasks[task.task_id] = task
 
         self.goals[goal_id].add_task(task)
+        self.persist_goal(goal_id)
 
         return task
 
@@ -414,6 +451,7 @@ class TaskManager:
                 TaskStatus.CANCELLED,
             }:
                 task.cancel(reason)
+        self.persist_goal(goal_id)
 
     def goal_summary(
         self,

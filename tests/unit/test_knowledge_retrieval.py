@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from core.research.models import KnowledgeCandidate
 from core.research.storage import ResearchStorage
 
@@ -119,6 +121,13 @@ def test_verified_filter() -> None:
             verified=True,
         )
     )
+    storage.record_knowledge_verification(
+        knowledge_id="knowledge-verified",
+        status="VERIFIED",
+        reason="Test fixture has an explicit VERIFIED lifecycle event.",
+        verified_at=datetime.now(timezone.utc),
+        metadata={"independent_source_count": 2},
+    )
 
     storage.save_knowledge(
         make_knowledge(
@@ -136,6 +145,29 @@ def test_verified_filter() -> None:
     assert len(results) == 1
     assert results[0].knowledge_id == "knowledge-verified"
 
+    storage.close()
+
+
+def test_verified_filters_reject_legacy_flag_without_lifecycle_event() -> None:
+    storage = ResearchStorage(":memory:")
+    storage.save_knowledge(
+        make_knowledge(
+            "legacy-verified",
+            "Python is widely used.",
+            verified=True,
+        )
+    )
+    storage.save_knowledge(
+        make_knowledge(
+            "legacy-verified-hindi",
+            "हिंदी भाषा का परीक्षण।",
+            verified=True,
+        )
+    )
+
+    assert storage.list_knowledge(verified_only=True) == []
+    assert storage.retrieve_knowledge("Python", verified_only=True) == []
+    assert storage.retrieve_knowledge("हिंदी", verified_only=True) == []
     storage.close()
 
 

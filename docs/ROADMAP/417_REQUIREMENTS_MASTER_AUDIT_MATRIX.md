@@ -129,3 +129,9 @@ This audit document does not change Constitution, permissions, authority boundar
 - Research extraction now strips active HTML and navigation chrome, bounds work to 200,000 content characters / 100 findings, and marks extraction truncation. The final research result now fails closed unless the answer is actually `VERIFIED`; a live run completed but returned `NOT_VERIFIED`, which is treated as `insufficient_evidence`, not success. Source links may be offered as unverified research leads, not conclusions.
 - A production research answer is not yet proven. The current default sentence extractor has confidence 0.50 and the current pipeline has not demonstrated cross-source semantic corroboration for a real query. Do not mark live research as complete until a query returns a verified, relevant, source-traceable answer.
 - Companion APK staged version `6 / 0.2.2` matches the installed signing certificate and is now hash-matched in Downloads. Installed version remains `4 / 0.2.0` pending user-visible Android install confirmation.
+
+## Source recovery update — 2026-10-31
+- Recovered SAHIBEX_MASTER_ARCHITECTURE_v2_0.docx from the user's ChatGPT Library. It contains the 29 A–AC phase ranges spanning items 1–417 and named core items for each phase.
+- Also recovered SAHIBEX_MASTER_ARCHITECTURE_v2_1_CORRECTED.docx, which explicitly distinguishes the integrated v2.1 register from the unavailable exact original Master List v1.0 and still calls for an item-by-item diff.
+- P10 is therefore upgraded from “no recoverable 417 reference” to PARTIAL — integrated v2.0 417-item reference recovered; exact historical v1.0 provenance not established. Do not label the v2.0 document as the original v1.0 source or claim 417/417 completion. Adoption as a reconstructed working baseline requires explicit user approval.
+- No requirement text was invented and no item status was promoted by this recovery.

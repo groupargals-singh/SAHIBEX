@@ -16,7 +16,7 @@ if [[ -z "${SAHIBEX_LOCAL_MODEL_PATH:-}" ]]; then
     export SAHIBEX_LOCAL_MODEL_PATH="$HOME/models/Qwen3-4B-Q4_K_M.gguf"
   fi
 fi
-export SAHIBEX_LOCAL_LLM_MODEL="${SAHIBEX_LOCAL_LLM_MODEL:-$(basename "$SAHIBEX_LOCAL_MODEL_PATH")}"
+export SAHIBEX_LOCAL_LLM_MODEL="${SAHIBEX_LOCAL_LLM_MODEL:-$SAHIBEX_LOCAL_MODEL_PATH}"
 # Use the local model as a conservative semantic fallback when keyword intent is uncertain.
 # It never grants permission; the existing classifier and permission gateway remain authoritative.
 export SAHIBEX_SEMANTIC_INTENT_ENABLED="${SAHIBEX_SEMANTIC_INTENT_ENABLED:-1}"

@@ -26,7 +26,7 @@ def main() -> None:
         assert "SAHIBEX" in hinglish.normalized_text
         # Closed bilingual aliases repair common ASR spellings of the project name.
         for spoken_variant in (
-            "sahibaks", "sahibeks", "sahibax", "sahibexx",
+            "sahibaks", "sahibeks", "sahibax", "sahibaqs", "sahibexx",
             "sahib e x", "साहिबेक्स", "साहिब एक्स",
         ):
             assert brain.assess(spoken_variant).normalized_text == "SAHIBEX", spoken_variant

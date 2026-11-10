@@ -22,7 +22,9 @@ _FACTS = (
             r"sahibex ke bare mein batao)"
             r"(?:[?।.! ]*)"
             r"(?:(?:hindi mein|in hindi|hindi)\s*(?:[0-9]+\s*)?(?:points?|bindu|baaton)?"
-            r"|(?:[0-9]+\s+)?(?:points?|bindu|baaton))?"
+            r"|(?:[0-9]+\s+)?(?:points?|bindu|baaton)"
+            r"|(?:hindi\s+mein|in\s+hindi)\s+[0-9]+\s+numbered\s+points?\s+mein\s+(?:batao|bataiye|batayein)"
+            r"|[0-9]+\s+numbered\s+points?\s+mein\s+(?:batao|bataiye|batayein))?"
             r"(?:[?।.! ]*)$", re.I
         ),
         LocalFact(
@@ -38,7 +40,8 @@ _FACTS = (
             r"(?:what is sahibex|explain sahibex|describe sahibex)"
             r"(?:[?।.! ]*)"
             r"(?:(?:explain|describe)\s+in\s+[0-9]+\s+points?|in\s+[0-9]+\s+points?|"
-            r"in hindi(?:\s+[0-9]+\s+points?)?)?"
+            r"in hindi(?:\s+[0-9]+\s+points?)?|"
+            r"(?:explain\s+in\s+)?[0-9]+\s+numbered\s+points?)?"
             r"(?:[?।.! ]*)$", re.I
         ),
         LocalFact(

@@ -9,7 +9,9 @@ from uuid import uuid4
 
 from core.policies.approval import PermissionEngine
 from core.brain.emergency_stop import EmergencyStop
+from core.brain.dynamic_tool_creation_brain import DynamicToolCreationBrain
 from security.audit.execution_evidence import ExecutionEvidenceRecorder
+from security.audit.audit_logger import AuditLogger
 from security.audit.execution_trace import ExecutionTraceVerifier
 from tools.discovery import ToolCandidate
 from tools.intelligence import ToolIntelligence, ToolIntelligenceResult
@@ -57,6 +59,7 @@ class ToolBrain:
         registry: ToolRegistry | None = None,
         emergency_stop: EmergencyStop | None = None,
         evidence_recorder: ExecutionEvidenceRecorder | None = None,
+        audit_logger: AuditLogger | None = None,
     ) -> None:
         if not isinstance(permission_engine, PermissionEngine):
             raise TypeError("permission_engine must be PermissionEngine")
@@ -99,6 +102,9 @@ class ToolBrain:
             tool_invoker=invoker,
             result_handler=ToolResultHandler(),
             recovery=ToolFailureRecovery(),
+        )
+        self.dynamic_tool_creation = DynamicToolCreationBrain(
+            self.registry, root, audit_logger=audit_logger
         )
 
     def _record_protected_evidence(
@@ -375,6 +381,12 @@ class ToolBrain:
     def capability_contract(self) -> dict[str, bool]:
         return {
             "tool_discovery": True,
+            "dynamic_tool_design": True,
+            "dynamic_tool_staging": True,
+            "dynamic_tool_static_validation": True,
+            "dynamic_tool_human_approval": True,
+            "dynamic_tool_rollback": True,
+            "dynamic_tool_arbitrary_code_execution": False,
             "tool_selection": True,
             "permission_check": True,
             "safe_execution": True,

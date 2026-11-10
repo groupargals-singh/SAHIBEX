@@ -65,7 +65,9 @@ class IntentEngine:
             r"\bjavascript\b", r"\bsource code\b",
             r"\b(?:code|program|script)\s+(?:likho|likh do|banao|banado|taiyar karo)\b",
             r"\b(?:python|javascript|java|c\+\+|rust|go)\b.{0,30}\b(?:code|program|script)\b",
-            r"\b(?:bug|error)\s+(?:fix|theek|thik)\s+(?:karo|kar do)\b",
+            r"\b(?:bug|error)\s+(?:fix|theek|thik)\s+(?:karo|kar do|kro|krdo)\b",
+            r"\b(?:is|ye|yeh|iss)?\s*(?:bug|error)\s+ko\s+(?:fix|theek|thik)\s+(?:karo|kar do|kro|krdo)\b",
+            r"(?:बग|एरर|त्रुटि).{0,16}(?:ठीक|फिक्स).{0,16}(?:करो|कर दो)",
             r"\b(?:debug|coding|programming)\s+(?:karo|kar do)\b",
             r"(?:कोड|प्रोग्राम|स्क्रिप्ट)\s*(?:लिखो|लिख दो|बनाओ|तैयार करो)",
             r"(?:बग|एरर)\s*(?:ठीक|फिक्स)\s*(?:करो|कर दो)",
@@ -145,3 +147,35 @@ class IntentEngine:
         )
         confidence = min(0.95, 0.50 + scores[best_intent] * 0.15)
         return IntentResult(intent=best_intent, confidence=confidence, entities={})
+
+    def detect_with_context(self, text: str, *, context_text: str = "") -> IntentResult:
+        """Refine a vague fix-it request only when recent context names software."""
+        result = self.detect(text)
+        if result.intent != "general_request" or not isinstance(context_text, str):
+            return result
+        request = " ".join(text.casefold().split())
+        context = " ".join(context_text.casefold().split())
+        refers_to_fix = bool(
+            re.search(
+                r"\b(?:isko|ise|is|ye|yeh|it|this|that)\s+(?:ko\s+)?(?:fix|repair|thik|theek|sahi)\s+(?:karo|kar do|kro|krdo|please)?\b|"
+                r"\b(?:fix|repair|correct)\s+(?:it|this|that)\b",
+                request,
+            )
+        )
+        software_context = bool(
+            re.search(
+                r"\b(?:bug|error|traceback|stack trace|script|code|program|repository|repo|failing test|test failure|python|javascript|java|application|app|source file)\b|"
+                r"(?:बग|एरर|त्रुटि|कोड|स्क्रिप्ट|प्रोग्राम|टेस्ट|खराबी)",
+                context,
+            )
+        )
+        if refers_to_fix and software_context:
+            return IntentResult(
+                intent="code",
+                confidence=0.82,
+                entities={
+                    "contextual_intent": "bug_fix",
+                    "context_used": "recent_conversation",
+                },
+            )
+        return result

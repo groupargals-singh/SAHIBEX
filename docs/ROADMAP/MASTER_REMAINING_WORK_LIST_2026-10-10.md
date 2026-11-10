@@ -886,3 +886,388 @@ Purpose: keep one durable, detailed record of **everything accepted, everything 
 - BLOCKED: model server is offline; no `llama-server` executable found on PATH. Existing Qwen3-1.7B and Qwen3-4B files remain not autostarted; Qwen3-VL-8B not downloaded.
 - PENDING: real Vision model/projector, physical voice round-trip, Native Model training, full regression and remaining P-series gates. No P-series gate promoted by this checkpoint.
 - Log: `logs/development_library_brains_implementation_20261030_072504.md`. Backup: `backups/brain_expansion_20261030_072504/`.
+
+
+## 2026-10-31 addendum — Android Companion pairing fix
+- Software scope PASS: Companion v0.3.6 adds Android Keystore AES-GCM media-token storage and one-time migration from v0.3.5 preferences; the existing pairing is preserved and should not need to be pasted again after an in-place update if it was already saved.
+- Authenticated `/session` endpoint and automatic app-resume session check added; foreground retry every 15 seconds. The local bridge still must be started by Termux if it has stopped; the app does not silently execute Termux commands.
+- Evidence: `docs/STATUS/ANDROID_COMPANION_PERMANENT_PAIRING_2026-10-31.md`; full regression **2202 passed**; APK versionCode 14 / 0.3.6, v2 signature PASS, SHA-256 `055dd0f0e434b14f413682172a1c74e56717ba834e4f51444a0af9de9293bdca`.
+- P6 remains PARTIAL until the user installs/opens the new APK, saved-token migration is physically observed across app close/reopen, and the full physical Hindi/English microphone-to-neural-speaker round-trip passes. P7, P8, P10 and P11 statuses are unchanged. No COMPLETE claim.
+
+### P6 runtime dependency discovered — 2026-10-31
+- Authenticated bridge and neural TTS backend are live; deterministic `Namaste` greeting succeeds. General model-dependent `/voice` request fails because local model endpoint `127.0.0.1:8080` is offline. This must be resolved before P6 can pass; no 1.7B fallback or RAM guard bypass is allowed.
+- The new v0.3.6 pairing fix does not by itself make the Main Brain model online or prove physical audio. Keep P6 PARTIAL/BLOCKED until the configured approved model endpoint is healthy and real phone mic → ASR → transcript confirmation → Main Brain → audible neural TTS succeeds.
+
+
+## 2026-10-31 — Main Brain identity numbered-format resolver correction (scoped PASS)
+- Root cause: the deterministic SAHIBEX identity resolver used strict full-match patterns that did not accept the user's format suffix "Hindi mein 3 numbered points mein batao"; the request fell through to the factual-evidence gate and returned INSUFFICIENT_EVIDENCE.
+- Corrected only the SAHIBEX identity format grammar for Hindi/Hinglish and English numbered-point instructions. Strict full-match behavior remains; compound semantic questions are not partially answered.
+- Added 3 regression tests (2 resolver formats + 1 real Main Brain integration).
+- Focused resolver/Main Brain suite: **17 passed**. Full repository regression: **2205 passed in 207.29s**, exit 0. Changed-file compileall and `git diff --check`: PASS.
+- Restarted the verified existing Media Bridge process. Live authenticated exact Hinglish request returned HTTP 200, success=true, `CURATED_KNOWLEDGE`, three numbered points, 0.22s. This validates the deterministic project-identity path only, not general model quality.
+- Read-only audit found legacy knowledge candidates whose `verified=true` flag lacks a persisted VERIFIED lifecycle event; Knowledge Brain correctly excludes these. No trust checks were bypassed and no knowledge was bulk-promoted.
+- Evidence: `docs/STATUS/MAIN_BRAIN_IDENTITY_FORMAT_FIX_2026-10-31.md`.
+- **Gate disposition:** this scoped defect is PASS. General factual retrieval, model-dependent answers and physical voice E2E remain open. P6/P1–P12 statuses are unchanged; no gate promoted.
+
+
+## Later runtime correction — 2026-10-31
+- A later live check supersedes the earlier offline snapshot in this report: `127.0.0.1:8080/health` returned HTTP 200 and `/v1/models` reported `Qwen3-1.7B-Q4_K_M.gguf`. The model was already running; this fix did not start or change it.
+- Latest available RAM snapshot was approximately 1.2 GiB. Do not infer that the 4B model can safely start, or that general answer quality is accepted, from the 1.7B health response.
+- The identity numbered-format acceptance above is a deterministic curated fast path and does not depend on this model. General model quality and broader verified-evidence retrieval remain separately unaccepted.
+
+
+## Language & Understanding Brain integration — 2026-10-31
+- Unified typed and Companion voice input through the Master Brain pipeline: normalization, conservative typo/project-name correction, multilingual language/script detection, optional ambiguity-triggered contextual repair, and input-understanding trace.
+- Companion voice now passes the original transcript to Master Brain; it no longer performs a separate pre-routing correction pass. `heard_text` remains raw; normalized text and corrections come from the Master Brain trace.
+- Safety: raw and normalized forms both feed protected-action classification; number/negation changes are rejected; voice never grants confirmation or authority.
+- Focused suite 47 passed; full repository regression **2210 passed in 187.19s**, exit 0. Live typed smoke verified `sahibaks kya hai?` → curated SAHIBEX identity response.
+- Evidence: `docs/STATUS/LANGUAGE_UNDERSTANDING_BRAIN_INTEGRATION_2026-10-31.md`.
+- Disposition: scoped software integration PASS. General model-backed semantic accuracy and physical voice round-trip remain pending. P6 remains PARTIAL; P1–P12 statuses unchanged; no P-series gate promoted.
+
+- Live Companion text-route smoke after updated Media Bridge restart: loopback `/health` PASS; authenticated `/voice` `sahibaks kya hai?` returned HTTP 200, preserved raw transcript, normalized `SAHIBEX kya hai?`, Hindi input/output, and `CURATED_KNOWLEDGE`. This is not physical mic/ASR/speaker acceptance.
+
+- Final runtime constraint: local model endpoint `127.0.0.1:8080/health` was connection-refused; available RAM was approximately 1.6 GiB. No model was started or RAM guard bypassed. Deterministic language/spelling pipeline remains live; model-backed contextual repair and general semantic-intent accuracy remain pending until a suitable model is safely available.
+
+
+## 2026-10-31 — Confidence & Verification Brain integration (scoped software PASS)
+- Added `ConfidenceVerificationBrain` and connected it to Master Brain before deterministic resolvers/planner/model/tool routing. It composes the existing InputConfidenceEngine and UncertaintyEngine, detects a bounded set of common multiple-meaning words and unresolved demonstratives/action targets, and asks for clarification before proceeding when needed.
+- Context is only accepted when it contains a relevant referent; a prior clarification question or unrelated conversation does not resolve an ambiguous request. Context-grounded protected actions still pass through the existing Constitution/PermissionGateway/explicit-confirmation gates.
+- Every Master Brain result now separates request/routing confidence from factual truth. `VERIFIED` routing/permission status is not a fact check; generated/structural responses remain `NOT_FACTUALLY_VERIFIED`; explicit upstream evidence-backed factual results are separately labelled.
+- Focused Confidence Verification + Master Brain integration tests: **31 passed**. Full repository regression after the final Hinglish polysemy refinement: **2236 passed in 196.76s**, exit 0. Compileall and `git diff --check`: PASS.
+- Live Companion `/voice` smoke: “Explain bank” → HTTP 200 / `CLARIFICATION_REQUIRED`; “sahibaks kya hai?” → HTTP 200 / normalized `SAHIBEX kya hai?` / curated Hindi answer. Bridge health HTTP 200.
+- Evidence: `docs/STATUS/CONFIDENCE_VERIFICATION_BRAIN_INTEGRATION_2026-10-31.md`.
+- Limits: bounded ambiguity lexicon is not universal semantic understanding; optional model-backed semantic classifier is not live at this check (local model endpoint 8080 offline); ASR confidence and physical mic/speaker E2E remain unverified. This is a scoped software PASS only; no P-series gate is promoted.
+
+- Final live Hinglish ambiguity smoke after restarting the updated bridge: authenticated `/voice` “bat batao” → HTTP 200 / `CLARIFICATION_REQUIRED`; the Hindi question explicitly distinguishes “बात”, cricket bat and bat animal. “Explain bank” also remains `CLARIFICATION_REQUIRED`; bridge `/health` HTTP 200.
+
+
+## 2026-10-31 — Confidence & Verification Brain semantic follow-up
+- Software fixes: local-provider semantic fallback now defaults ON (explicit opt-out retained), medium-confidence intents below 0.72 are classified, detected language is trusted over model language guess, local model ID is discovered from `/v1/models`, and model-offline preflight protects semantic and contextual input paths. Clarification outputs that echo the request or are not questions are rejected. Hinglish `par/khojo/jankari` detection and unresolved-topic clarification added.
+- Focused regression: **86 passed**. Full repository regression: **2251 passed in 201.40s**, exit 0. Compileall, shell syntax checks and `git diff --check`: PASS.
+- Live no-model smoke: `Is topic par latest jankari khojo` → `hi-Latn`, asks “आप किस विषय पर जानकारी चाहते हैं?”, no plan/action. Offline semantic + contextual input paths return immediately.
+- Model acceptance remains BLOCKED/PARTIAL: guarded Qwen3-1.7B trial returned inconsistent/invalid semantic output (including an imperative instead of a clarification question; 34.31s invalid response). The test model was safely stopped; 4B not started because the 3 GiB RAM guard was not met. No model downloaded; no guard bypass.
+- Item #6 overall remains PARTIAL until a suitable multilingual model passes live accuracy/latency evaluation and phone ASR/voice acceptance. No P-series gate promoted. Evidence: `docs/STATUS/CONFIDENCE_VERIFICATION_BRAIN_FOLLOWUP_2026-10-31.md`.
+
+## 2026-10-31 — P6/P7/P8/P10/P11 + Knowledge provenance follow-up
+- Fixed Media Bridge lifecycle safety: stale PID files can no longer stop unrelated processes; startup now verifies exact module + project cwd, uses the project .venv, authenticates /session, and requires a valid local TTS WAV smoke before declaring ONLINE. Backups: backups/media_bridge_lifecycle_guard_20261031/.
+- Replaced the old system-Python media bridge with the project-.venv process. Authenticated English/Hindi TTS and ASR routes returned HTTP 200; ASR responses report audio_retained=false and require user transcript confirmation. Live /voice typed route returned curated SAHIBEX identity and correctly asked for a missing topic before planning.
+- Added the Whisper spelling alias sahibaqs → SAHIBEX; focused language/media regression 43 passed. Synthetic Hindi ASR still contains word errors; physical mic/speaker and human-speech accuracy are not accepted.
+- Port 38741 is reachable and rejects unauthenticated actions with HTTP 401. A signed read-only status request using the Termux token also returned 401, so Companion pairing/token match and authenticated device action remain pending.
+- Knowledge provenance audit is now repeatable and strictly read-only. Results: 83,904 candidates; 80,198 legacy verified flags without a VERIFIED lifecycle event; 3,626 lifecycle events, all UNVERIFIED; 80,278 candidates have no lifecycle event. All evidence/finding/source references exist, but each candidate has one distinct source only. No database mutation or promotion. See docs/STATUS/KNOWLEDGE_PROVENANCE_AUDIT_2026-10-31.md.
+- P10 source recovery: Library v2.0 contains A–AC named 1–417 reference; v2.1 confirms exact historical v1.0 still needs reconciliation. P10 PARTIAL; no 417/417 claim.
+- P7 semantic vision remains blocked (no local multimodal model); P11 release remains blocked by physical acceptance and provenance/source reconciliation. No P-series gate promoted.
+- Follow-up report: docs/STATUS/P6_P7_P8_P10_P11_REVERIFICATION_2026-10-31.md.
+
+## 2026-10-31 — Additional knowledge retrieval trust-boundary fix
+- The 83,904-record audit exposed a code-level bypass: storage list/retrieve and ResearchQueryEngine could trust legacy verified=true flags when no lifecycle event existed.
+- Fixed all verified_only storage SQL paths (FTS + Indic fallback + list) to require the latest lifecycle event status VERIFIED; ResearchQueryEngine now also fails closed for missing history and requires explicit VERIFIED metadata for in-memory candidates.
+- Focused knowledge/lifecycle/provenance suite: 34 passed. Live DB remains read-only and unchanged; with zero VERIFIED events, verified_only correctly yields zero. Full regression is being rerun. No P-series promotion.
+
+
+## 2026-10-31 — Knowledge lifecycle guard final regression
+- Full repository regression: **2,255 passed in 190.03s**, exit 0 after the verified-only trust-boundary fix.
+- Read-only production DB audit: 83,908 candidates; 80,278 with no lifecycle event; 3,630 latest UNVERIFIED; 80,198 legacy verified flags without a latest VERIFIED event; zero latest VERIFIED records. Each candidate has one valid evidence/finding link but only one distinct source; zero multi-source corroboration candidates.
+- Database was opened read-only; no DB writes or promotions. Audit complete; revalidation remains blocked until independent corroboration is obtained and a backed-up migration is approved. No P-series promotion; no prior PASS reopened.
+
+
+## 2026-10-31 — Latest live P8/P6 device probe
+- Companion package is installed. Port 38741 responds on the expected POST /v1/action route; an HMAC-valid request using a deliberately invalid probe token returns 401, confirming unauthorised requests are rejected and no action was executed. GET /health is not a supported route (404).
+- Media Bridge 38742 /health returns 200.
+- ADB has no attached devices; Android Accessibility Manager state could not be read from Termux. Real service enablement, Companion-token pairing, UI-tree, permitted action and persistent Emergency Stop remain NOT VERIFIED.
+- Qwen3-1.7B API reports text-only input/output; available RAM ~1.48 GiB, below Qwen3-4B 3 GiB guard. Semantic acceptance remains blocked.
+
+## 2026-10-31 — Corrected latest read-only audit and device checks
+- Re-ran the read-only audit against the live DB after retrieval hardening. Exact current counts: 83,908 candidates; 80,198 legacy verified flags without a latest VERIFIED lifecycle event; 3,630 lifecycle records and all are UNVERIFIED; 80,278 candidates have no lifecycle event; 83,908 candidates each have exactly one evidence, one finding, and one distinct source; zero candidates have multiple distinct sources; zero latest VERIFIED records.
+- All 83,908 evidence/finding/source references resolve, but a single source is not sufficient independent corroboration. No bulk promotion or DB writes were performed. Verified-only eligible live records: 0.
+- Qwen3-4B remains blocked by RAM: current available RAM fell to about 1.2 GiB after the existing Qwen3-1.7B low-RAM fallback was started by the guarded launcher; 4B guard requires 3 GiB. The 1.7B model is online but is not accepted for semantic quality. No guard bypass.
+- Media Bridge 38742 health: HTTP 200. Accessibility bridge 38741 is listening; GET /health is not a supported route (404), and an unauthenticated POST /v1/action is correctly rejected with 401. Companion package is installed; signed Termux token probe still returns 401, so pairing/authentication is unresolved.
+- Android media diagnostics: Termux speech/tts/camera CLI commands exist, but com.termux.api package was not found and termux-tts-engines timed out. No microphone/camera capture was initiated. Physical voice E2E remains pending.
+- Semantic vision model/weights are absent; OCR-only capability remains. P10 remains PARTIAL (v2.0 417-item reference recovered, exact v1.0 provenance unresolved); P11 release remains BLOCKED. No gate promoted.
+
+## Final verification checkpoint — 2026-10-31 (latest code state)
+- Verified-only Knowledge retrieval now fails closed at all three paths: persistent SQL list/FTS/Indic fallback requires latest VERIFIED lifecycle event; ResearchQueryEngine persistent results require that lifecycle event; in-memory results require both metadata verification_status=VERIFIED and last_verified_at.
+- Latest focused gate suite after the final in-memory rule: 31 passed in 4.22s. Python compileall, shell syntax checks, and git diff --check all PASS.
+- Earlier full repository regression before the final in-memory metadata tightening: 2,255 passed in 171.71s. A new full regression was attempted after the final tightening but the pytest process disappeared at 60% without a completion summary or exit code while Qwen3-1.7B remained loaded and available RAM was about 1.2 GiB. Treat this latest full run as INCOMPLETE, not PASS or FAIL.
+- Current local model: Qwen3-1.7B online (low-RAM fallback); semantic accuracy acceptance remains BLOCKED/PARTIAL. Qwen3-4B was not launched because the 3 GiB safety guard was not met.
+- Live service checks: Media Bridge 38742 HTTP 200; Accessibility Bridge 38741 rejects unauthenticated action with HTTP 401. Authenticated pairing/token validation remains unresolved.
+- No P-series promotion. Physical P6 microphone/speaker E2E, P7 semantic vision model/accuracy, P8 authenticated device-control/Emergency Stop acceptance, P10 exact v1.0 provenance reconciliation, and P11 release remain open.
+
+- Additional low-memory verification attempt: split the 545 test files into 30-file batches while Qwen3-1.7B remained resident. The first batch process also disappeared at about 60% without a pytest summary/exit code; no full-suite PASS is claimed. The focused 31-test gate suite and compile/syntax/diff checks remain green. Do not stop the resident model automatically; obtain user approval before a temporary stop for another full regression attempt.
+
+
+## 2026-10-31 — Final full-regression recovery after fixture compatibility fix
+- Root cause of the six failures in the preceding full regression: three Research Answer Pipeline integration fixtures and three traceability integration checks constructed in-memory candidates with legacy `verified=True` + timestamp but omitted the newly required explicit `metadata.verification_status="VERIFIED"`. The production fail-closed rule was correct; the fixtures were stale.
+- Updated only the two test helper/fixture files: `tests/unit/test_research_answer_pipeline.py` and `tests/unit/test_research_answer_traceability.py`. Before edits, both files were preserved in `backups/research_fixture_compat_20261031/`.
+- Focused validation: **45 passed in 0.75s**.
+- Full repository regression after the fixture correction: **2,257 passed in 185.85s**, explicit `FULL_REGRESSION_EXIT=0`. Log: `logs/full_regression_after_fixture_fix_20261031.log`.
+- `python -m compileall -q core scripts tests` and `git diff --check`: PASS. No production database writes, no knowledge promotions, no destructive cleanup, no model shutdown, and no P-series gate promotion.
+- This supersedes the immediately preceding incomplete/failed-regression notes for the current test state. The older log entries remain historical evidence and are not deleted.
+- Remaining external/acceptance gaps are unchanged: P6 physical mic→ASR→confirmed transcript→Main Brain→speaker E2E; P7 semantic vision model + representative accuracy evaluation; P8 real Companion token pairing + authenticated UI/Emergency Stop acceptance; Knowledge legacy record independent-source revalidation (83,908 candidates, zero latest VERIFIED lifecycle events, one source per candidate); P10 exact historical v1.0 417-item provenance reconciliation / user decision on reconstructed v2.0 baseline; P11 release after dependent gates.
+
+## 2026-10-31 — Understanding Intelligence acceptance follow-up (latest checkpoint)
+- Added context-aware Hinglish bug-fix intent routing and bounded persistent recent-conversation reconstruction after process restart. Recent in-memory and persisted turns are deduplicated; prior clarification questions are excluded as evidence of a selected meaning.
+- Explicit "is bug ko fix karo" / "bug ko thik kro" now map to code intent; "isko thik kro" asks for clarification without context and uses recent software-bug context when present.
+- Focused Understanding suite: 137 passed; persistent-context focused suite: 80 passed. Full repository regression: **2,262 passed in 174.89s**, exit 0. Compileall and git diff --check PASS.
+- Acceptance report: docs/STATUS/UNDERSTANDING_INTELLIGENCE_ACCEPTANCE_2026-10-31.md.
+- Intent deterministic scope and bounded persistent-context recovery are PASS; broad multilingual semantic quality remains PARTIAL because Qwen3-1.7B did not return an accepted structured classification in the live provider smoke (24.73s).
+- Voice remains PARTIAL: local ASR/TTS assets are present, but Hindi synthetic TTS→ASR loopback transcript was incomplete; human speech accuracy and physical phone mic→speaker E2E remain pending. ASR confidence is not calibrated and is not fabricated.
+- Confidence/Verification safety foundation remains PASS for bounded ambiguity and factual-trust boundaries; broad language coverage/calibration remains PARTIAL.
+- P6 remains PARTIAL; P7/P8/P10/P11 and all other P-series gate statuses are unchanged. No P-series gate promoted. Do not reopen PASS gates absent a regression.
+
+## Final runtime snapshot after regression — 2026-10-31
+- The Qwen3-1.7B server was online during the live semantic-provider smoke, but the final post-regression probe found port 8080 offline and no llama-server process. The reason for its exit was not established; I did not restart it.
+- Media Bridge 38742 remained healthy (HTTP 200).
+- Available RAM was approximately 2.3 GiB; the Qwen3-4B 3 GiB guard remains unmet. No guard was bypassed and no model was downloaded.
+- Treat the semantic model as currently OFFLINE at the final snapshot. The earlier 24.73s None result remains evidence that it did not pass semantic acceptance while online.
+
+
+## 2026-11-01 — Roadmap reconciliation and no-repeat policy (evidence-backed)
+
+### Source/evidence rule
+- This entry reconciles the latest saved project evidence available on 2026-11-01; it is not a claim that a fresh full regression was run today.
+- Latest Understanding Intelligence report: docs/STATUS/UNDERSTANDING_INTELLIGENCE_ACCEPTANCE_2026-10-31.md.
+- Latest P6/P7/P8/P10/P11 re-verification: docs/STATUS/P6_P7_P8_P10_P11_REVERIFICATION_2026-10-31.md.
+- Latest knowledge provenance audit: docs/STATUS/KNOWLEDGE_PROVENANCE_AUDIT_2026-10-31.md.
+- Latest complete full-regression evidence after fixture correction: logs/full_regression_after_fixture_fix_20261031.log — 2,257 passed, exit 0. A later Understanding Intelligence code checkpoint has its own full regression: 2,262 passed in 174.89s, exit 0 (logs/full_regression_understanding_update_2026-10-31.log). Use the latter for that checkpoint; do not merge counts or describe either as a run performed on 2026-11-01.
+
+### Current gate disposition (do not infer broader completion)
+- P1: PASS for the defined bounded acceptance; preserve prior evidence.
+- P2: PASS for the defined bounded live-research/task-execution matrix; preserve prior evidence.
+- P3: previously accepted software backup/restore components remain scoped PASS; physical restore/release conditions remain separately pending where specified in the active gate registry. Do not reopen accepted sub-gates without a stated reopen condition.
+- P4: PASS for the defined child/worker lifecycle acceptance (11/11 in the saved 2026-10-21 evidence).
+- P5: PASS for the defined controlled self-improvement focused acceptance (13 checks in the saved 2026-10-21 evidence); this is not permission for executable-code self-update.
+- P6: PARTIAL — voice/media software routes exist and pass bounded API checks; human Hindi ASR quality, calibrated ASR confidence, physical microphone-to-audible-speaker E2E remain pending.
+- P7: PARTIAL/BLOCKED — OCR-only path; semantic image-understanding model, representative dataset and grounded image-answer accuracy acceptance are absent.
+- P8: PARTIAL/BLOCKED — bridge rejects unauthorised requests, but real Companion pairing/token authentication, UI-tree/actions and persistent Emergency Stop acceptance are not verified.
+- P9: PASS for its previously defined bounded integrated security/reliability acceptance; do not generalise to whole-product release.
+- P10: PARTIAL / NEEDS RECONCILIATION — integrated v2.0 417-item reference recovered; exact historical v1.0 item-by-item provenance is not proven. Adoption of v2.0 as reconstructed baseline requires explicit user approval.
+- P11: BLOCKED — release depends on unresolved P6/P7/P8, knowledge lifecycle remediation and P10 reconciliation.
+- P12: retain the previously recorded PASS only within its defined scope; no broader release claim.
+
+### Understanding Intelligence sub-gates (scoped, not P-series promotion)
+- Intent: PASS for bounded deterministic Hinglish bug-fix routing and context clarification; PARTIAL for general semantic intent quality.
+- Context/Memory: PASS for bounded persistent recent-context reconstruction after process restart; PARTIAL for full-lifetime/project-context understanding and broader conflict/relevance coverage.
+- Voice: PARTIAL; synthetic Hindi TTS-to-ASR loopback was incomplete; physical phone mic/speaker E2E and calibrated ASR confidence are pending.
+- Confidence/Verification: PASS for bounded deterministic ambiguity and factual-trust safety boundaries; PARTIAL for broad multilingual calibration/accuracy.
+- Supporting report records 137 Understanding tests + 80 persistent-context tests and a full repository regression of 2,262 passed (2026-10-31). No P-series gate was promoted.
+
+### Knowledge trust boundary — do not regress
+- Latest audit: 83,908 candidates; 3,630 lifecycle events, all latest status UNVERIFIED; 80,278 candidates have no lifecycle event; 80,198 legacy verified flags lack a latest VERIFIED event; zero latest VERIFIED records; each candidate has one distinct source only.
+- Verified-only retrieval must continue requiring a latest VERIFIED lifecycle event (and the explicit in-memory VERIFIED metadata/currentness requirements). Do not bulk-promote, flip legacy flags, fabricate verification events, or write/migrate production knowledge without independent corroboration, backup and explicit approval.
+- Audit execution is PASS; data trust remediation remains BLOCKED.
+
+### Mandatory no-repeat / incremental update policy
+1. Before starting a task, read this roadmap and the authoritative gate registry; check the task ID, acceptance criteria, evidence path, and reopen condition.
+2. If the exact acceptance criteria already have a valid PASS artifact and no reopen condition is met, mark it ALREADY ACCEPTED and skip implementation/retest. Do not count it again.
+3. After each newly completed task, immediately update this roadmap and the relevant gate registry/status report in the same work session. Record date, scope, changed files, backup path (if applicable), focused tests, regression result/log, and remaining limitations.
+4. Keep PASS, IMPLEMENTED, PARTIAL, BLOCKED, NEEDS-RECONCILIATION and COMPLETE distinct. A code presence or unit-test PASS cannot mark a hardware/system gate COMPLETE.
+5. Never overwrite historical evidence. Append superseding checkpoints and explicitly identify which earlier result they supersede.
+6. Do not modify/delete user data, production knowledge, credentials, backups or unrelated processes as part of roadmap maintenance. Protected actions require explicit user approval.
+7. Maintain one canonical task identity per requirement; link duplicate tests/checklists to that identity rather than creating repeat work.
+8. Update this roadmap after EVERY task, not only at phase completion. The next task must be selected from the remaining queue after that update.
+
+### Next actionable queue (ordered by dependency, not by convenience)
+1. Continue Understanding Intelligence acceptance without reopening its bounded PASS sub-scopes: expand semantic intent/context evaluation only when a suitable model/runtime safely meets device memory limits; do not bypass the 3 GiB model guard.
+2. P6: human Hindi/Hinglish/English speech corpus + WER/CER and calibrated confidence evaluation; then physical phone mic → transcript review/confirmation → Main Brain → audible speaker E2E.
+3. P7: select/enable a safe semantic vision backend only with approval and evaluate a representative dataset; preserve OCR-only honest capability labels until then.
+4. P8: resolve Companion/Termux token pairing and verify authenticated read-only status, UI-tree, permitted action and persistent Emergency Stop on an attached device.
+5. Knowledge: design independently corroborated, backed-up, approval-gated per-claim revalidation; no bulk promotion.
+6. P10: obtain explicit user decision on reconstructed v2.0 baseline and continue item-by-item reconciliation; exact v1.0 provenance must remain marked unresolved until proven.
+7. P11: release gate only after all dependencies above are accepted.
+
+### No-repeat checkpoint
+This update records existing evidence and policy only. No code changed, no production database changed, no P-series gate was promoted, and no new test result is claimed for 2026-11-01.
+
+
+## 2026-11-01 — Gemini/HUSAI architecture adoption audit (first pass)
+- Added docs/ROADMAP/GEMINI_HUSAI_ARCHITECTURE_ADOPTION_REGISTER_2026-11-01.md as the additive source for mapping supplied HUSAI v3.2 / Release 4.0 concepts to existing modules and tests.
+- First-pass findings: perception, attention, working-memory, tri-tier memory, knowledge-graph storage, reasoning/planning, advisory three-brain council, uncertainty, sleep/consolidation, action/tool, observability and recovery components already exist in bounded forms. Several remain PARTIAL at integration or physical-device acceptance level.
+- First-pass gaps: no direct GBNF/grammar-constrained decoding or vector-embedding implementation marker found in core/app/configs/tests; no first-class world-model/causal/simulation acceptance found. Graph storage exists but is not by itself GraphRAG. Resource module is not proof of device-level adaptive resource intelligence.
+- HUSAI's central brain maps to the existing SAHIBEX Master Brain. Learning/Teaching/Action/Reflection map to existing departments/handlers; do not create duplicate root or department trees. Cognitive Council remains heuristic/advisory, not independent model consensus.
+- Existing P6/P7/P8/P10/P11 and knowledge-trust blockers remain unchanged. No P-series gate promoted.
+- Audit safety: working tree was already dirty with user modifications/untracked files. No reset/stash/checkout/cleanup was performed. No code, tests, production DB, model process or device settings were changed. git diff --check was PASS at start; no tests rerun.
+- Next task: trace actual MasterBrain wiring and runtime reachability for each mapped module; then design only the genuinely missing capabilities. No implementation PASS is claimed by this audit.
+
+
+## 2026-11-01 — MasterBrain wiring trace (partial)
+- Static source inspection confirms MasterBrain directly instantiates ConfidenceVerificationBrain and ThreeBrainCouncil; ThreeBrainCouncil is called in the response diagnostic path and remains advisory/non-authoritative. MasterBrain also composes MemoryBrain, KnowledgeBrain, ResearchLearningBrain, ToolBrain, AutonomousWorkBrain and CognitiveNeuralArchitecture over the shared operational/research storage.
+- AttentionEngine, UncertaintyEngine, WorkingMemoryExpansionEngine, SleepConsolidationExpansion, ObservabilityEngine, BrainResourceState, RecoveryController and KnowledgeGraphStorage were not directly imported/instantiated in the inspected MasterBrain root. This is not proof they are unused; subordinate composition/runtime paths still need tracing.
+- No tests rerun, no code/DB changed, no P-series status changed. Full wiring audit remains in progress.
+
+
+## 2026-11-01 — Brain wiring audit checkpoint 2
+- AST source audit found 61 unique internal Brain role handlers registered in MasterBrain.__init__ (zero duplicate role IDs). Production call sites for dispatch_internal_brain were found for reasoning, orchestration, research, learning and coding; other registered roles are callable but not proven auto-invoked.
+- ResearchLearningCommander worker dispatch is explicitly approval-gated (Mother + human) and requires distinct Army/Labour child IDs.
+- ReasoningCoordinator is composed by OperationalReasoning; UncertaintyEngine is instantiated by ReasoningCoordinator and ConfidenceVerificationBrain.
+- SahibexExecutionLoop appears in its own module, unit tests and P2 acceptance script; no production core/app Python caller found in bounded search. PersistentMemoryKnowledgeGraph/KnowledgeGraphStorage likewise had definitions/tests but no production core/app caller found. Record as integration NOT VERIFIED, not confirmed defect; inspect intended production composition next.
+- Static searches only; no tests rerun, no code/DB changed, no P-series status changed.
+
+
+## 2026-11-01 — Permission / verification audit
+- MasterBrain composes PermissionEngine, PermissionGateway, HumanApprovalGateway, VerificationEngine, EmergencyStop and ToolBrain. ToolBrain checks Emergency Stop and protected-action permission/confirmation, then authenticates a PENDING intent before handler execution; audit precondition failure blocks execution.
+- ToolIntelligence calls OperationalVerificationRecovery.verify_tool_result. This checks internal consistency/safety, not independent proof of external final state or factual correctness. Independent outcome/semantic verification remains PARTIAL.
+- SahibexExecutionLoop and PersistentMemoryKnowledgeGraph production runtime integration remain NOT VERIFIED. No P-series gate promoted; no code, DB or tests changed in this checkpoint.
+
+
+## 2026-11-01 — Prior-work reconciliation checkpoint (roadmap sync)
+- Reconciled the immediately preceding SAHIBEX architecture/wiring/security audit work into the roadmap record before starting any new implementation.
+- Adoption register `docs/ROADMAP/GEMINI_HUSAI_ARCHITECTURE_ADOPTION_REGISTER_2026-11-01.md` contains the HUSAI-to-SAHIBEX mapping, first-pass capability matrix, MasterBrain composition trace, 61-role registration audit, worker approval boundary, Knowledge Graph / ExecutionLoop production-wiring uncertainty, and Permission → Execution → Verification → Audit findings.
+- Master roadmap and remaining-work list retain the same audit checkpoints and the mandatory no-repeat rule. The phase gate registry retains the scoped status boundaries; no P-series gate is promoted by static source inspection.
+- Confirmed outcomes to carry forward: 61 unique registered internal role IDs with no duplicates; worker dispatch requires Mother + human approval; protected ToolBrain execution has Emergency Stop, permission/confirmation and authenticated PENDING-intent checks; post-execution verifier checks seven internal consistency/safety properties but does not prove external final state or factual correctness.
+- Explicit unresolved items: KnowledgeGraphStorage/PersistentMemoryKnowledgeGraph production retrieval wiring NOT VERIFIED; SahibexExecutionLoop production runtime composition NOT VERIFIED; independent semantic/outcome verification PARTIAL. These are investigation items, not confirmed defects.
+- Work classification: documentation/roadmap reconciliation only. No executable source change, no test execution, no production DB/model/device-setting change, no destructive action, and no new implementation PASS. Existing dirty working-tree files remain preserved.
+- No-repeat instruction: treat the above audit checkpoints as already recorded; do not repeat the same static scans unless a specific code change, new evidence, or regression reopens the item. Select the next task from the remaining queue.
+
+
+## 2026-11-01 — Phase 1 Task 1: Project Safety and Baseline Audit
+- PASS: confirmed the online Termux project at `/data/data/com.termux/files/home/SAHIBEX`, branch `main`, HEAD `b0074b7`.
+- Baseline records 44 tracked modified paths, 16 untracked path entries, and 103 untracked files from the separate Git untracked-file inventory. These are pre-existing user changes and must be preserved.
+- `git diff --check` PASS (exit 0).
+- Existing backup inventory: 54 directories / 246 files / approximately 1.1G. Presence was inventoried only; restore integrity was not tested.
+- Existing databases were inventoried by path/size only. No database was opened or modified.
+- Detailed evidence: `docs/STATUS/PHASE1_TASK1_PROJECT_BASELINE_2026-11-01.md`.
+- No code/test/database/model/device-setting changes; no tests rerun; no P-series gate promoted. No reset/stash/checkout/clean/overwrite was performed.
+- No-repeat rule: this baseline task is complete. Do not repeat it unless the working tree, branch/HEAD, backup inventory or project location materially changes. The next task is Phase 1 Task 2: complete module inventory/evidence mapping, reusing the existing Gemini/HUSAI adoption register and prior wiring checkpoints.
+
+
+## 2026-11-01 — Phase 1 Task 2: Architecture inventory and evidence mapping
+- PASS for static inventory/evidence mapping only. Detailed checkpoint: `docs/STATUS/PHASE1_TASK2_ARCHITECTURE_INVENTORY_2026-11-01.md`.
+- Reused existing architecture/data-flow audit, 19-edge source call-path audit, 3D architecture artifact, P5 worker/child audit, 417-item matrix, phase gate registry and Gemini/HUSAI adoption register; no duplicate architecture specification was created.
+- Inventory: core/brain 213 top-level .py files (not separate brains), core/agent 5, orchestrator 3, model gateway 11, research 87; 543 unit-test source files and 545 total test source files.
+- Existing 61 internal role IDs are handler registrations, not 61 independent models/processes. One MasterBrain remains the root; HUSAI department names map to existing responsibilities.
+- Existing E01–E16 software call paths remain source-verified within the edge-audit revision; E17 physical voice E2E NOT VERIFIED, E18 semantic vision PARTIAL, E19 live Accessibility PENDING.
+- Production integration for PersistentMemoryKnowledgeGraph/KnowledgeGraphStorage and SahibexExecutionLoop remains NOT VERIFIED; independent semantic/outcome verification PARTIAL. These remain explicit investigation items, not confirmed defects.
+- Read-only inspection only; no tests rerun, no code/database/model/device-setting changed, no P-series gate promoted.
+- No-repeat rule: do not repeat existing root/edge scans; next Phase 1 task is to consolidate the architecture specification and dependency/control-plane matrix, explicitly reusing these source documents.
+
+
+## 2026-11-01 — Phase 1 Task 3: Master Architecture Specification drafted
+- Created additive architecture specification: `docs/architecture/SAHIBEX_MASTER_ARCHITECTURE_SPEC_2026-11-01.md`.
+- Consolidates one-root MasterBrain governance, perception, control plane, cognitive state/memory, knowledge/research, reasoning/planning, action/tools, learning/reflection, runtime/model/resource planes, HUSAI department mapping, dependency/acceptance matrix and deferred research.
+- This is a documentation consolidation PASS, not user-approved final specification and not runtime implementation PASS. It does not replace the 417-item matrix, phase gate registry or existing source-edge audit.
+- Explicitly preserves open states: GraphRAG production wiring NOT VERIFIED; vector embeddings MISSING/DESIGN REQUIRED; GBNF MISSING/DESIGN REQUIRED; world/causal/simulation RESEARCH-DESIGN; P6/P7/P8/P10/P11 and knowledge trust blockers unchanged.
+- No code/test/database/model/device setting changed; no tests rerun; no P-series gate promoted.
+- User acceptance of this additive specification and the dedicated Brain Connection Registry remain open Phase 1 items.
+
+
+## 2026-11-01 — Phase 1 Task 4: Brain Connection Registry
+- Created `docs/architecture/SAHIBEX_BRAIN_CONNECTION_REGISTRY_2026-11-01.md`.
+- Reuses existing E01–E19 edge audit and adds cross-cutting C01–C18 composition/control edges, including ConfidenceVerificationBrain, Council, worker approvals, ToolBrain permission/audit, uncertainty, attention, working memory, sleep, observability, resource, recovery, Knowledge Graph, ExecutionLoop, ModelGateway and Companion.
+- Separates VERIFIED IN SOURCE from runtime/physical acceptance; unresolved edges are explicitly NOT VERIFIED/PARTIAL rather than invented or promoted.
+- No code/test/database/model/device-setting changed; no tests rerun; no P-series gate promoted.
+- Registry documentation PASS. Remaining Phase 1 work: consolidate the authority/security and resource/model dependency matrices, then final consistency review and user acceptance.
+
+
+## 2026-11-01 — Phase 1 Task 5: Authority/security and resource/model matrix
+- Created `docs/architecture/SAHIBEX_CONTROL_PLANE_RESOURCE_MATRIX_2026-11-01.md` after reading PermissionGateway, PermissionEngine, EmergencyStop, BrainResourceState, ModelRouter, RecoveryController and ObservabilityEngine source.
+- Recorded exact current ActionType policy: RESPOND/RESEARCH/CREATE/READ_FILE allowed; WRITE_FILE/NETWORK_ACCESS require confirmation; DELETE_FILE/RUN_COMMAND/CREDENTIAL_USE require explicit confirmation; SYSTEM_CHANGE/FINANCIAL_ACTION are critical and blocked by default. Higher-level self-update/external-control mapping must be separately traced; do not infer it from this enum.
+- Important limitation found: EmergencyStop and RecoveryController classes maintain in-memory state/history; persistence/physical restart acceptance is not established by these classes. BrainResourceState is only a task-concurrency contract; ModelRouter chooses explicit/default provider; ObservabilityEngine is bounded in-memory collection. Do not claim persistent E-stop, adaptive hardware scheduling, hardware-aware routing or durable tracing from these components alone.
+- Static source review PASS; runtime/physical acceptance remains separate. No code/test/database/model/device setting changed; no tests rerun; no P-series gate promoted.
+
+
+## 2026-11-01 — Phase 1 Master Architecture Audit completion
+- Phase 1 documentation/static architecture foundation: PASS. Final report: `docs/STATUS/PHASE1_ARCHITECTURE_AUDIT_COMPLETION_2026-11-01.md`.
+- Completed: project safety baseline; source/module inventory and evidence mapping; additive Master Architecture Specification draft; Brain Connection Registry; authority/security and resource/model matrix; final consistency check.
+- Final `git diff --check`: PASS (exit 0). No source code, tests, production DB, model process, credentials or Android settings changed by Phase 1 audit. No tests rerun and no P-series gate promoted.
+- Existing dirty working tree remains preserved. No reset/stash/checkout/clean/overwrite.
+- The Master Architecture Specification is a draft awaiting user's acceptance; it does not replace the 417-item requirements matrix or phase gate registry.
+- Runtime/physical blockers remain unchanged: P6/P7/P8/P10/P11 and knowledge trust; GraphRAG and SahibexExecutionLoop production wiring NOT VERIFIED; vector embeddings/GBNF MISSING/DESIGN REQUIRED; world/causal/simulation RESEARCH-DESIGN.
+- Next workstream: Phase 2 Cognitive Loop Integration, starting with a narrow read-only trace of perception/intent → context → working memory → attention within the actual MasterBrain path. Reuse existing components/tests; implement only a proven gap with per-file backup and focused regression.
+
+
+## 2026-11-01 — Phase 2 Task 1: Cognitive Loop Integration
+- PASS for bounded software scope. Evidence: `docs/STATUS/PHASE2_COGNITIVE_LOOP_INTEGRATION_2026-11-01.md`.
+- Connected the existing AttentionEngine into MasterBrain's common result/context path as advisory-only telemetry; it cannot grant permission, execute actions or gate execution. Its signals are deterministic heuristics, not calibrated probabilities.
+- Exposed the real MemoryBrain-owned bounded WorkingMemory snapshot after interaction activation (capacity/count/top IDs), without promotion or extra persistent writes.
+- Fixed normal full-path input-understanding metadata propagation by passing `input_trace` into `_record_context`.
+- Backup: `backups/phase2_cognitive_loop/master_brain.py.pre_phase2_20261101.bak`; SHA-256 `132bd590ce81fe21167962d59acb70f3cdf87612a40fdb5528435deffdfb921c`.
+- Verification: py_compile PASS; focused Phase 2 + attention + working-memory + language/context tests 21 passed; MasterBrain contract/intelligence/runtime/action tests 16 passed; MasterBrain/context/memory family 60 passed; `git diff --check` PASS. Full repository regression not rerun.
+- No P6/P7/P8/P10/P11 gate promoted; no physical modality acceptance claimed.
+- No-repeat: do not rebuild/retest this exact bounded Attention/WorkingMemory/input-trace integration unless code changes or a regression reopens it.
+- Next Phase 2 work: verify whether context relevance and active task continuity are correctly carried into planning/reasoning, then implement only a concrete missing edge. Do not wire the Phase E assessment-only expansion component as if it were memory storage.
+
+
+## 2026-11-01 — Phase 2 Task 2: Context-to-Reasoning-to-Planning flow
+- PASS for bounded software data-flow acceptance. Evidence: docs/STATUS/PHASE2_COGNITIVE_LOOP_INTEGRATION_2026-11-01.md.
+- Fixed the proven dispatch gap: the read-only MotherDecisionContext now crosses both Reasoning and Orchestration dispatches.
+- Added up to five bounded active WorkingMemory items to the context snapshot, explicitly marked as continuity hints and NOT verified evidence.
+- ReasoningCoordinator now receives this context as reusable prior context, while missing_information=True keeps the assessment unverified; no truth/permission claim is inferred.
+- Planner records the context memory/knowledge/working-memory/retrieval references in plan metadata; plan remains non-executing.
+- Added cognitive-flow trace and integration assertions for context built → WorkingMemory → reasoning receipt/reuse → planning receipt/reference, with authority unchanged.
+- Backups and hashes are recorded in the status report. Focused tests: 10 passed; expanded overlapping regression including MemoryBrain runtime and Phase 2 Task 1 integration: 25 passed in 10.41s. py_compile and git diff --check PASS. Full repository regression not run.
+- No P-series gate promoted; no knowledge trust promotion; no physical-device modality claim.
+- No-repeat: Task 2 is accepted for this bounded software contract; reopen only on regression or a relevant source change.
+
+
+## 2026-11-01 — Phase 2 Task 3: Durable goal continuity and restart recovery
+- PASS for the bounded checkpoint persistence/restart-resume contract. Evidence: docs/STATUS/PHASE2_COGNITIVE_LOOP_INTEGRATION_2026-11-01.md.
+- Wired optional durable checkpoint storage into CheckpointResumeStore, AutonomousWorkBrain, MasterBrain and the normal Termux app runtime (default data/runtime/autonomous_work_checkpoints.json; overridable with SAHIBEX_AUTONOMOUS_CHECKPOINT_PATH).
+- Atomic writes, SHA-256 integrity/schema/runtime identity checks, fail-closed snapshot import, nested sensitive-key stripping, 0600 permissions and in-memory rollback on persistence failure added.
+- New process can reload verified completed-step checkpoints and continue only after an explicit run invocation with matching job/runtime/objective. No boot-time auto-execution.
+- Focused regression: 19 passed in 3.77s; py_compile and git diff --check PASS. Full repository regression not run.
+- Existing checkpoint path was absent before activation; no existing data overwritten. Per-file backups and hashes in status report.
+- Remaining: durable rehydration of TaskManager goal/task graph and LongRunningJobManager lifecycle/history is not included in this acceptance.
+- No P-series gates or knowledge-trust statuses changed. No-repeat unless regression/reopen.
+
+
+## Task 4 — Durable Task Graph and Job Lifecycle Recovery (2026-11-01)
+
+**Status: PASS — bounded software recovery contract verified.**
+
+- `TaskManager` now accepts the existing `ResearchStorage` persistence interface, restores full persisted Goals/Tasks on construction, and writes each graph as a single SQLite transaction (goal row plus task rows). Creation and cancellation persist immediately; autonomous execution persists state transitions and verified step outcomes.
+- On process recreation, tasks left `RUNNING` are changed to `READY` with `metadata.recovered_after_restart=true`; this is a recoverable state only and does not execute work. Dependency links, parent IDs, priority, approval flag, retry counters, timestamps, result/error fields and metadata remain in the stored task graph.
+- `LongRunningJobManager` now supports an optional atomic JSON lifecycle store with SHA-256 envelope integrity validation and mode 0600. It persists job records, sequence, checkpoints and history. A job found `RUNNING` after restart is converted to `PAUSED` with an interruption reason; terminal states remain terminal. Explicit `resume()` remains required.
+- Normal runtime derives `*.state.sqlite3` and `*.jobs.json` beside the configured autonomous checkpoint file. Existing checkpoint persistence remains separate and unchanged.
+- Tests: `PYTHONPATH=. pytest -q tests/unit/test_phase2_task_job_graph_recovery.py tests/unit/test_task_state.py tests/unit/test_task_dependencies.py tests/unit/test_task_persistence.py tests/unit/test_phase2_durable_goal_resume.py tests/unit/test_task34_persistence_restart_recovery.py tests/unit/test_task35_failure_recovery.py` — **10 passed**. `py_compile` and `git diff --check` — PASS. Full repository suite not run.
+- Backups: `backups/phase2_cognitive_loop/task_state.py.pre_task_graph_20261101.bak` (SHA-256 `21c7d5ca03f05c4e61fe0ac95912654bee796de033a1785b367a0c52b958ebfc`); `long_running_jobs.py.pre_job_lifecycle_20261101.bak` (`fd0d983dd8a064ae0bec8a99a9470b660433be9d718252fac73435b9c8112d18`); `autonomous_work_brain.py.pre_task_job_recovery_20261101.bak` (`c17054fb218d5ce742bd80aaa14dd62496728f469e86cb0143b34a7c177329f2`).
+- Limitations: physical phone kill/restart recovery was not exercised; full autonomous goal/plan reconstruction and callable/worker reattachment are not proven. Injected custom `TaskManager`/`LongRunningJobManager` instances retain their caller-defined persistence behavior. Full-suite regression remains pending.
+
+
+## Task 5 — Full Autonomous Plan Reconstruction & Safe Resume (2026-11-01)
+
+**Status: PASS — bounded plan/task reconstruction and explicit-resume contract verified.**
+
+- Autonomous checkpoint records now carry a versioned-by-schema plan manifest: stable `plan_id`, plan version/reason, ordered decomposed goals with stable goal IDs, objective/intent/success criteria/dependencies, and the persisted TaskManager `task_goal_id`. Resume reconstructs the original `AgentPlan` rather than decomposing into fresh IDs.
+- The persisted task Goal also carries an `autonomous_plan` manifest plus job/objective identity. This is a recovery fallback if the latest checkpoint file is missing, provided the durable task graph still exists. A mismatched/missing graph is fail-closed; no duplicate replacement plan is silently created.
+- Recovery reconciles completed task states and task results with checkpoint progress. If task completion reached SQLite but the later checkpoint did not, the completed task is still recognized and not re-executed. Unfinished work remains eligible only after an explicit `run(...)` invocation supplies fresh execution and verification callbacks. No callbacks, tools, or protected actions are serialized or auto-invoked on startup.
+- Checkpoint completion titles/results are no longer overwritten by an empty local list after resume. Job ID/objective/runtime identity and lifecycle validation remain enforced; terminal jobs require a new job ID.
+- Planning graph persistence now sanitizes nested sensitive-key fields in task results and metadata before writing the durable graph, without mutating the in-memory task result.
+- Tests: `PYTHONPATH=. pytest -q tests/unit/test_phase7_autonomous_work_brain.py tests/unit/test_phase2_durable_goal_resume.py tests/unit/test_phase2_task_job_graph_recovery.py tests/unit/test_task_state.py tests/unit/test_task_dependencies.py tests/unit/test_task_persistence.py tests/unit/test_task34_persistence_restart_recovery.py tests/unit/test_task35_failure_recovery.py` — **18 passed**. `py_compile` and `git diff --check` — PASS. Full repository suite not run.
+- Backup: `backups/phase2_cognitive_loop/autonomous_work_brain.py.pre_plan_reconstruction_20261101.bak` (SHA-256 `a24830e2710ce30a4a628b02c3740c749c37b8970be1eec131e16cc985f652b0`).
+- Limitations: physical Android force-stop/reboot validation remains pending. External `execute_step`/`verify_step` callables are intentionally not persisted; the caller must provide them again on explicit resume. Full-suite regression remains pending. No P6/P7/P8/P10/P11 gate was changed by this task.
+
+
+## 2026-11-01 — Separate HUSAI/Frontier architecture expansion reference
+- Full user-supplied architecture material is catalogued in docs/ROADMAP/GEMINI_HUSAI_ARCHITECTURE_ADOPTION_REGISTER_2026-11-01.md under “User-supplied complete architecture catalogue”.
+- Future-work tracks are associative memory/GraphRAG, structured tools/optional GBNF, Council evaluation, sandboxed tool synthesis, proactive/sleep scheduling, multimodal acceptance, resource-aware inference, evaluation/red-team/data flywheel, and advanced research (PRM/MCTS, native multimodality, world/causal models, interpretability and distributed training).
+- These are NOT new numbered tasks yet and are NOT merged into current Phase 2 Cognitive Loop. Existing Phase 2 Tasks 1–5 PASS and Task 6 pending verification remain recorded in docs/STATUS/PHASE2_COGNITIVE_LOOP_INTEGRATION_2026-11-01.md. No other phase/P-series/6P/417 status is changed.
+
+
+## 2026-11-09 — Current working-tree regression checkpoint (verification only)
+
+- Reconnected to the existing Termux project at `~/SAHIBEX`; preserved the existing dirty working tree and all untracked backups/artifacts. No reset, stash, checkout, clean, commit, production DB mutation, model shutdown, service startup, or device-setting change was performed.
+- Full repository test run: `.venv/bin/python -m pytest -q` — **2,317 passed in 178.95s**, exit code 0.
+- Test collection independently reports **2,317 tests collected**.
+- `.venv/bin/python -m compileall -q core app tools scripts tests`: PASS.
+- All shell scripts under `scripts/`: `bash -n` PASS.
+- `git diff --check`: PASS.
+- No failing test was exposed by this full regression; therefore no speculative code patch was made during this verification-only checkpoint.
+- Runtime probes at this checkpoint: model API 8080 OFFLINE; Media Bridge 38742 OFFLINE; Accessibility bridge 38741 OFFLINE. They were not started. Available memory was about 2.2 GiB. Do not infer phone E2E from unit tests.
+- Working tree already contains many user modifications and untracked backups; exact paths remain as reported by `git status --short`. They are intentionally preserved.
+
+### Still open — do not mark complete
+
+1. **P6 physical voice acceptance:** real Android microphone → ASR → transcript review/confirmation → Main Brain → audible TTS speaker round-trip; human Hindi/Hinglish/English ASR corpus and calibrated confidence. Current synthetic loopback is incomplete.
+2. **P7 semantic vision:** a safe, device-compatible semantic image-understanding model/provider plus representative accuracy evaluation. OCR alone is not semantic vision.
+3. **P8 device control:** real Companion pairing/authentication, Accessibility enabled-state, UI-tree/action acceptance, and persistent Emergency Stop on the actual phone. Previous bridge/token probes did not prove pairing.
+4. **Knowledge trust lifecycle:** read-only audit found 83,908 candidates, zero latest VERIFIED lifecycle events, and only one distinct source per candidate. Independent corroboration, reviewed migration, and user-approved backup are required; do not bulk-promote legacy flags.
+5. **P10 historical requirements:** recovered 417-item v2.0 reference is not proven to be the exact historical v1.0 source. User decision on reconstructed baseline and item-by-item provenance reconciliation remain required.
+6. **P11 release:** blocked until dependent P6/P7/P8/Knowledge/P10 acceptance evidence is complete.
+7. **Runtime integration investigations:** `SahibexExecutionLoop` and `PersistentMemoryKnowledgeGraph/KnowledgeGraphStorage` have code/tests but production runtime reachability remains NOT VERIFIED. Static search is not proof of integration or defect.
+8. **Dynamic Tool Creation 2.0:** a genuine OS-enforced sandbox and model-assisted constrained designer remain future work. The existing Dynamic Tool Creation Brain is declarative/read-only; do not call it an arbitrary-code sandbox.
+9. **Full live observability/3D UI:** architecture/live edge tracing, real-time diagnostic state, semantic camera understanding, motion/gesture recognition, and a true 3D/avatar interaction experience remain distinct implementation/acceptance tasks.
+
+### Decision
+- The 2,317-test repository regression is PASS for the current software snapshot.
+- No P-series gate is promoted by this test run.
+- Next engineering work should address one NOT VERIFIED integration edge at a time, beginning with runtime wiring design for the existing ExecutionLoop and persistent graph, without duplicating existing engines or bypassing MasterBrain authority.

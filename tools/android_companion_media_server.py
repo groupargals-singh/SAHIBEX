@@ -14,8 +14,6 @@ from typing import Any
 
 from core.brain.master_brain import MasterBrain
 from core.brain.speech_recognition import LocalWhisperCppRecognizer, SpeechRecognitionError, MAX_AUDIO_BYTES
-from core.brain.perception_language_brain import PerceptionLanguageBrain
-from core.brain.contextual_input_understanding import ContextualInputUnderstandingBrain
 from core.brain.universal_language_brain import UniversalLanguageBrain
 from core.brain.neural_tts import LocalNeuralTTS, NeuralTTSError, MAX_TTS_TEXT_CHARS, MAX_TTS_WAV_BYTES
 from core.diagnostics.diagnostic_engine import collect_diagnostics
@@ -69,6 +67,19 @@ class MediaBridgeHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path == "/health":
             self._send(200, {"success": True, "service": "sahibex-media-bridge", "host": HOST, "port": PORT})
+            return
+        if self.path == "/session":
+            authorization = self.headers.get("Authorization", "")
+            if not hmac.compare_digest(authorization, "Bearer " + self.token):
+                self._send(401, {"success": False, "authenticated": False, "error": "unauthorized"})
+                return
+            self._send(200, {
+                "success": True,
+                "authenticated": True,
+                "service": "sahibex-media-bridge",
+                "host": HOST,
+                "port": PORT,
+            })
             return
         if self.path == "/diagnostics":
             authorization = self.headers.get("Authorization", "")
@@ -318,47 +329,48 @@ class MediaBridgeHandler(BaseHTTPRequestHandler):
                 if brain is None:
                     brain = MasterBrain()
                     self._thread_state.brain = brain
-            # Preserve the raw transcript for traceability; normalize only with
-            # conservative, curated corrections before the Main Brain receives it.
-            perception = PerceptionLanguageBrain().assess(text.strip())
-            processed_text = perception.normalized_text
+            # Pass the untouched transcript to Master Brain. Typed and voice
+            # requests now share one normalization, language and contextual-repair
+            # pipeline; the original transcript remains available for audit.
+            raw_transcript = text.strip()
+            result = brain.process(raw_transcript, user_confirmation=False)
+            result_metadata = getattr(result, "metadata", {})
+            input_trace = (
+                result_metadata.get("input_understanding", {})
+                if isinstance(result_metadata, dict) else {}
+            )
+            if not isinstance(input_trace, dict):
+                input_trace = {}
+            processed_text = input_trace.get("normalized_text", raw_transcript)
+            if not isinstance(processed_text, str):
+                processed_text = raw_transcript
+            input_corrections = input_trace.get("corrections", [])
+            input_suggestions = input_trace.get("suggestions_not_applied", [])
+            known_terms = input_trace.get("known_terms", [])
+            if not isinstance(input_corrections, list):
+                input_corrections = []
+            if not isinstance(input_suggestions, list):
+                input_suggestions = []
+            if not isinstance(known_terms, list):
+                known_terms = []
+            input_language = input_trace.get("language_code", "und")
+            if not isinstance(input_language, str):
+                input_language = "und"
+            contextual_status = input_trace.get(
+                "contextual_repair_status", "NOT_REPORTED_BY_BRAIN"
+            )
             contextual_repair = {
-                "status": "SKIPPED_NO_AMBIGUOUS_SPELLING",
-                "changed": False,
-                "confidence": 0.0,
+                "status": contextual_status,
+                "changed": any(
+                    isinstance(item, dict)
+                    and str(item.get("reason", "")).startswith("contextual_model")
+                    for item in input_corrections
+                ),
+                "confidence": input_trace.get("contextual_repair_confidence") or 0.0,
+                "language_code": input_language,
                 "intent_summary": "",
             }
-            # Ask the configured model to repair context-sensitive typos only
-            # when lexical analysis found uncertain candidates. A provider failure
-            # leaves the conservative transcript unchanged.
-            if (
-                (perception.suggestions or len(perception.corrections) >= 2)
-                and os.getenv("SAHIBEX_CONTEXTUAL_INPUT_REPAIR", "1").strip() == "1"
-            ):
-                try:
-                    operational = getattr(brain, "mother_operational", None)
-                    model = getattr(operational, "model", None)
-                    gateway = getattr(model, "gateway", None)
-                    provider = getattr(operational, "default_provider", None)
-                    if gateway is not None and provider and provider != "mock":
-                        interpreted = ContextualInputUnderstandingBrain(
-                            gateway, provider=provider
-                        ).understand(processed_text)
-                        contextual_repair = {
-                            "status": interpreted.status,
-                            "changed": interpreted.changed,
-                            "confidence": interpreted.confidence,
-                            "language_code": interpreted.language_code,
-                            "intent_summary": interpreted.intent_summary,
-                        }
-                        if interpreted.changed:
-                            processed_text = interpreted.corrected_text
-                except Exception:
-                    # Understanding is an optional enhancement, never a reason
-                    # to lose the original transcript or bypass normal routing.
-                    contextual_repair["status"] = "MODEL_REPAIR_UNAVAILABLE"
             # Voice input is NOT proof of authorization.
-            result = brain.process(processed_text, user_confirmation=False)
             answer_language = UniversalLanguageBrain().detect(str(result.message)).language_code
             # Very short deterministic answers (for example, "Answer: 4") do not
             # contain enough lexical evidence for language identification. For this
@@ -367,11 +379,10 @@ class MediaBridgeHandler(BaseHTTPRequestHandler):
                 answer_language in {"und", "und-Latn"}
                 and str(getattr(result, "verification_status", "")).upper() == "DETERMINISTIC_ARITHMETIC"
             ):
-                answer_language = perception.language_code
+                answer_language = input_language
             # Only expose the bounded, secret-free research telemetry prepared
             # by MotherResearchIntegration. Do not serialize arbitrary BrainResult
             # metadata, source page bodies, prompts, or credentials to the phone.
-            result_metadata = getattr(result, "metadata", {})
             research_metadata = (
                 result_metadata.get("mother_research_integration", {})
                 if isinstance(result_metadata, dict) else {}
@@ -383,20 +394,12 @@ class MediaBridgeHandler(BaseHTTPRequestHandler):
             self._send(200, {
                 "success": bool(result.success),
                 "message": str(result.message)[:12000],
-                "heard_text": perception.raw_text,
-                "processed_text": perception.normalized_text,
-                "input_corrections": [
-                    {"original": item.original, "corrected": item.corrected,
-                     "reason": item.reason, "confidence": item.confidence}
-                    for item in perception.corrections
-                ],
-                "input_suggestions": [
-                    {"original": item.original, "suggested": item.corrected,
-                     "confidence": item.confidence}
-                    for item in perception.suggestions
-                ],
-                "known_terms": list(perception.known_terms),
-                "input_language": perception.language_code,
+                "heard_text": raw_transcript,
+                "processed_text": processed_text,
+                "input_corrections": input_corrections,
+                "input_suggestions": input_suggestions,
+                "known_terms": known_terms,
+                "input_language": input_language,
                 "contextual_repair": contextual_repair,
                 "answer_language": answer_language,
                 "intent": str(result.intent),

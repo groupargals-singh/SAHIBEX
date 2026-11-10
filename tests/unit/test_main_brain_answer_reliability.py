@@ -103,3 +103,17 @@ def test_real_main_brain_hindi_factual_answer_uses_verified_knowledge():
         operational = result.metadata["mother_operational_integration"]
         assert operational["factual_verification"] is True
         assert operational["diagnostics"]["evidence_backed"] is True
+
+
+def test_real_main_brain_sahibex_identity_accepts_hinglish_numbered_points_request():
+    with TemporaryDirectory() as temp:
+        storage = ResearchStorage(Path(temp) / "main.db")
+        brain = _brain(storage)
+        result = brain.process(
+            "SAHIBEX kya hai? Hindi mein 3 numbered points mein batao."
+        )
+        assert result.success is True
+        assert result.verification_status == "CURATED_KNOWLEDGE"
+        assert "1." in result.message and "2." in result.message and "3." in result.message
+        assert "Main Brain" in result.message
+        assert "vikasadhin" in result.message

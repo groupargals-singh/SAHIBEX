@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable
 
 from core.agent_goal import AgentGoal
@@ -44,15 +45,28 @@ class AutonomousWorkBrain:
         planner: DynamicPlanningEngine | None = None,
         task_manager: TaskManager | None = None,
         checkpoint_store: CheckpointResumeStore | None = None,
+        checkpoint_path: str | Path | None = None,
         jobs: LongRunningJobManager | None = None,
         recovery: FailureRecoveryEngine | None = None,
     ) -> None:
         self.intake = intake or AgentTaskIntake()
         self.decomposer = decomposer or GoalDecompositionEngine()
         self.planner = planner or DynamicPlanningEngine()
-        self.task_manager = task_manager or TaskManager()
-        self.checkpoints = checkpoint_store or CheckpointResumeStore()
-        self.jobs = jobs or LongRunningJobManager()
+        state_db = (Path(checkpoint_path).expanduser().with_suffix(".state.sqlite3")
+                    if checkpoint_path is not None else None)
+        if task_manager is not None:
+            self.task_manager = task_manager
+        elif state_db is not None:
+            from core.research.storage import ResearchStorage
+            self.task_manager = TaskManager(storage=ResearchStorage(state_db))
+        else:
+            self.task_manager = TaskManager()
+        if checkpoint_store is not None and checkpoint_path is not None:
+            raise ValueError("provide checkpoint_store or checkpoint_path, not both")
+        self.checkpoints = checkpoint_store or CheckpointResumeStore(checkpoint_path)
+        jobs_path = (Path(checkpoint_path).expanduser().with_suffix(".jobs.json")
+                     if checkpoint_path is not None else None)
+        self.jobs = jobs or LongRunningJobManager(jobs_path)
         self.recovery = recovery or FailureRecoveryEngine()
         self.last_plan: AgentPlan | None = None
         self.last_job_id: str | None = None
@@ -112,54 +126,73 @@ class AutonomousWorkBrain:
             "authority_context": goal.authority_context,
         }
 
-        decomposition = self.decomposer.decompose(goal)
-        if not decomposition.success or not decomposition.goals:
-            return self._failed(goal.objective, "", "Goal decomposition failed.")
+        current_job_id = job_id or self.last_job_id or "sahibex-" + goal.goal_id
+        self.last_job_id = current_job_id
+        checkpoint_state: dict[str, Any] = {}
+        resumed = False
+        if current_job_id in self.checkpoints._records:
+            try:
+                checkpoint_state = self.checkpoints.resume_state(current_job_id, runtime_id=runtime_id)
+                if checkpoint_state.get("objective") != goal.objective:
+                    return self._failed(goal.objective, "", "Checkpoint objective identity mismatch.")
+                resumed = True
+            except (KeyError, ValueError, RuntimeError):
+                return self._failed(goal.objective, "", "Checkpoint failed integrity, identity, or lifecycle validation.")
 
-        plan = self.planner.create_plan(decomposition.goals)
+        restored_plan = self._restore_plan(checkpoint_state.get("plan")) if checkpoint_state else None
+        manifest_goal = self._find_job_goal(current_job_id, goal.objective) if restored_plan is None else None
+        if restored_plan is None and manifest_goal is not None:
+            restored_plan = self._restore_plan(manifest_goal.metadata.get("autonomous_plan"))
+        if restored_plan is not None:
+            resumed = True
+            plan = restored_plan
+            state_goal_id = checkpoint_state.get("task_goal_id") if checkpoint_state else None
+            state_goal = self.task_manager.get_goal(state_goal_id) if state_goal_id else manifest_goal
+            if state_goal is None or state_goal.title != f"Agent Plan {plan.plan_id}":
+                state_goal = self._find_task_goal(plan.plan_id)
+            if state_goal is None:
+                return self._failed(goal.objective, plan.plan_id, "Persisted plan has no matching task graph; refusing to create a duplicate plan during recovery.")
+        else:
+            decomposition = self.decomposer.decompose(goal)
+            if not decomposition.success or not decomposition.goals:
+                return self._failed(goal.objective, "", "Goal decomposition failed.")
+            plan = self.planner.create_plan(decomposition.goals)
+            orchestration = AgentTaskOrchestrator(self.task_manager).create_tasks(plan)
+            state_goal = self._find_task_goal(orchestration.plan_id)
+            if state_goal is None:
+                return self._failed(goal.objective, plan.plan_id, "Task orchestration state missing.")
+            state_goal.metadata["autonomous_plan"] = self._serialize_plan(plan)
+            state_goal.metadata["autonomous_job_id"] = current_job_id
+            state_goal.metadata["autonomous_objective"] = goal.objective
+            self.task_manager.persist_goal(state_goal.goal_id)
         self.last_plan = plan
 
-        orchestration = AgentTaskOrchestrator(self.task_manager).create_tasks(plan)
-        state_goal = self._find_task_goal(orchestration.plan_id)
-        if state_goal is None:
-            return self._failed(goal.objective, plan.plan_id, "Task orchestration state missing.")
-
-        current_job_id = job_id or f"sahibex-{plan.plan_id}"
-        self.last_job_id = current_job_id
         if current_job_id not in self.jobs._jobs:
             self.jobs.create(current_job_id, goal.objective, runtime_id)
         current_status = self.jobs.get(current_job_id).status
         if current_status == "created":
             self.jobs.start(current_job_id)
+        elif current_status in {"failed", "paused"}:
+            self.jobs.resume(current_job_id)
+        elif current_status in {"completed", "cancelled", "stopped"}:
+            return self._failed(goal.objective, plan.plan_id, "Job is terminal; a new job_id is required for another execution.")
 
-        completed_titles: set[str] = set()
-        results: dict[str, Any] = {}
-        resumed = False
-
-        if current_job_id in self.checkpoints._records:
-            try:
-                state = self.checkpoints.resume_state(current_job_id, runtime_id=runtime_id)
-                if state.get("objective") != goal.objective:
-                    return self._failed(goal.objective, plan.plan_id, "Checkpoint objective identity mismatch.")
-                completed_titles = set(state.get("completed_titles", ()))
-                results = dict(state.get("results", {}))
-                resumed = bool(completed_titles)
-                if current_status in {"failed", "paused"}:
-                    self.jobs.resume(current_job_id)
-            except (KeyError, ValueError, RuntimeError):
-                return self._failed(goal.objective, plan.plan_id, "Checkpoint failed integrity, identity, or lifecycle validation.")
-
+        completed_titles = list(checkpoint_state.get("completed_titles", ()))
+        results: dict[str, Any] = dict(checkpoint_state.get("results", {}))
         completed_ids: set[str] = set()
         for task in state_goal.tasks:
             linked = self._agent_goal_for_task(task, plan)
-            if linked and linked.title in completed_titles and task.status == TaskStatus.PENDING:
-                task.mark_ready()
-                task.mark_running()
-                task.complete(results.get(linked.title))
+            if linked and task.status == TaskStatus.COMPLETED:
                 completed_ids.add(linked.goal_id)
+                if linked.title not in completed_titles:
+                    completed_titles.append(linked.title)
+                if linked.title not in results and task.result is not None:
+                    results[linked.title] = task.result
+        # If a checkpoint was written after task persistence, reconcile its
+        # step list against durable task statuses rather than trusting titles.
+        self.task_manager.persist_goal(state_goal.goal_id)
 
         attempts = 0
-        completed_titles: list[str] = []
         failed_titles: list[str] = []
         last_checkpoint: int | None = None
 
@@ -200,8 +233,10 @@ class AutonomousWorkBrain:
                 if self.recovery.can_retry(failure, task.retry_count, task.max_retries):
                     task.fail(str(exc))
                     task.retry()
+                    self.task_manager.persist_goal(state_goal.goal_id)
                     continue
                 task.fail(str(exc))
+                self.task_manager.persist_goal(state_goal.goal_id)
                 failed_titles.append(linked.title)
                 self.jobs.fail(current_job_id, str(exc))
                 return AutonomousWorkResult(
@@ -221,8 +256,10 @@ class AutonomousWorkBrain:
                 if self.recovery.can_retry(failure, task.retry_count, task.max_retries):
                     task.fail("Step result failed verification.")
                     task.retry()
+                    self.task_manager.persist_goal(state_goal.goal_id)
                     continue
                 task.fail("Step result failed verification.")
+                self.task_manager.persist_goal(state_goal.goal_id)
                 failed_titles.append(linked.title)
                 self.jobs.fail(current_job_id, "Step result failed verification.")
                 return AutonomousWorkResult(
@@ -235,13 +272,20 @@ class AutonomousWorkBrain:
                 )
 
             task.complete(output)
+            self.task_manager.persist_goal(state_goal.goal_id)
             completed_ids.add(linked.goal_id)
             results[linked.title] = output
             completed_titles.append(linked.title)
 
             cp = self.checkpoints.save(
                 current_job_id, runtime_id, attempts,
-                {"objective": goal.objective, "completed_titles": sorted(completed_titles), "results": results},
+                {
+                    "objective": goal.objective,
+                    "plan": self._serialize_plan(plan),
+                    "task_goal_id": state_goal.goal_id,
+                    "completed_titles": list(completed_titles),
+                    "results": results,
+                },
             )
             last_checkpoint = cp.sequence
 
@@ -274,6 +318,60 @@ class AutonomousWorkBrain:
             checkpoint_sequence=last_checkpoint, resumed=resumed,
             metadata={**execution_metadata, "controlled_until_done": True, "final_task_state_verified": True},
         )
+
+    @staticmethod
+    def _serialize_plan(plan: AgentPlan) -> dict[str, Any]:
+        return {
+            "plan_id": plan.plan_id,
+            "version": plan.version,
+            "reason": plan.reason,
+            "goals": [
+                {
+                    "goal_id": item.goal_id,
+                    "title": item.title,
+                    "objective": item.objective,
+                    "intent": item.intent,
+                    "success_criteria": list(item.success_criteria),
+                    "dependencies": list(item.dependencies),
+                }
+                for item in plan.goals
+            ],
+        }
+
+    @staticmethod
+    def _restore_plan(payload: Any) -> AgentPlan | None:
+        if not isinstance(payload, dict):
+            return None
+        goals_data = payload.get("goals")
+        if not isinstance(goals_data, list) or not goals_data:
+            return None
+        try:
+            goals = tuple(
+                DecomposedGoal(
+                    goal_id=item["goal_id"], title=item["title"],
+                    objective=item["objective"], intent=item["intent"],
+                    success_criteria=tuple(item["success_criteria"]),
+                    dependencies=tuple(item["dependencies"]),
+                )
+                for item in goals_data
+            )
+            plan = AgentPlan(
+                goals=goals, plan_id=payload["plan_id"],
+                version=int(payload["version"]), reason=payload["reason"],
+            )
+            known = {item.goal_id for item in plan.goals}
+            if any(dep not in known for item in plan.goals for dep in item.dependencies):
+                return None
+            return plan
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    def _find_job_goal(self, job_id: str, objective: str):
+        for candidate in self.task_manager.goals.values():
+            if (candidate.metadata.get("autonomous_job_id") == job_id
+                    and candidate.metadata.get("autonomous_objective") == objective):
+                return candidate
+        return None
 
     def _find_task_goal(self, plan_id: str):
         for goal in self.task_manager.goals.values():

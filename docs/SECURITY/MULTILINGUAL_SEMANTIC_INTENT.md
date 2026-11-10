@@ -13,10 +13,9 @@
 
 The default provider is mock; it is deliberately not treated as real semantic understanding.
 
-For an already-running local model provider, set these variables in the SAHIBEX process environment before startup:
+When the configured provider is local, MasterBrain enables the semantic fallback by default. It can be explicitly disabled with `SAHIBEX_SEMANTIC_INTENT_ENABLED=0`. The fallback is invoked for general requests and deterministic intent results below the 0.72 acceptance threshold. Local model health is checked before inference; offline/failed providers return no semantic classification and do not authorize or execute anything.
 
-- SAHIBEX_MODEL_PROVIDER=local
-- SAHIBEX_SEMANTIC_INTENT_ENABLED=1
+The local llama.cpp provider discovers the actually loaded model ID from `/v1/models` when no explicit model ID is configured. Semantic classification and contextual input repair use a 45-second request ceiling, while offline health preflight is capped at one second. Clarification outputs must be actual questions; an echoed request or imperative sentence is rejected.
 
 Remote semantic inference is separately opt-in because it sends request text to a configured remote endpoint:
 

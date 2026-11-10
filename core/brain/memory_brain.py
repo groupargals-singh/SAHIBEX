@@ -369,6 +369,20 @@ class MemoryBrain:
             if self._is_memory_trusted_for_retrieval(memory, self.storage)
         ]
 
+    def retrieve_recent_conversations(self, *, limit: int = 5) -> list[MemoryCandidate]:
+        """Load recent local conversation turns for bounded context reconstruction."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 20:
+            raise ValueError("limit must be an integer between 1 and 20")
+        memories = self.storage.list_recent_memories(
+            memory_type="conversation",
+            source="master_brain",
+            limit=limit,
+        )
+        return [
+            memory for memory in memories
+            if self._is_memory_trusted_for_retrieval(memory, self.storage)
+        ]
+
     def summary(self) -> dict[str, Any]:
         return {
             "persistent_storage": True,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import sqlite3
 import uuid
 from dataclasses import asdict, is_dataclass
@@ -752,16 +753,34 @@ class ResearchStorage:
         """
         Return persisted knowledge candidates.
 
-        When verified_only is True, only verified knowledge is returned.
-        Results are ordered by confidence, highest first.
+        When verified_only is True, a candidate must have both its legacy
+        verified flag and a latest persisted VERIFIED lifecycle event. A stale
+        candidate flag alone is never sufficient. Results are ordered by
+        confidence, highest first.
         """
         if verified_only:
             rows = self._connection.execute(
                 """
-                SELECT data
+                SELECT knowledge_candidates.data
                 FROM knowledge_candidates
-                WHERE verified = 1
-                ORDER BY confidence DESC
+                WHERE knowledge_candidates.verified = 1
+                  AND EXISTS (
+                    SELECT 1
+                    FROM knowledge_verification_records AS latest_verification
+                    WHERE latest_verification.knowledge_id =
+                          knowledge_candidates.knowledge_id
+                      AND latest_verification.event_id = (
+                        SELECT verification_event.event_id
+                        FROM knowledge_verification_records AS verification_event
+                        WHERE verification_event.knowledge_id =
+                              knowledge_candidates.knowledge_id
+                        ORDER BY verification_event.verified_at DESC,
+                                 verification_event.event_id DESC
+                        LIMIT 1
+                      )
+                      AND UPPER(latest_verification.status) = 'VERIFIED'
+                  )
+                ORDER BY knowledge_candidates.confidence DESC
                 """
             ).fetchall()
         else:
@@ -857,6 +876,22 @@ class ResearchStorage:
                   ON knowledge_search.knowledge_id =
                      knowledge_candidates.knowledge_id
                 WHERE knowledge_candidates.verified = 1
+                  AND EXISTS (
+                    SELECT 1
+                    FROM knowledge_verification_records AS latest_verification
+                    WHERE latest_verification.knowledge_id =
+                          knowledge_candidates.knowledge_id
+                      AND latest_verification.event_id = (
+                        SELECT verification_event.event_id
+                        FROM knowledge_verification_records AS verification_event
+                        WHERE verification_event.knowledge_id =
+                              knowledge_candidates.knowledge_id
+                        ORDER BY verification_event.verified_at DESC,
+                                 verification_event.event_id DESC
+                        LIMIT 1
+                      )
+                      AND UPPER(latest_verification.status) = 'VERIFIED'
+                  )
                   AND knowledge_search MATCH ?
                 ORDER BY knowledge_candidates.confidence DESC
                 {limit_sql}
@@ -886,9 +921,26 @@ class ResearchStorage:
             if verified_only:
                 rows = self._connection.execute(
                     """
-                    SELECT data FROM knowledge_candidates
-                    WHERE verified = 1
-                    ORDER BY confidence DESC
+                    SELECT knowledge_candidates.data
+                    FROM knowledge_candidates
+                    WHERE knowledge_candidates.verified = 1
+                      AND EXISTS (
+                        SELECT 1
+                        FROM knowledge_verification_records AS latest_verification
+                        WHERE latest_verification.knowledge_id =
+                              knowledge_candidates.knowledge_id
+                          AND latest_verification.event_id = (
+                            SELECT verification_event.event_id
+                            FROM knowledge_verification_records AS verification_event
+                            WHERE verification_event.knowledge_id =
+                                  knowledge_candidates.knowledge_id
+                            ORDER BY verification_event.verified_at DESC,
+                                     verification_event.event_id DESC
+                            LIMIT 1
+                          )
+                          AND UPPER(latest_verification.status) = 'VERIFIED'
+                      )
+                    ORDER BY knowledge_candidates.confidence DESC
                     """
                 ).fetchall()
             else:
@@ -2152,6 +2204,43 @@ class ResearchStorage:
             )
             for row in rows
         ]
+
+    def list_recent_memories(
+        self,
+        *,
+        memory_type: str,
+        source: Optional[str] = None,
+        limit: int = 10,
+    ) -> list[MemoryCandidate]:
+        """Return a bounded newest-first memory slice without scanning all records."""
+        if not isinstance(memory_type, str) or not memory_type.strip():
+            raise ValueError("memory_type must be a non-empty string")
+        if source is not None and (not isinstance(source, str) or not source.strip()):
+            raise ValueError("source must be a non-empty string when provided")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("limit must be an integer between 1 and 100")
+        if source is None:
+            rows = self._connection.execute(
+                """
+                SELECT data FROM memories
+                WHERE memory_type = ?
+                ORDER BY json_extract(data, '$.created_at.value') DESC, memory_id DESC
+                LIMIT ?
+                """,
+                (memory_type.strip(), limit),
+            ).fetchall()
+        else:
+            rows = self._connection.execute(
+                """
+                SELECT data FROM memories
+                WHERE memory_type = ? AND source = ?
+                ORDER BY json_extract(data, '$.created_at.value') DESC, memory_id DESC
+                LIMIT ?
+                """,
+                (memory_type.strip(), source.strip(), limit),
+            ).fetchall()
+        return [MemoryCandidate(**self._deserialize(row["data"])) for row in rows]
+
     def retrieve_memories(
         self,
         query: str,
@@ -2733,6 +2822,51 @@ class ResearchStorage:
     # Planning
     # ---------------------------------------------------------
 
+    def save_planning_graph(self, goal: Goal) -> None:
+        """Persist goal and its complete task graph in one SQLite transaction."""
+        if not isinstance(goal, Goal):
+            raise TypeError("goal must be a Goal")
+        safe_goal = copy.deepcopy(goal)
+        forbidden = ("permission", "authority", "credential", "token", "secret", "password")
+        def sanitize(value):
+            if isinstance(value, dict):
+                return {str(k): sanitize(v) for k, v in value.items()
+                        if not any(word in str(k).lower() for word in forbidden)}
+            if isinstance(value, list):
+                return [sanitize(v) for v in value]
+            if isinstance(value, tuple):
+                return tuple(sanitize(v) for v in value)
+            return value
+        safe_goal.metadata = sanitize(safe_goal.metadata)
+        for safe_task in safe_goal.tasks:
+            safe_task.result = sanitize(safe_task.result)
+            safe_task.metadata = sanitize(safe_task.metadata)
+        try:
+            self._connection.execute("BEGIN IMMEDIATE")
+            self._connection.execute(
+                "INSERT OR REPLACE INTO planning_goals(goal_id, data) VALUES (?, ?)",
+                (safe_goal.goal_id, self._serialize(safe_goal)),
+            )
+            current_ids = [task.task_id for task in safe_goal.tasks]
+            for task in safe_goal.tasks:
+                self._connection.execute(
+                    "INSERT OR REPLACE INTO planning_tasks(task_id, goal_id, status, priority, parent_task_id, data) VALUES (?, ?, ?, ?, ?, ?)",
+                    (task.task_id, safe_goal.goal_id, getattr(task.status, "value", task.status), getattr(task.priority, "value", task.priority),
+                     task.parent_task_id, self._serialize(task)),
+                )
+            if current_ids:
+                placeholders = ",".join("?" for _ in current_ids)
+                self._connection.execute(
+                    f"DELETE FROM planning_tasks WHERE goal_id = ? AND task_id NOT IN ({placeholders})",
+                    (safe_goal.goal_id, *current_ids),
+                )
+            else:
+                self._connection.execute("DELETE FROM planning_tasks WHERE goal_id = ?", (safe_goal.goal_id,))
+            self._connection.commit()
+        except BaseException:
+            self._connection.rollback()
+            raise
+
     def save_goal(self, goal: Goal) -> None:
         """Persist one SAHIBEX planning goal."""
         if not isinstance(goal, Goal):
@@ -2852,8 +2986,8 @@ class ResearchStorage:
             (
                 task.task_id,
                 goal_id,
-                task.status.value,
-                task.priority.value,
+                getattr(task.status, "value", task.status),
+                getattr(task.priority, "value", task.priority),
                 task.parent_task_id,
                 self._serialize(task),
             ),

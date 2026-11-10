@@ -319,3 +319,10 @@ def test_quality_rejection_fallback_matches_user_language():
         assert expected_text in message
         assert message.strip()
         assert UniversalLanguageBrain().detect(question).language_code == code
+
+
+def test_hinglish_research_request_is_not_misclassified_as_english():
+    assessment = UniversalLanguageBrain().detect(
+        "Is topic par latest jankari khojo"
+    )
+    assert assessment.language_code == "hi-Latn"

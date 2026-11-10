@@ -11,6 +11,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tools.android_companion_media_server import MediaBridgeHandler, load_or_create_token
+from core.brain.perception_language_brain import PerceptionLanguageBrain
+from core.brain.contextual_input_understanding import ContextualInputUnderstandingBrain
 from core.model_gateway.base import ModelGateway, ModelProvider, ModelRequest, ModelResponse
 
 
@@ -20,14 +22,54 @@ class FakeBrain:
 
     def process(self, text, *, user_confirmation=False):
         self.calls.append((text, user_confirmation))
+        perception = PerceptionLanguageBrain().assess(text.strip())
+        processed = perception.normalized_text
+        corrections = [
+            {"original": item.original, "corrected": item.corrected,
+             "reason": item.reason, "confidence": item.confidence}
+            for item in perception.corrections
+        ]
+        contextual_status = "DISABLED_BY_DEFAULT"
+        contextual_confidence = None
+        operational = getattr(self, "mother_operational", None)
+        if operational and (perception.suggestions or len(perception.corrections) >= 2):
+            model = getattr(operational, "model", None)
+            gateway = getattr(model, "gateway", None)
+            provider = getattr(operational, "default_provider", None)
+            if gateway is not None and provider and provider != "mock":
+                contextual = ContextualInputUnderstandingBrain(gateway, provider=provider)
+                repaired = contextual.understand(processed)
+                contextual_status = repaired.status
+                contextual_confidence = repaired.confidence
+                if repaired.changed:
+                    processed = repaired.corrected_text
+                    corrections.append({
+                        "original": text.strip(), "corrected": processed,
+                        "reason": "contextual_model_repair", "confidence": repaired.confidence,
+                    })
+        language = PerceptionLanguageBrain._guess_language(processed)
+        trace = {
+            "status": "CURATED_OR_VERIFIED_REPAIR_APPLIED" if processed != text.strip() else "NO_SAFE_CORRECTION_NEEDED",
+            "original_text": text.strip(), "normalized_text": processed,
+            "language_code": language, "corrections": corrections,
+            "suggestions_not_applied": [
+                {"original": item.original, "suggested": item.corrected,
+                 "reason": item.reason, "confidence": item.confidence}
+                for item in perception.suggestions
+            ],
+            "known_terms": list(perception.known_terms),
+            "contextual_repair_status": contextual_status,
+            "contextual_repair_confidence": contextual_confidence,
+        }
         return type("Result", (), {
             "success": True,
-            "message": "response for " + text,
+            "message": "response for " + processed,
             "intent": "general_request",
             "verification_status": "VERIFIED",
             "permission_allowed": True,
             "confirmation_required": False,
             "metadata": {
+                "input_understanding": trace,
                 "mother_research_integration": {
                     "diagnostics": {"publisher_fetch": {"acquired": 2}}
                 }
@@ -62,6 +104,16 @@ class AndroidCompanionMediaServerTests(unittest.TestCase):
                 return response.status, json.loads(response.read())
         except urllib.error.HTTPError as error:
             return error.code, json.loads(error.read())
+
+    def test_session_endpoint_authenticates_saved_companion_pairing(self):
+        status, payload = self.get("/session")
+        self.assertEqual(status, 401)
+        self.assertFalse(payload["authenticated"])
+        status, payload = self.get("/session", self.token)
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["authenticated"])
+        self.assertEqual(payload["service"], "sahibex-media-bridge")
 
     def test_diagnostics_endpoint_requires_authentication(self):
         status, payload = self.get("/diagnostics")
@@ -246,7 +298,7 @@ class AndroidCompanionMediaServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body["heard_text"], "sahibaks autocarect")
         self.assertEqual(body["processed_text"], "SAHIBEX autocorrect")
-        self.assertEqual(self.brain.calls[-1], ("SAHIBEX autocorrect", False))
+        self.assertEqual(self.brain.calls[-1], ("sahibaks autocarect", False))
         correction_by_original = {
             item["original"]: item for item in body["input_corrections"]
         }
@@ -287,8 +339,9 @@ class AndroidCompanionMediaServerTests(unittest.TestCase):
             self.assertEqual(body["heard_text"], "sahibex weather tomorow plese")
             self.assertTrue(body["contextual_repair"]["changed"])
             self.assertEqual(
-                self.brain.calls[-1][0], "sahibex weather tomorrow please"
+                self.brain.calls[-1][0], "sahibex weather tomorow plese"
             )
+            self.assertEqual(body["processed_text"], "sahibex weather tomorrow please")
         finally:
             if old_operational is None:
                 del self.brain.mother_operational
