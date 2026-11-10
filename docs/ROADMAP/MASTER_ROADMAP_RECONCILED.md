@@ -452,3 +452,12 @@ This update records existing evidence and policy only. No code changed, no produ
 - No P6/P7/P8/P10/P11 gate or knowledge-trust status changed. This is not full autonomous debugging and does not mean all 61 roles are automatically routed.
 - Detailed evidence: `docs/STATUS/SAHIBEX_DEBUGGING_SPECIALIST_ROUTING_2026-11-11.md`.
 - Next: route the supplied-text reading/document workflow only after verifying the exact source-text contract and safe result consumer; do not claim filesystem document access from these handlers.
+
+## 2026-11-11 — Reading / Document specialist routing
+- Added conservative routes for explicit supplied-text reading and document review/summary requests.
+- The request must contain source text after an explicit colon/newline delimiter; payload capped at 12,000 characters. Missing source text remains missing and the handler reports a required-input status.
+- Reading extracts a bounded excerpt. Document handler extracts source-grounded lines; it does not claim semantic summarization or factual verification.
+- Both handlers remain no-filesystem/no-write/no-delete/no-execution. Existing Mother Brain permission and verification gates remain in front of dispatch.
+- Focused router + InternalBrainTeam regression: **119 passed**; full repository regression: **2,345 passed in 168.41s**, exit 0. Compileall, shell syntax and diff checks PASS. GitHub publication pending final review/commit/push/hash verification.
+- Not implemented: opening file paths, PDF/DOCX parsing, library access, OCR, semantic summary generation or fact-checking. No release gate is promoted.
+- Detailed evidence: `docs/STATUS/SAHIBEX_READING_DOCUMENT_SPECIALIST_ROUTING_2026-11-11.md`.

@@ -50,3 +50,8 @@ Continue one route at a time only where each specialist has a real, tested input
 ## Final full regression result
 - Final full repository regression after tightening route selection and adding false-positive coverage: **2,329 passed in 155.78s**, exit 0.
 - This is the final full-suite result for this routing slice.
+
+## 2026-11-11 — Reading / Document routing follow-up
+- Added supplied-text-only automatic routes for `reading` and `document_file`.
+- Focused router + InternalBrainTeam tests: **119 passed**.
+- See `SAHIBEX_READING_DOCUMENT_SPECIALIST_ROUTING_2026-11-11.md` for scope and limits.

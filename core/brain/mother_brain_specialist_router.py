@@ -35,6 +35,35 @@ class MotherBrainSpecialistRouter:
         re.IGNORECASE,
     )
 
+    _DOCUMENT_REQUEST = re.compile(
+        r"\b(?:summari[sz]e|summarise|extract key points from|review)\s+"
+        r"(?:this\s+)?(?:document|doc)\b|"
+        r"(?:इस दस्तावेज़ का सार|दस्तावेज़ का सार|इस डॉक्यूमेंट का सार)|"
+        r"\b(?:is|iss)\s+document\s+ka\s+(?:summary|saransh)\b",
+        re.IGNORECASE,
+    )
+    _READING_REQUEST = re.compile(
+        r"\b(?:read|extract|analy[sz]e|analyse)\s+(?:this\s+)?"
+        r"(?:text|passage|content)\b|"
+        r"(?:इस टेक्स्ट को पढ़|इस पाठ को पढ़|दिए गए पाठ को पढ़)|"
+        r"\b(?:is|iss)\s+text\s+ko\s+(?:padho|read karo|analyse karo)\b",
+        re.IGNORECASE,
+    )
+    _DOCUMENT_PAYLOAD = re.compile(
+        r"^\s*(?:(?:please|kindly|can you|could you|would you)\s+)?"
+        r"(?:summari[sz]e|summarise|extract key points from|review)\s+"
+        r"(?:this\s+)?(?:document|doc)\s*[:\n]\s*(.+)$|"
+        r"^\s*(?:is|iss)\s+document\s+ka\s+(?:summary|saransh)\s*[:\n]\s*(.+)$",
+        re.IGNORECASE | re.DOTALL,
+    )
+    _READING_PAYLOAD = re.compile(
+        r"^\s*(?:(?:please|kindly|can you|could you|would you)\s+)?"
+        r"(?:read|extract|analy[sz]e|analyse)\s+"
+        r"(?:this\s+)?(?:text|passage|content)\s*[:\n]\s*(.+)$|"
+        r"^\s*(?:is|iss)\s+text\s+ko\s+(?:padho|read karo|analyse karo)\s*[:\n]\s*(.+)$",
+        re.IGNORECASE | re.DOTALL,
+    )
+
     _DEBUGGING_REQUEST = re.compile(
         r"(?:\b(?:debug|fix|repair|troubleshoot|diagnose)\b.{0,80}"
         r"\b(?:bug|error|exception|traceback|crash|failure|failing test)\b|"
@@ -54,6 +83,24 @@ class MotherBrainSpecialistRouter:
             return None
         text = request.strip()
         normalized_intent = intent.strip().lower()
+
+        # These handlers process only text included in the request. They do not
+        # resolve file paths or access the filesystem.
+        document_match = self._DOCUMENT_PAYLOAD.match(text)
+        if self._DOCUMENT_REQUEST.search(text):
+            payload = next((group for group in document_match.groups() if group), "").strip() if document_match else ""
+            return SpecialistRoute(
+                "document_file", "explicit document summary/review request",
+                {"document_text": payload[:12000], "max_chars": 12000, "max_points": 8},
+            )
+
+        reading_match = self._READING_PAYLOAD.match(text)
+        if self._READING_REQUEST.search(text):
+            payload = next((group for group in reading_match.groups() if group), "").strip() if reading_match else ""
+            return SpecialistRoute(
+                "reading", "explicit supplied-text reading/extraction request",
+                {"source_text": payload[:12000], "max_chars": 12000},
+            )
 
         # Debugging is triage-only until a separate approved repair workflow exists.
         # Missing reproduction evidence stays missing; the router never invents it.

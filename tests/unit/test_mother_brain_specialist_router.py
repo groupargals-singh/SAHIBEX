@@ -113,3 +113,99 @@ def test_selected_debugging_role_dispatches_as_evidence_incomplete_without_side_
     assert dispatched.result["executes_code"] is False
     assert dispatched.result["writes_filesystem"] is False
     assert dispatched.result["root_cause_confirmed"] is False
+
+
+def test_router_selects_reading_for_explicit_supplied_text():
+    route = MotherBrainSpecialistRouter().select(
+        "Read this text: Alpha\nBeta", "general_request"
+    )
+    assert route is not None and route.role_id == "reading"
+    assert route.context["source_text"] == "Alpha\nBeta"
+
+
+def test_router_selects_document_brain_for_supplied_document_text():
+    route = MotherBrainSpecialistRouter().select(
+        "Summarize this document: Title\nPoint one\nPoint two", "general_request"
+    )
+    assert route is not None and route.role_id == "document_file"
+    assert route.context["document_text"] == "Title\nPoint one\nPoint two"
+
+
+def test_router_keeps_document_path_unread_and_reports_missing_text():
+    route = MotherBrainSpecialistRouter().select(
+        "Summarize this document", "general_request"
+    )
+    assert route is not None and route.role_id == "document_file"
+    assert route.context["document_text"] == ""
+
+
+def test_router_does_not_treat_generic_read_as_file_access():
+    assert MotherBrainSpecialistRouter().select("Read my mind", "general_request") is None
+
+
+def test_selected_reading_role_dispatches_supplied_text_only():
+    brain = MasterBrain()
+    request = "Read this text: Alpha\nBeta"
+    route = brain.specialist_router.select(request, "general_request")
+    assert route is not None and route.role_id == "reading"
+    dispatched = brain.dispatch_internal_brain(
+        route.role_id, request, route.context,
+        authorization_passed=True, verification_passed=True,
+    )
+    assert dispatched.accepted is True
+    assert dispatched.result["status"] == "EXTRACTED_NOT_FACT_VERIFIED"
+    assert dispatched.result["excerpt"] == "Alpha\nBeta"
+
+
+def test_selected_document_role_dispatches_supplied_text_without_filesystem_access():
+    brain = MasterBrain()
+    request = "Summarize this document: Title\nPoint one\nPoint two"
+    route = brain.specialist_router.select(request, "general_request")
+    assert route is not None and route.role_id == "document_file"
+    dispatched = brain.dispatch_internal_brain(
+        route.role_id, request, route.context,
+        authorization_passed=True, verification_passed=True,
+    )
+    assert dispatched.accepted is True
+    assert dispatched.result["status"] == "SOURCE_GROUNDED_EXTRACTION_NOT_FACT_VERIFIED"
+    assert dispatched.result["extracted_points"] == ["Title", "Point one", "Point two"]
+    assert dispatched.result["reads_files"] is False
+    assert dispatched.result["writes_files"] is False
+
+
+def test_selected_document_role_requires_explicit_source_text():
+    brain = MasterBrain()
+    request = "Summarize this document"
+    route = brain.specialist_router.select(request, "general_request")
+    assert route is not None
+    dispatched = brain.dispatch_internal_brain(
+        route.role_id, request, route.context,
+        authorization_passed=True, verification_passed=True,
+    )
+    assert dispatched.accepted is True
+    assert dispatched.result["status"] == "DOCUMENT_TEXT_REQUIRED"
+    assert dispatched.result["reads_files"] is False
+
+
+def test_router_extracts_document_payload_from_polite_request():
+    route = MotherBrainSpecialistRouter().select(
+        "Could you summarize this document: Important text", "general_request"
+    )
+    assert route is not None and route.role_id == "document_file"
+    assert route.context["document_text"] == "Important text"
+
+
+def test_router_extracts_hinglish_document_payload():
+    route = MotherBrainSpecialistRouter().select(
+        "Is document ka summary: Pehla point\nDusra point", "general_request"
+    )
+    assert route is not None and route.role_id == "document_file"
+    assert route.context["document_text"] == "Pehla point\nDusra point"
+
+
+def test_router_extracts_hinglish_reading_payload():
+    route = MotherBrainSpecialistRouter().select(
+        "Is text ko padho: Namaste\nDuniya", "general_request"
+    )
+    assert route is not None and route.role_id == "reading"
+    assert route.context["source_text"] == "Namaste\nDuniya"
