@@ -35,6 +35,18 @@ class MotherBrainSpecialistRouter:
         re.IGNORECASE,
     )
 
+    _DEBUGGING_REQUEST = re.compile(
+        r"(?:\b(?:debug|fix|repair|troubleshoot|diagnose)\b.{0,80}"
+        r"\b(?:bug|error|exception|traceback|crash|failure|failing test)\b|"
+        r"\b(?:bug|error|exception|traceback|crash|failure|failing test)\b.{0,80}"
+        r"\b(?:debug|fix|repair|troubleshoot|diagnose)\b|"
+        r"\b(?:fix|debug|repair|troubleshoot)\s+(?:it|this|that)\b|"
+        r"\b(?:bug|error|exception|crash)\s+ko\s+(?:thik|theek|fix)\b|"
+        r"(?:बग|एरर|त्रुटि|क्रैश|टेस्ट फेल).{0,35}(?:ठीक|फिक्स|डिबग|जाँच)|"
+        r"(?:ठीक|फिक्स|डिबग|जाँच).{0,35}(?:बग|एरर|त्रुटि|क्रैश|टेस्ट))",
+        re.IGNORECASE,
+    )
+
     def select(self, request: str, intent: str) -> SpecialistRoute | None:
         if not isinstance(request, str) or not request.strip():
             return None
@@ -42,6 +54,21 @@ class MotherBrainSpecialistRouter:
             return None
         text = request.strip()
         normalized_intent = intent.strip().lower()
+
+        # Debugging is triage-only until a separate approved repair workflow exists.
+        # Missing reproduction evidence stays missing; the router never invents it.
+        if normalized_intent == "code" and self._DEBUGGING_REQUEST.search(text):
+            return SpecialistRoute(
+                "debugging", "explicit bug/error diagnosis or repair request",
+                {"failures": [{
+                    "issue_id": "current-request",
+                    "symptom": text[:2000],
+                    "reproduction_steps": [],
+                    "expected": None,
+                    "observed": None,
+                    "error_excerpt": "",
+                }]},
+            )
 
         # Arithmetic is routed only for a bounded-looking arithmetic question.
         if self._MATH.search(text) and re.search(r"\d", text):
@@ -56,7 +83,7 @@ class MotherBrainSpecialistRouter:
             )
         if self._LANGUAGE.search(text):
             return SpecialistRoute(
-                "language", "explicit language or translation request",
+                "language", "explicit language-identification request",
                 {"text": text[:10000]},
             )
         return None

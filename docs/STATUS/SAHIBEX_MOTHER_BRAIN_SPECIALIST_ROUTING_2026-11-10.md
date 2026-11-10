@@ -34,7 +34,17 @@ Implement the first conservative automatic specialist-selection layer for the te
 - No P-series release gate is promoted.
 
 ## Next
-Expand routes only where each specialist has a real, tested input contract and safe output consumer. Priority: conversation/context, reading/document, debugging/testing, knowledge/memory, research and data analysis. Add dispatch acceptance tests per route; avoid speculative role fan-out.
+Continue one route at a time only where each specialist has a real, tested input contract and safe output consumer. The next candidates remain conversation/context, reading/document, testing, knowledge/memory, research and data analysis. Avoid speculative role fan-out.
+
+## 2026-11-11 — Debugging specialist route (bounded triage slice)
+- Added explicit bug/error diagnosis routing for code-intent requests in English, Hinglish and Hindi.
+- The route constructs a bounded failure-report envelope from the user's explicit request only. It intentionally leaves reproduction steps, expected behavior, observed behavior and log excerpt empty/unknown when the user did not provide them.
+- The existing Debugging handler returns `EVIDENCE_INCOMPLETE` and requests safe reproduction evidence; it does not invent a root cause.
+- Dispatch continues through `InternalBrainTeam` after the existing Mother Brain permission and request-verification gates. The output remains advisory metadata, not an instruction to edit or execute code.
+- False-positive coverage confirms that ordinary HTTP error explanations and generic code creation do not select Debugging.
+- Explicit limits: no filesystem inspection, no code execution, no file writes, no automated repair, and no root-cause confirmation. A real repair still requires an authorized code/file workflow and regression verification.
+- Focused router + internal-team tests: **109 passed** after this addition.
+- This is a route/triage integration slice, not completion of autonomous debugging or all 61 specialist routes. No P-series gate is promoted.
 
 
 ## Final full regression result

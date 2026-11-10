@@ -442,3 +442,13 @@ This update records existing evidence and policy only. No code changed, no produ
 - Focused router + team tests: 103 passed; compileall, shell syntax and diff checks PASS. Final full repository regression after false-positive routing coverage: **2,329 passed in 155.78s**, exit 0.
 - This is NOT 61-role automatic routing. Remaining specialist roles require individual input contracts, route selection and output consumers. Model-backed general Q&A remains blocked while local model endpoint is offline.
 - Detailed evidence: `docs/STATUS/SAHIBEX_MOTHER_BRAIN_SPECIALIST_ROUTING_2026-11-10.md`.
+
+
+## 2026-11-11 — Mother Brain Debugging specialist route
+- Added conservative automatic dispatch for explicit bug/error diagnosis and repair requests (English/Hinglish/Hindi) when classified as code intent.
+- Debugging receives only the explicit request, wrapped as one structured failure report. Missing reproduction steps, expected/observed behavior and logs remain explicitly missing; the handler reports `EVIDENCE_INCOMPLETE`.
+- Existing authorization + request verification gates remain required. The role is advisory/triage-only; it cannot inspect files, execute code, edit files, confirm root cause or authorize repairs.
+- Focused router + InternalBrainTeam regression: **109 passed**; full repository regression: **2,335 passed in 158.71s**, exit 0. Compileall, shell syntax and diff checks PASS. GitHub publication is pending final review/commit/push/hash verification.
+- No P6/P7/P8/P10/P11 gate or knowledge-trust status changed. This is not full autonomous debugging and does not mean all 61 roles are automatically routed.
+- Detailed evidence: `docs/STATUS/SAHIBEX_DEBUGGING_SPECIALIST_ROUTING_2026-11-11.md`.
+- Next: route the supplied-text reading/document workflow only after verifying the exact source-text contract and safe result consumer; do not claim filesystem document access from these handlers.
