@@ -35,6 +35,18 @@ class MotherBrainSpecialistRouter:
         re.IGNORECASE,
     )
 
+    _KNOWLEDGE_REQUEST = re.compile(
+        r"\b(?:what verified knowledge do you have about|what do you know from "
+        r"verified knowledge about|search (?:the )?knowledge base for|find "
+        r"verified knowledge about|search verified knowledge for|retrieve "
+        r"verified knowledge about)\s+(.+)$|"
+        r"(?:verified knowledge (?:ke )?(?:me|mein)\s+(.+?)\s+(?:search|khojo|dhundo)|"
+        r"(.+?)\s+ke ba(?:a)?re me(?:in)? verified knowledge (?:batao|dikhao|khojo))|"
+        r"(?:सत्यापित ज्ञान में\s*(.+?)\s*(?:खोजो|ढूँढो|ढूंढो)|"
+        r"(.+?)\s+के बारे में सत्यापित जानकारी\s*(?:बताओ|दिखाओ|खोजो))",
+        re.IGNORECASE | re.DOTALL,
+    )
+
     _MEMORY_REQUEST = re.compile(
         r"\b(?:what do you remember about|do you remember|recall|"
         r"find in memory|search memory for|remember our discussion about)\s+(.+)$",
@@ -96,6 +108,17 @@ class MotherBrainSpecialistRouter:
             return None
         text = request.strip()
         normalized_intent = intent.strip().lower()
+
+        knowledge_match = self._KNOWLEDGE_REQUEST.search(text)
+        if knowledge_match:
+            knowledge_query = next(
+                (group for group in knowledge_match.groups() if group), ""
+            ).strip().strip(" ?.!\n\t")
+            if knowledge_query:
+                return SpecialistRoute(
+                    "knowledge", "explicit request to search verified stored knowledge",
+                    {"query": knowledge_query[:1000], "verified_only": True, "min_confidence": 0.0},
+                )
 
         memory_match = self._MEMORY_REQUEST.search(text) or self._MEMORY_REQUEST_HINGLISH.search(text)
         if memory_match:

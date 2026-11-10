@@ -470,3 +470,13 @@ This update records existing evidence and policy only. No code changed, no produ
 - Focused router + InternalBrainTeam regression: **123 passed**; full repository regression: **2,349 passed in 164.92s**, exit 0. Compileall, shell syntax and diff checks PASS. GitHub publication pending final review/commit/push/hash verification.
 - This is recall routing only, not full conversational context reconstruction or automatic memory consolidation. No release gate is promoted.
 - Detailed evidence: `docs/STATUS/SAHIBEX_MEMORY_SPECIALIST_ROUTING_2026-11-11.md`.
+
+
+## 2026-11-11 — Verified Knowledge specialist routing
+- Added conservative English/Hinglish/Hindi routes for explicit verified-knowledge searches; generic topic questions do not trigger the route.
+- Mother Brain dispatches the existing Knowledge role only after its normal authorization and request-verification gates.
+- Ordinary Mother Brain knowledge retrieval is now unconditionally `verified_only=True`; a caller cannot downgrade it by passing `false`. Malformed non-boolean flags fail closed.
+- Existing lifecycle, conflict-selection, unresolved-conflict and query-freshness filters remain authoritative. Output is bounded to 10 records / 2,000 characters per statement and excludes detailed provenance objects.
+- Focused router + InternalBrainTeam + KnowledgeBrain runtime regression: **138 passed**; full repository regression: **2,356 passed in 176.95s**, exit 0. Compileall, shell syntax, `git diff --check` and common secret-pattern scan PASS. GitHub publication follows final commit/push/hash verification.
+- This does not migrate/promote legacy knowledge candidates or certify the existing corpus. P6/P7/P8/P10/P11 remain unchanged.
+- Evidence: `docs/STATUS/SAHIBEX_KNOWLEDGE_SPECIALIST_ROUTING_2026-11-11.md`.

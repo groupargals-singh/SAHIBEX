@@ -276,3 +276,103 @@ def test_router_extracts_hindi_reading_payload():
     )
     assert route is not None and route.role_id == "reading"
     assert route.context["source_text"] == "नमस्ते\nदुनिया"
+
+
+def test_router_selects_knowledge_only_for_explicit_verified_knowledge_queries():
+    router = MotherBrainSpecialistRouter()
+    cases = (
+        ("What verified knowledge do you have about SAHIBEX?", "SAHIBEX"),
+        ("Search knowledge base for SAHIBEX architecture", "SAHIBEX architecture"),
+        ("SAHIBEX ke bare mein verified knowledge batao", "SAHIBEX"),
+        ("सत्यापित ज्ञान में SAHIBEX खोजो", "SAHIBEX"),
+    )
+    for request, expected_query in cases:
+        route = router.select(request, "general_request")
+        assert route is not None and route.role_id == "knowledge"
+        assert route.context["query"] == expected_query
+        assert route.context["verified_only"] is True
+
+
+def test_router_does_not_route_ambiguous_or_generic_knowledge_wording():
+    router = MotherBrainSpecialistRouter()
+    assert router.select("Tell me something about SAHIBEX", "general_request") is None
+    assert router.select("What is knowledge?", "general_request") is None
+    assert router.select("Search the web for SAHIBEX", "search") is None
+
+
+def test_verified_knowledge_route_dispatches_through_trust_filtered_brain(monkeypatch):
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+
+    brain = MasterBrain()
+    calls = {}
+    item = SimpleNamespace(
+        knowledge_id="verified-1",
+        statement="SAHIBEX is a model-independent Main Brain.",
+        confidence=0.97,
+        verified=True,
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        last_verified_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+        evidence=["e1", "e2"],
+        findings=["f1"],
+    )
+
+    def retrieve(query, *, verified_only=False, min_confidence=0.0):
+        calls.update(query=query, verified_only=verified_only, min_confidence=min_confidence)
+        return SimpleNamespace(success=True, query=query, knowledge=(item,))
+
+    monkeypatch.setattr(brain.knowledge_brain, "retrieve", retrieve)
+    request = "What verified knowledge do you have about SAHIBEX?"
+    route = brain.specialist_router.select(request, "general_request")
+    assert route is not None and route.role_id == "knowledge"
+    dispatched = brain.dispatch_internal_brain(
+        route.role_id, request, route.context,
+        authorization_passed=True, verification_passed=True,
+    )
+    assert dispatched.accepted is True
+    assert calls == {"query": "SAHIBEX", "verified_only": True, "min_confidence": 0.0}
+    assert dispatched.result["status"] == "TRUST_FILTERED_KNOWLEDGE_RETRIEVAL"
+    assert dispatched.result["trust_filter_applied"] is True
+    assert dispatched.result["verified_only"] is True
+    assert dispatched.result["items"][0]["knowledge_id"] == "verified-1"
+    assert dispatched.result["items"][0]["statement"] == item.statement
+    assert dispatched.result["permission_granted"] is False
+    assert dispatched.result["actions_executed"] is False
+
+
+def test_knowledge_handler_cannot_be_downgraded_to_unverified_results(monkeypatch):
+    from types import SimpleNamespace
+
+    brain = MasterBrain()
+    calls = {}
+
+    def retrieve(query, *, verified_only=False, min_confidence=0.0):
+        calls.update(verified_only=verified_only)
+        return SimpleNamespace(success=True, query=query, knowledge=())
+
+    monkeypatch.setattr(brain.knowledge_brain, "retrieve", retrieve)
+    result = brain._internal_knowledge_handler(
+        "knowledge about SAHIBEX",
+        {"query": "SAHIBEX", "verified_only": False},
+    )
+    assert result["success"] is True
+    assert calls["verified_only"] is True
+    assert result["verified_only"] is True
+    assert result["trust_filter_applied"] is True
+
+
+def test_knowledge_specialist_still_requires_authorization_and_verification():
+    brain = MasterBrain()
+    request = "Search knowledge base for SAHIBEX"
+    route = brain.specialist_router.select(request, "general_request")
+    assert route is not None and route.role_id == "knowledge"
+    denied = brain.dispatch_internal_brain(
+        route.role_id, request, route.context,
+        authorization_passed=False, verification_passed=True,
+    )
+    unverified = brain.dispatch_internal_brain(
+        route.role_id, request, route.context,
+        authorization_passed=True, verification_passed=False,
+    )
+    assert denied.accepted is False
+    assert unverified.accepted is False

@@ -1988,7 +1988,13 @@ class MasterBrain:
     def _internal_knowledge_handler(self, request: str, context: dict):
         """Retrieve only through the existing persistent, trust-filtering Knowledge Brain."""
         query = context.get("query", request)
-        verified_only = context.get("verified_only", True)
+        requested_verified_only = context.get("verified_only", True)
+        if not isinstance(requested_verified_only, bool):
+            return {"success": False, "status": "VERIFIED_ONLY_FLAG_INVALID", "items": []}
+        # Mother Brain's ordinary knowledge lookup is always verified-only.
+        # Caller context cannot weaken this trust boundary; unverified review
+        # remains a separate, explicitly designed workflow.
+        verified_only = True
         min_confidence = context.get("min_confidence", 0.0)
         if not isinstance(query, str) or not query.strip() or len(query) > 1000:
             return {"success": False, "status": "KNOWLEDGE_QUERY_INVALID", "items": []}
@@ -2001,10 +2007,10 @@ class MasterBrain:
         except (ValueError, TypeError):
             return {"success": False, "status": "KNOWLEDGE_RETRIEVAL_REJECTED", "items": []}
         items = []
-        for item in result.knowledge[:20]:
+        for item in result.knowledge[:10]:
             items.append({
-                "knowledge_id": item.knowledge_id,
-                "statement": item.statement,
+                "knowledge_id": str(item.knowledge_id)[:128],
+                "statement": str(item.statement)[:2000],
                 "confidence": item.confidence,
                 "verified_flag": item.verified,
                 "created_at": item.created_at.isoformat() if item.created_at else None,
@@ -2016,7 +2022,8 @@ class MasterBrain:
             "success": True,
             "status": "TRUST_FILTERED_KNOWLEDGE_RETRIEVAL",
             "query": result.query,
-            "verified_only": verified_only,
+            "verified_only": True,
+            "trust_filter_applied": True,
             "min_confidence": float(min_confidence),
             "items": items,
             "returned_count": len(items),
