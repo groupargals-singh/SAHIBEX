@@ -432,3 +432,13 @@ This update records existing evidence and policy only. No code changed, no produ
 - No claim of 61/61 automatic specialist invocation. Required next implementation: reviewed intent/task-to-role routing matrix, scoped input contracts, existing permission + verification gates, telemetry, result verification and fail-closed fallback. Never dispatch all specialists indiscriminately.
 - Current model endpoint 8080 is offline; available RAM ~2.35 GB is below the configured 3 GiB startup guard. Existing 1.7B/4B model files and llama-server binary were inspected; no model was started, no automatic fallback was invoked and no RAM guard bypassed.
 - Text-only deterministic slice remains PASS; general model-backed Q&A and broad specialist routing remain NOT VERIFIED/BLOCKED.
+
+
+## 2026-11-10 — Conservative automatic specialist routing (first text-chat slice)
+- Added `MotherBrainSpecialistRouter`; at most one deterministic role is selected per request. No indiscriminate 61-role fan-out.
+- Initial routes: bounded arithmetic → Math, explicit learn/teach → Teaching, explicit language identification → Language. Translation requests are not sent to the detection-only Language handler.
+- Wired into `MasterBrain.process()` only after existing permission + request verification gates. Uses existing InternalBrainTeam dispatch; result/role trace returned as metadata and remains advisory/unverified.
+- Generic greeting/vague text does not select a role. Existing Mother Brain remains authoritative.
+- Focused router + team tests: 103 passed; compileall, shell syntax and diff checks PASS. Final full repository regression after false-positive routing coverage: **2,329 passed in 155.78s**, exit 0.
+- This is NOT 61-role automatic routing. Remaining specialist roles require individual input contracts, route selection and output consumers. Model-backed general Q&A remains blocked while local model endpoint is offline.
+- Detailed evidence: `docs/STATUS/SAHIBEX_MOTHER_BRAIN_SPECIALIST_ROUTING_2026-11-10.md`.

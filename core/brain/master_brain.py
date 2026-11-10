@@ -70,6 +70,7 @@ from core.agent_goal import AgentGoal
 from core.brain.specialist_child_manager import SpecialistChildBrainManager
 from core.brain.managed_worker_runtime import ManagedWorkerRuntime, WorkerExecution
 from core.brain.internal_brain_team import InternalBrainTeam
+from core.brain.mother_brain_specialist_router import MotherBrainSpecialistRouter
 from core.brain.coding_brain import CodingBrain
 from core.brain.text_development_brain import TextDevelopmentBrain
 from core.brain.test_brain import TestBrain
@@ -330,6 +331,7 @@ class MasterBrain:
         # runtime. This registry does not create independent Child Brains;
         # handlers are reported executable only when genuinely registered.
         self.internal_brain_team = InternalBrainTeam()
+        self.specialist_router = MotherBrainSpecialistRouter()
 
         # Phase 10: controlled continuous learning and improvement.
         # Production launch scripts configure a durable append-only audit DB.
@@ -3699,6 +3701,28 @@ class MasterBrain:
             "reasoning": "DISPATCHED",
             "orchestration": "DISPATCHED",
         }
+        automatic_specialist_result = None
+        specialist_route = self.specialist_router.select(text, intent_result.intent)
+        if specialist_route is not None:
+            specialist_dispatch = self.dispatch_internal_brain(
+                specialist_route.role_id,
+                text,
+                specialist_route.context,
+                authorization_passed=permission.allowed,
+                verification_passed=verification.verified,
+            )
+            internal_role_trace[specialist_route.role_id] = (
+                "DISPATCHED" if specialist_dispatch.accepted else "BLOCKED"
+            )
+            if specialist_dispatch.accepted:
+                automatic_specialist_result = specialist_dispatch.result
+            else:
+                # A specialist is advisory unless its output is explicitly
+                # consumed by a task-specific integration. Mother Brain keeps
+                # control and continues through its existing verified path.
+                internal_role_trace[f"{specialist_route.role_id}_reason"] = (
+                    specialist_dispatch.reason[:240]
+                )
 
         # ---------------------------------------------------------
         # MOTHER RESEARCH / LEARNING / OPERATIONAL RUNTIME
@@ -4172,6 +4196,12 @@ class MasterBrain:
             ),
             metadata={
                 "internal_brain_dispatch": dict(internal_role_trace),
+                "automatic_specialist": {
+                    "role_id": specialist_route.role_id,
+                    "reason": specialist_route.reason,
+                    "status": "DISPATCHED" if automatic_specialist_result is not None else "NOT_DISPATCHED",
+                    "result": automatic_specialist_result,
+                } if specialist_route is not None else None,
                 "authority": authority.authority.value,
                 "authority_reason": authority.reason,
                 "permission_reason": permission.reason,
