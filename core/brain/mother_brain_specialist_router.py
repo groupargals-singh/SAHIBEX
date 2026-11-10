@@ -64,14 +64,16 @@ class MotherBrainSpecialistRouter:
         r"^\s*(?:(?:please|kindly|can you|could you|would you)\s+)?"
         r"(?:summari[sz]e|summarise|extract key points from|review)\s+"
         r"(?:this\s+)?(?:document|doc)\s*[:\n]\s*(.+)$|"
-        r"^\s*(?:is|iss)\s+document\s+ka\s+(?:summary|saransh)\s*[:\n]\s*(.+)$",
+        r"^\s*(?:is|iss)\s+document\s+ka\s+(?:summary|saransh)\s*[:\n]\s*(.+)$|"
+        r"^\s*(?:इस दस्तावेज़ का सार|दस्तावेज़ का सार|इस डॉक्यूमेंट का सार)\s*[:\n]\s*(.+)$",
         re.IGNORECASE | re.DOTALL,
     )
     _READING_PAYLOAD = re.compile(
         r"^\s*(?:(?:please|kindly|can you|could you|would you)\s+)?"
         r"(?:read|extract|analy[sz]e|analyse)\s+"
         r"(?:this\s+)?(?:text|passage|content)\s*[:\n]\s*(.+)$|"
-        r"^\s*(?:is|iss)\s+text\s+ko\s+(?:padho|read karo|analyse karo)\s*[:\n]\s*(.+)$",
+        r"^\s*(?:is|iss)\s+text\s+ko\s+(?:padho|read karo|analyse karo)\s*[:\n]\s*(.+)$|"
+        r"^\s*(?:इस टेक्स्ट को पढ़|इस पाठ को पढ़|दिए गए पाठ को पढ़)\s*[:\n]\s*(.+)$",
         re.IGNORECASE | re.DOTALL,
     )
 

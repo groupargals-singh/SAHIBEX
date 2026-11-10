@@ -260,3 +260,19 @@ def test_memory_route_dispatches_with_bounded_sanitized_read_only_result(monkeyp
     assert result["writes_memory"] is False
     assert result["deletes_memory"] is False
     assert result["permission_granted"] is False
+
+
+def test_router_extracts_hindi_document_payload():
+    route = MotherBrainSpecialistRouter().select(
+        "इस दस्तावेज़ का सार: पहला बिंदु\nदूसरा बिंदु", "general_request"
+    )
+    assert route is not None and route.role_id == "document_file"
+    assert route.context["document_text"] == "पहला बिंदु\nदूसरा बिंदु"
+
+
+def test_router_extracts_hindi_reading_payload():
+    route = MotherBrainSpecialistRouter().select(
+        "इस टेक्स्ट को पढ़: नमस्ते\nदुनिया", "general_request"
+    )
+    assert route is not None and route.role_id == "reading"
+    assert route.context["source_text"] == "नमस्ते\nदुनिया"

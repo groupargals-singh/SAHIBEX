@@ -458,7 +458,7 @@ This update records existing evidence and policy only. No code changed, no produ
 - The request must contain source text after an explicit colon/newline delimiter; payload capped at 12,000 characters. Missing source text remains missing and the handler reports a required-input status.
 - Reading extracts a bounded excerpt. Document handler extracts source-grounded lines; it does not claim semantic summarization or factual verification.
 - Both handlers remain no-filesystem/no-write/no-delete/no-execution. Existing Mother Brain permission and verification gates remain in front of dispatch.
-- Focused router + InternalBrainTeam regression: **119 passed**; full repository regression: **2,345 passed in 168.41s**, exit 0. Compileall, shell syntax and diff checks PASS. GitHub publication pending final review/commit/push/hash verification.
+- Focused router + InternalBrainTeam regression: **125 passed**; full repository regression: **2,351 passed in 145.57s**, exit 0; compileall, shell syntax and diff checks PASS, exit 0. Compileall, shell syntax and diff checks PASS. GitHub publication pending final review/commit/push/hash verification.
 - Not implemented: opening file paths, PDF/DOCX parsing, library access, OCR, semantic summary generation or fact-checking. No release gate is promoted.
 - Detailed evidence: `docs/STATUS/SAHIBEX_READING_DOCUMENT_SPECIALIST_ROUTING_2026-11-11.md`.
 
