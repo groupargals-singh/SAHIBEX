@@ -2563,13 +2563,41 @@ class MasterBrain:
         }
 
     def _internal_memory_handler(self, request: str, context: dict):
-        """Read-only retrieval from existing memory; never writes or deletes."""
-        matches = self.memory_brain.retrieve(request)
+        """Read-only, trust-filtered retrieval with bounded public result fields."""
+        query = context.get("query", request)
+        if not isinstance(query, str) or not query.strip() or len(query) > 1000:
+            return {
+                "success": False,
+                "status": "MEMORY_QUERY_INVALID",
+                "count": 0,
+                "matches": [],
+                "writes_memory": False,
+                "deletes_memory": False,
+            }
+        matches = self.memory_brain.retrieve(query.strip())[:10]
+        safe_matches = []
+        for item in matches:
+            created_at = getattr(item, "created_at", None)
+            safe_matches.append({
+                "memory_id": str(getattr(item, "memory_id", ""))[:128],
+                "content": str(getattr(item, "content", ""))[:2000],
+                "memory_type": str(getattr(item, "memory_type", ""))[:80],
+                "source": str(getattr(item, "source", ""))[:120],
+                "importance": getattr(item, "importance", None),
+                "confidence": getattr(item, "confidence", None),
+                "tags": [str(tag)[:80] for tag in getattr(item, "tags", [])[:10]],
+                "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else None,
+            })
         return {
             "success": True,
             "status": "MEMORY_RETRIEVAL_ONLY",
-            "count": len(matches),
-            "matches": matches,
+            "trust_filter_applied": True,
+            "query": query.strip(),
+            "count": len(safe_matches),
+            "matches": safe_matches,
+            "writes_memory": False,
+            "deletes_memory": False,
+            "permission_granted": False,
         }
 
     def run_managed_worker(

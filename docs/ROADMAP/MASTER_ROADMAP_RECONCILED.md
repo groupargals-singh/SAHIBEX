@@ -461,3 +461,12 @@ This update records existing evidence and policy only. No code changed, no produ
 - Focused router + InternalBrainTeam regression: **119 passed**; full repository regression: **2,345 passed in 168.41s**, exit 0. Compileall, shell syntax and diff checks PASS. GitHub publication pending final review/commit/push/hash verification.
 - Not implemented: opening file paths, PDF/DOCX parsing, library access, OCR, semantic summary generation or fact-checking. No release gate is promoted.
 - Detailed evidence: `docs/STATUS/SAHIBEX_READING_DOCUMENT_SPECIALIST_ROUTING_2026-11-11.md`.
+
+## 2026-11-11 — Memory specialist routing
+- Added explicit English and supported Hinglish recall routing to the existing `memory` specialist.
+- Query extraction is bounded to 1,000 characters; retrieval still passes through `MemoryBrain.retrieve()` and its existing trust/provenance filter.
+- Memory handler now returns at most 10 serialization-safe, bounded result records and excludes internal metadata. Existing `MEMORY_RETRIEVAL_ONLY` status is preserved; `trust_filter_applied` is explicit.
+- No memory writes/deletes, permission grants or Constitution changes. Existing Mother Brain permission + verification gates remain mandatory.
+- Focused router + InternalBrainTeam regression: **123 passed**; full repository regression: **2,349 passed in 164.92s**, exit 0. Compileall, shell syntax and diff checks PASS. GitHub publication pending final review/commit/push/hash verification.
+- This is recall routing only, not full conversational context reconstruction or automatic memory consolidation. No release gate is promoted.
+- Detailed evidence: `docs/STATUS/SAHIBEX_MEMORY_SPECIALIST_ROUTING_2026-11-11.md`.

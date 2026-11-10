@@ -35,6 +35,17 @@ class MotherBrainSpecialistRouter:
         re.IGNORECASE,
     )
 
+    _MEMORY_REQUEST = re.compile(
+        r"\b(?:what do you remember about|do you remember|recall|"
+        r"find in memory|search memory for|remember our discussion about)\s+(.+)$",
+        re.IGNORECASE | re.DOTALL,
+    )
+    _MEMORY_REQUEST_HINGLISH = re.compile(
+        r"\b(?:tumhe|tumko)\s+(?:kya\s+)?yaad\s+hai\s+(.+)$|"
+        r"\b(?:tumhe|tumko)\s+(.+?)\s+ke\s+bare\s+me\s+kya\s+yaad\s+hai\b",
+        re.IGNORECASE | re.DOTALL,
+    )
+
     _DOCUMENT_REQUEST = re.compile(
         r"\b(?:summari[sz]e|summarise|extract key points from|review)\s+"
         r"(?:this\s+)?(?:document|doc)\b|"
@@ -83,6 +94,15 @@ class MotherBrainSpecialistRouter:
             return None
         text = request.strip()
         normalized_intent = intent.strip().lower()
+
+        memory_match = self._MEMORY_REQUEST.search(text) or self._MEMORY_REQUEST_HINGLISH.search(text)
+        if memory_match:
+            memory_query = next((group for group in memory_match.groups() if group), "").strip().strip(" ?.!\n\t")
+            if memory_query:
+                return SpecialistRoute(
+                    "memory", "explicit request to recall stored memory",
+                    {"query": memory_query[:1000]},
+                )
 
         # These handlers process only text included in the request. They do not
         # resolve file paths or access the filesystem.

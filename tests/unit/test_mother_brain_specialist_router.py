@@ -209,3 +209,54 @@ def test_router_extracts_hinglish_reading_payload():
     )
     assert route is not None and route.role_id == "reading"
     assert route.context["source_text"] == "Namaste\nDuniya"
+
+
+def test_router_selects_memory_for_explicit_recall_request():
+    route = MotherBrainSpecialistRouter().select(
+        "What do you remember about the SAHIBEX roadmap?", "general_request"
+    )
+    assert route is not None and route.role_id == "memory"
+    assert route.context["query"] == "the SAHIBEX roadmap"
+
+
+def test_router_selects_memory_for_hinglish_recall_request():
+    route = MotherBrainSpecialistRouter().select(
+        "Tumhe SAHIBEX ke roadmap ke bare me kya yaad hai?", "general_request"
+    )
+    assert route is not None and route.role_id == "memory"
+    assert route.context["query"] == "SAHIBEX ke roadmap"
+
+
+def test_router_does_not_route_generic_memory_wording():
+    assert MotherBrainSpecialistRouter().select("I have a good memory", "general_request") is None
+
+
+def test_memory_route_dispatches_with_bounded_sanitized_read_only_result(monkeypatch):
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+
+    brain = MasterBrain()
+    sample = SimpleNamespace(
+        memory_id="m-1", content="SAHIBEX roadmap note", memory_type="project_fact",
+        source="user-confirmed", importance=0.9, confidence=0.95,
+        tags=["SAHIBEX", "roadmap"], created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        metadata={"private_internal_field": "must not leak"},
+    )
+    monkeypatch.setattr(brain.memory_brain, "retrieve", lambda query: [sample])
+    request = "What do you remember about the SAHIBEX roadmap?"
+    route = brain.specialist_router.select(request, "general_request")
+    assert route is not None and route.role_id == "memory"
+    dispatched = brain.dispatch_internal_brain(
+        route.role_id, request, route.context,
+        authorization_passed=True, verification_passed=True,
+    )
+    assert dispatched.accepted is True
+    result = dispatched.result
+    assert result["status"] == "MEMORY_RETRIEVAL_ONLY"
+    assert result["trust_filter_applied"] is True
+    assert result["query"] == "the SAHIBEX roadmap"
+    assert result["matches"][0]["content"] == "SAHIBEX roadmap note"
+    assert "metadata" not in result["matches"][0]
+    assert result["writes_memory"] is False
+    assert result["deletes_memory"] is False
+    assert result["permission_granted"] is False
