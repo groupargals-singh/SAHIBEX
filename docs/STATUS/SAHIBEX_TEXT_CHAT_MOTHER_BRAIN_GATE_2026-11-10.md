@@ -33,3 +33,10 @@ First implementation slice for the user's requested text-only interaction path. 
 
 ## Next implementation target
 Trace the general text request path from MasterBrain intent/context → specialist selection/dispatch → model gateway/provider → answer quality/confidence verification → conversation persistence. Reuse existing modules, keep Mother Brain as sole authority, and add a deterministic offline-safe fallback only where evidence supports it. Then build a role-by-role dispatch acceptance matrix; do not confuse registry coverage with execution coverage.
+
+## Additional Mother Brain routing audit (same checkpoint)
+- Source search found explicit `MasterBrain.process()` dispatch call-sites for five internal roles: `reasoning`, `orchestration`, `research`, `learning`, and `coding`. Research/Learning/Coding are conditional; Reasoning/Orchestration are on the normal full processing path.
+- The other registered role handlers are callable through the explicit `dispatch_internal_brain(...)` API, but this audit found no automatic intent-to-role selector in the main process path for them. Therefore 61/61 handler registration must NOT be reported as 61/61 automatic task-routing coverage.
+- Next wiring requirement: a reviewed intent/task-to-specialist selection matrix, bounded input contracts, explicit upstream permission/verification, dispatch telemetry, output verification and safe fallback to Mother Brain. Do not fan out all 61 roles for every message.
+- Model API `127.0.0.1:8080/health` is currently connection-refused. Home model files observed: Qwen3-1.7B (about 1.2 GB) and Qwen3-4B (about 2.4 GB); llama-server binary exists. Available RAM was about 2.35 GB, below the configured 3 GiB model startup threshold. No model was started and no RAM guard or automatic fallback policy was bypassed.
+- General model-backed text Q&A remains blocked until an explicitly permitted provider is available and passes live inference + answer verification.

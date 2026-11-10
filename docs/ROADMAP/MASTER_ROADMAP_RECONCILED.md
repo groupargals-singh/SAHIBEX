@@ -425,3 +425,10 @@ This update records existing evidence and policy only. No code changed, no produ
 - No P-series gate promoted; no voice/camera/semantic-vision/Accessibility/device-control acceptance claimed.
 - Next: trace the complete general text path through intent/context, specialist selection/dispatch, model gateway/provider, answer quality/confidence verification and conversation persistence; then build role-by-role dispatch acceptance. Preserve Mother Brain authority and existing security gates.
 - Detailed evidence: `docs/STATUS/SAHIBEX_TEXT_CHAT_MOTHER_BRAIN_GATE_2026-11-10.md`.
+
+
+## 2026-11-10 — Mother Brain routing audit addendum
+- Clarified the difference between handler registration and automatic task routing: 61/61 internal role handlers are registered, but only five role IDs currently have explicit dispatch call-sites in `MasterBrain.process()` (reasoning, orchestration, research, learning, coding). The remaining roles are available through the explicit dispatch API but lack automatic task-selection wiring in the normal request path.
+- No claim of 61/61 automatic specialist invocation. Required next implementation: reviewed intent/task-to-role routing matrix, scoped input contracts, existing permission + verification gates, telemetry, result verification and fail-closed fallback. Never dispatch all specialists indiscriminately.
+- Current model endpoint 8080 is offline; available RAM ~2.35 GB is below the configured 3 GiB startup guard. Existing 1.7B/4B model files and llama-server binary were inspected; no model was started, no automatic fallback was invoked and no RAM guard bypassed.
+- Text-only deterministic slice remains PASS; general model-backed Q&A and broad specialist routing remain NOT VERIFIED/BLOCKED.
