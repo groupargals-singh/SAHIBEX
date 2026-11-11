@@ -16,12 +16,7 @@ from core.brain.observability_expansion import (
     ObservabilityEngine,
 )
 from core.brain.recovery_controller import RecoveryController
-from tools.discovery import ToolDiscovery
-from tools.executor import SafeToolExecutor
-from tools.invocation import ToolInvocationResult, ToolInvoker
-from tools.permission_gateway import ToolPermissionGateway
-from tools.registry import ToolRegistry, build_default_registry
-from tools.result_handler import ToolResult, ToolResultHandler
+from tools.result_handler import ToolResult
 
 
 @dataclass(frozen=True)
@@ -45,11 +40,9 @@ class SahibexExecutionLoop:
 
     Lifecycle:
         INPUT
-          -> UNDERSTAND / AUTHORIZE / VERIFY / REASON
-          -> PLAN
-          -> OPTIONAL TOOL DISCOVERY / PERMISSION / EXECUTION
-          -> RESULT VERIFICATION
-          -> RECOVERY ON SAFE RETRYABLE FAILURE
+          -> MOTHER BRAIN UNDERSTANDING / AUTHORIZATION / VERIFICATION
+          -> PLAN AND MOTHER-BRAIN TOOL EXECUTION
+          -> INDEPENDENT RESULT VERIFICATION / AUDIT
           -> OBSERVATION
           -> FINAL RESPONSE
 
@@ -65,7 +58,6 @@ class SahibexExecutionLoop:
         *,
         brain: MasterBrain | None = None,
         project_root: Path | None = None,
-        registry: ToolRegistry | None = None,
         evidence_recorder: ExecutionEvidenceRecorder | None = None,
         verifier: OperationalVerificationRecovery | None = None,
     ) -> None:
@@ -75,26 +67,10 @@ class SahibexExecutionLoop:
             if project_root is not None
             else Path.cwd().resolve()
         )
-        self.registry = registry or build_default_registry(
-            self.project_root,
-            include_protected=False,
-        )
         self.evidence_recorder = evidence_recorder or ExecutionEvidenceRecorder(
             self.project_root / "security" / "audit"
         )
         self.verifier = verifier or OperationalVerificationRecovery()
-        self.discovery = ToolDiscovery(self.registry)
-        self.tool_permissions = ToolPermissionGateway(
-            self.brain.permission,
-            self.registry,
-        )
-        self.executor = SafeToolExecutor(self.registry)
-        self.invoker = ToolInvoker(
-            self.discovery,
-            self.tool_permissions,
-            self.executor,
-        )
-        self.results = ToolResultHandler()
         self.recovery = RecoveryController()
         self.observability = ObservabilityEngine()
 
@@ -270,38 +246,30 @@ class SahibexExecutionLoop:
                 },
             )
 
-        tool_result, attempts = self._execute_read_only_tool(
-            request,
-            user_confirmation=user_confirmation,
-        )
-
-        if tool_result is None:
-            status = "BLOCKED"
-            response = "No safe read-only tool matched the request."
-            audit_recorded = self._record_evidence(
-                request=request,
-                tool="tool_discovery",
-                allowed=False,
-                confirmation_required=False,
-                confirmation_provided=False,
-                attempts=max(1, attempts),
-                result=None,
-                verification_status="NOT_EXECUTED",
-                recovery_status="BLOCKED",
-                final_status="BLOCKED",
-                error="No safe read-only tool matched the request.",
-                risk="low",
-                reason="Tool discovery found no permitted candidate.",
-            )
+        # MasterBrain has already run Tool Brain for this read-only request.
+        # Reuse that single execution result; never issue a second filesystem
+        # read through the loop's legacy discovery path.
+        tool_meta = brain_result.metadata.get("tool_brain_integration", {})
+        if (
+            not isinstance(tool_meta, dict)
+            or tool_meta.get("success") is not True
+            or tool_meta.get("tool") != "read_file"
+            or tool_meta.get("allowed") is not True
+            or brain_result.permission_allowed is not True
+            or brain_result.confirmation_required is True
+            or brain_result.verification_status != "VERIFIED"
+            or not brain_result.message
+        ):
+            response = "Main Brain did not provide a verified, authorized read-only result."
             self._observe(
                 request=request,
                 brain=brain_result,
-                status=status,
-                error_class="ToolDiscoveryFailure",
+                status="FAILED",
+                error_class="MainBrainReadResultNotVerified",
             )
             return ExecutionLoopResult(
                 success=False,
-                status=status,
+                status="FAILED",
                 request=request,
                 brain=brain_result,
                 tool=None,
@@ -310,11 +278,25 @@ class SahibexExecutionLoop:
                 response=response,
                 metadata={
                     "loop_version": self.VERSION,
-                    "attempts": attempts,
-                    "audit_recorded": audit_recorded,
+                    "execution_kind": "read_only_tool",
+                    "attempts": 0,
+                    "verified": False,
+                    "audit_recorded": False,
                 },
             )
 
+        _, read_kwargs = self._tool_request(request)
+        attempts = 1
+        tool_result = ToolResult(
+            tool="read_file",
+            success=True,
+            allowed=True,
+            requires_confirmation=False,
+            result={"path": read_kwargs.get("path", ""), "content": brain_result.message},
+            error=None,
+            risk=brain_result.risk,
+            reason="Reused Main Brain Tool Brain's verified read-only result.",
+        )
         verification = self.verifier.verify_tool_result(tool_result)
         accepted = verification.success and verification.verified
         audit_recorded = self._record_evidence(
@@ -337,11 +319,10 @@ class SahibexExecutionLoop:
 
         if accepted and audit_recorded:
             response = self._format_tool_response(tool_result)
-            self.brain.context.add_turn(
-                user=request,
-                assistant=response,
-                intent=brain_result.intent,
-            )
+            # MasterBrain.process() already records this interaction. Update
+            # its assistant text with the verified tool result instead of
+            # appending a duplicate conversation turn.
+            self.brain.context.update_latest_assistant(response)
             self._observe(
                 request=request,
                 brain=brain_result,
@@ -403,56 +384,6 @@ class SahibexExecutionLoop:
                 "audit_recorded": audit_recorded,
             },
         )
-
-    def _execute_read_only_tool(
-        self,
-        request: str,
-        *,
-        user_confirmation: bool,
-    ) -> tuple[ToolResult | None, int]:
-        query, kwargs = self._tool_request(request)
-
-        candidate = self.discovery.select(query)
-        if candidate is None:
-            return None, 0
-
-        attempts = 0
-        last: ToolResult | None = None
-
-        # Read-only operations are safe to retry through the existing
-        # permission + sandbox path. No protected operation is retried.
-        max_attempts = 2 if candidate.read_only else 1
-
-        while attempts < max_attempts:
-            attempts += 1
-            invocation: ToolInvocationResult = self.invoker.invoke(
-                query,
-                user_confirmation=user_confirmation,
-                **kwargs,
-            )
-            normalized = self.results.handle(invocation)
-            last = normalized
-
-            if normalized.success:
-                if self.recovery.state.value == "recovering":
-                    self.recovery.complete(
-                        "Read-only execution recovered and verified."
-                    )
-                return normalized, attempts
-
-            if attempts < max_attempts:
-                self.recovery.begin(
-                    f"Safe retry after read-only tool failure: "
-                    f"{normalized.reason}"
-                )
-                continue
-
-            if self.recovery.state.value == "recovering":
-                self.recovery.fail(
-                    f"Read-only recovery exhausted: {normalized.reason}"
-                )
-
-        return last, attempts
 
     @staticmethod
     def _tool_request(request: str) -> tuple[str, dict[str, Any]]:

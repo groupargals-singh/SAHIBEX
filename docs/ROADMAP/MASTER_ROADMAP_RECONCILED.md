@@ -500,3 +500,17 @@ This update records existing evidence and policy only. No code changed, no produ
 - This is **ALREADY IMPLEMENTED / software integration re-verified PASS**, not proof of live external provider availability or corpus-wide independent corroboration. P6/P7/P8/P10/P11 and knowledge trust-lifecycle status remain unchanged.
 - Evidence: `docs/STATUS/SAHIBEX_RESEARCH_BRAIN_MOTHER_BRAIN_INTEGRATION_2026-11-11.md`.
 - Next task: investigate runtime reachability of the existing `SahibexExecutionLoop` and persistent Knowledge Graph without duplicating existing engines or bypassing Mother Brain authority.
+
+
+## 2026-11-11 — Execution Loop + Persistent Memory Graph runtime wiring
+- Main Termux CLI now builds and uses `SahibexExecutionLoop` around the exact live `MasterBrain` instance; `status` reports the loop version and persistent graph connection/count.
+- Runtime factory binds `PersistentMemoryKnowledgeGraph` to the exact same file-backed SQLite database used by operational retrieval, research, and Memory Brain. It rejects in-memory DBs and operational/research path mismatches. Graph connection is closed in CLI `finally` cleanup.
+- Added `MasterBrain.bind_persistent_memory_knowledge_graph()`. It validates the shared DB contract and rehydrates the latest conversation-memory anchor after restart.
+- Every persisted conversation turn is now linked to its previous turn as a chronological `memory_to_memory` association. Metadata explicitly says this is chronological adjacency, not semantic similarity or fact corroboration. The graph association survives restart; target-memory existence is checked against the canonical `memories` table and unknown targets fail existence checks.
+- Fixed an execution-loop double-read defect: Main Brain already invokes Tool Brain for read-only requests, so the loop now reuses only a successful, allowed, exact `read_file`, no-confirmation, `VERIFIED` result. It independently verifies and writes authenticated evidence; missing/invalid upstream tool evidence fails closed. Removed the duplicate ToolDiscovery/ToolInvoker/SafeToolExecutor stack from the loop.
+- Fixed duplicate context-turn insertion: the verified read result updates the latest assistant text instead of appending a second turn.
+- CLI smoke on Termux: `Execution Loop ONLINE`, `Persistent Graph CONNECTED`; actual `app/main.py` read completed with `COMPLETED`, `VERIFIED`, authenticated audit evidence. Multi-turn greeting smoke produced persistent associations and the status counter advanced.
+- Focused runtime/graph/execution regression: **13 passed in 5.91s**. Full repository regression after final changes: **2,371 passed in 176.54s**, exit 0. Compileall, all shell script syntax checks, `git diff --check`, and common secret-pattern scan PASS.
+- Evidence: `docs/STATUS/SAHIBEX_EXECUTION_LOOP_PERSISTENT_GRAPH_RUNTIME_2026-11-11.md`.
+- Explicit boundary: this provides persistent chronological conversation links, not semantic GraphRAG/entity resolution/fact extraction/corroboration. No legacy knowledge candidates were promoted. P6/P7/P8/P10/P11 remain unchanged.
+- Next: continue with one remaining runtime acceptance edge at a time; the next release blockers remain P6 physical voice, P7 semantic vision, P8 real device pairing/control, knowledge trust lifecycle, and P10 historical requirements provenance.

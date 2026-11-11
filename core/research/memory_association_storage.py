@@ -85,6 +85,21 @@ class MemoryAssociationStorage:
 
         return json.loads(data)
 
+    def memory_exists(self, memory_id: str) -> bool:
+        """Check a memory target against the canonical shared memories table."""
+        if not isinstance(memory_id, str) or not memory_id.strip():
+            return False
+        try:
+            row = self._connection.execute(
+                "SELECT 1 FROM memories WHERE memory_id = ? LIMIT 1",
+                (memory_id.strip(),),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            # A standalone association DB has no authoritative memory table;
+            # never report an external memory target as existing in that case.
+            return False
+        return row is not None
+
     def save_association(
         self,
         association: MemoryAssociation,

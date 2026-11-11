@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from core.research.knowledge_graph_storage import KnowledgeGraphStorage
@@ -50,12 +51,13 @@ class PersistentMemoryKnowledgeGraph:
         self,
         database_path: str,
     ) -> None:
+        self.database_path = Path(database_path)
         self._association_storage = MemoryAssociationStorage(
-            database_path
+            self.database_path
         )
 
         self._knowledge_storage = KnowledgeGraphStorage(
-            database_path
+            self.database_path
         )
 
     @staticmethod
@@ -100,11 +102,13 @@ class PersistentMemoryKnowledgeGraph:
                 is not None
             )
 
+        if target_type == "memory":
+            return self._association_storage.memory_exists(target_id)
+
         # These objects are owned by other SAHIBEX
         # storage/registry layers. Their existence is not
         # silently inferred here.
         if target_type in {
-            "memory",
             "knowledge",
             "source",
             "experience",

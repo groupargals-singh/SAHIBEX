@@ -501,6 +501,8 @@ class MasterBrain:
         self.three_brain_council = ThreeBrainCouncil()
         self.runtime_state = MotherBrainState()
         self.memory_brain = MemoryBrain(storage=self.mother_operational.storage)
+        self.persistent_memory_knowledge_graph = None
+        self._last_conversation_memory_id: str | None = None
         self.knowledge_brain = KnowledgeBrain(storage=self.mother_operational.storage)
         self.research_learning_brain = ResearchLearningBrain(
             research=self.mother_research,
@@ -707,6 +709,32 @@ class MasterBrain:
         self.internal_brain_team.register_handler(
             "testing", self._internal_development_testing_handler
         )
+
+    def bind_persistent_memory_knowledge_graph(self, graph) -> dict[str, Any]:
+        """Bind a graph backed by the exact operational/research SQLite store."""
+        if graph is None or not callable(getattr(graph, "summary", None)):
+            raise TypeError("graph must expose a persistent graph summary")
+        memory_path = Path(self.memory_brain.storage.database_path)
+        if str(memory_path) == ":memory:":
+            raise ValueError("persistent graph binding requires a file-backed memory store")
+        graph_path = getattr(graph, "database_path", None)
+        if graph_path is None or Path(graph_path).resolve() != memory_path.resolve():
+            raise ValueError("persistent graph must share the Main Brain memory database")
+        summary = graph.summary()
+        if summary.get("persistent") is not True or summary.get("shared_sqlite_database") is not True:
+            raise ValueError("persistent graph failed its storage contract")
+        self.persistent_memory_knowledge_graph = graph
+        recent = self.memory_brain.storage.list_recent_memories(
+            memory_type="conversation", source="master_brain", limit=1
+        )
+        self._last_conversation_memory_id = recent[0].memory_id if recent else None
+        return {
+            "bound": True,
+            "shared_database": True,
+            "existing_conversation_anchor_loaded": bool(self._last_conversation_memory_id),
+            "grants_permission": False,
+            "executes_actions": False,
+        }
 
     @staticmethod
     def _internal_automation_handler(request: str, context: dict):
@@ -5196,13 +5224,52 @@ class MasterBrain:
             assistant=result.message,
             intent=result.intent,
         )
-        self.memory_brain.remember_interaction(
+        memory_write = self.memory_brain.remember_interaction(
             user_text=text or "",
             assistant_text=result.message,
             intent=result.intent,
             action=result.action,
             verification_status=result.verification_status,
         )
+        graph = self.persistent_memory_knowledge_graph
+        if graph is not None and memory_write.persisted:
+            previous_memory_id = self._last_conversation_memory_id
+            if previous_memory_id and previous_memory_id != memory_write.memory_id:
+                try:
+                    link_result = graph.link(
+                        memory_id=memory_write.memory_id,
+                        target_id=previous_memory_id,
+                        target_type="memory",
+                        strength=0.5,
+                        confidence=0.5,
+                        metadata={
+                            "relationship": "conversation_predecessor",
+                            "link_basis": "chronological_adjacency_not_semantic_similarity",
+                            "source": "master_brain_runtime",
+                        },
+                    )
+                    result.metadata["persistent_memory_graph_link"] = {
+                        "status": "LINKED" if link_result.target_exists else "TARGET_NOT_FOUND",
+                        "created": link_result.created,
+                        "target_exists_verified": link_result.target_exists,
+                        "semantic_similarity_claimed": False,
+                    }
+                except Exception as exc:
+                    # The graph is associative metadata only; a graph write
+                    # failure must not turn an already-safe response into a
+                    # permission change or a false task failure.
+                    result.metadata["persistent_memory_graph_link"] = {
+                        "status": "LINK_FAILED",
+                        "error_type": type(exc).__name__,
+                        "semantic_similarity_claimed": False,
+                    }
+            else:
+                result.metadata["persistent_memory_graph_link"] = {
+                    "status": "FIRST_CONVERSATION_NODE",
+                    "created": False,
+                    "semantic_similarity_claimed": False,
+                }
+            self._last_conversation_memory_id = memory_write.memory_id
         # Report the real bounded working-memory state after the interaction
         # has been activated. This is a read-only snapshot, not a promotion.
         try:

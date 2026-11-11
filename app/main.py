@@ -8,7 +8,52 @@ from datetime import datetime, time as datetime_time, timedelta
 from pathlib import Path
 
 from core.brain.master_brain import MasterBrain
+from core.brain.sahibex_execution_loop import SahibexExecutionLoop
 from core.brain.wake_sleep_state import WakeSleepController, WakeSleepState
+from core.research.persistent_memory_knowledge_graph import PersistentMemoryKnowledgeGraph
+
+
+def build_runtime_components(
+    *,
+    project_root: Path | None = None,
+    brain: MasterBrain | None = None,
+):
+    """Build the CLI execution loop and graph on Mother's shared database."""
+    root = (
+        Path(project_root).resolve()
+        if project_root is not None
+        else Path(__file__).resolve().parents[1]
+    )
+    active_brain = brain or MasterBrain()
+    database_path = Path(active_brain.mother_research.storage.database_path)
+    if str(database_path) == ":memory:":
+        raise RuntimeError(
+            "The persistent knowledge graph requires the file-backed Mother Brain database."
+        )
+    operational_path = Path(active_brain.mother_operational.storage.database_path)
+    if operational_path.resolve() != database_path.resolve():
+        raise RuntimeError(
+            "Mother Brain operational and research stores are not the same persistent database."
+        )
+
+    graph = PersistentMemoryKnowledgeGraph(str(database_path))
+    summary = graph.summary()
+    connected = (
+        summary.get("persistent") is True
+        and summary.get("shared_sqlite_database") is True
+        and summary.get("knowledge_graph_connected") is True
+    )
+    if not connected:
+        graph.close()
+        raise RuntimeError("Persistent knowledge graph failed its runtime connection check.")
+
+    try:
+        active_brain.bind_persistent_memory_knowledge_graph(graph)
+        loop = SahibexExecutionLoop(brain=active_brain, project_root=root)
+    except Exception:
+        graph.close()
+        raise
+    return active_brain, loop, graph
 
 
 BANNER = """
@@ -47,7 +92,9 @@ def print_result(result) -> None:
     print()
 
 
-def print_status(brain: MasterBrain, sleep_controller: WakeSleepController,
+def print_status(brain: MasterBrain, execution_loop: SahibexExecutionLoop,
+                 knowledge_graph: PersistentMemoryKnowledgeGraph,
+                 sleep_controller: WakeSleepController,
                  sleep_mode_enabled: bool, idle_seconds: int) -> None:
     print()
     print("============================================================")
@@ -60,6 +107,11 @@ def print_status(brain: MasterBrain, sleep_controller: WakeSleepController,
     print("Constitution         : ACTIVE")
     print("Permission Engine    : ONLINE")
     print("Verification Engine  : ONLINE")
+    print(f"Execution Loop       : ONLINE (v{execution_loop.VERSION})")
+    graph_status = knowledge_graph.summary()
+    print("Persistent Graph     : CONNECTED" if graph_status.get("knowledge_graph_connected") is True else "Persistent Graph     : NOT VERIFIED")
+    print(f"Graph Associations   : {graph_status.get('association_count', 0)}")
+    print("Graph DB             : Mother Brain shared SQLite store")
     roles = brain.internal_brain_team.roles()
     executable_roles = sum(1 for role in roles if role.handler_registered)
     print(f"Internal Brain Roles : {len(roles)} defined; {executable_roles} handlers connected")
@@ -110,76 +162,83 @@ def main() -> None:
         idle_seconds = 300
     sleep_mode_enabled = os.getenv("SAHIBEX_IDLE_SLEEP_ENABLED", "1").strip().lower() not in {"0", "false", "no", "off"}
 
-    brain = MasterBrain()
+    brain, execution_loop, knowledge_graph = build_runtime_components()
     sleep_controller = WakeSleepController()
     sleep_controller.wake("main_runtime_start")
     last_activity = time.monotonic()
     print(BANNER, flush=True)
     print(f"SAHIBEX > Idle sleep is {'ON' if sleep_mode_enabled else 'OFF'}; timeout={idle_seconds}s.", flush=True)
 
-    while True:
-        timeout = None
-        if sleep_mode_enabled and sleep_controller.state is WakeSleepState.AWAKE:
-            timeout = max(0.0, idle_seconds - (time.monotonic() - last_activity))
-        try:
-            user_input = _read_input(timeout)
-        except (KeyboardInterrupt, EOFError):
-            print("\\nSAHIBEX stopped by terminal interruption.", flush=True)
-            break
-
-        if user_input is None:
-            if sleep_controller.state is WakeSleepState.AWAKE:
-                sleep_controller.sleep("idle_timeout")
-                print("\\nSAHIBEX > SLEEP MODE: idle timeout reached. Root brain remains listening; enter a task to wake.", flush=True)
-            continue
-
-        user_input = user_input.strip()
-        if not user_input:
-            if not sys.stdin.isatty():
-                print("SAHIBEX > Input stream closed; interactive runtime cannot continue. Use a persistent PTY or companion task endpoint.", flush=True)
+    try:
+        while True:
+            timeout = None
+            if sleep_mode_enabled and sleep_controller.state is WakeSleepState.AWAKE:
+                timeout = max(0.0, idle_seconds - (time.monotonic() - last_activity))
+            try:
+                user_input = _read_input(timeout)
+            except (KeyboardInterrupt, EOFError):
+                print("\\nSAHIBEX stopped by terminal interruption.", flush=True)
                 break
-            continue
 
-        last_activity = time.monotonic()
-        lowered = user_input.lower()
-        if lowered in {"exit", "quit", "q"}:
-            print("SAHIBEX > Session closed by user.", flush=True)
-            break
-        if lowered in {"status", "/status"}:
-            print_status(brain, sleep_controller, sleep_mode_enabled, idle_seconds)
-            continue
-        if lowered in {"sleepmode on", "sleep mode on"}:
-            sleep_mode_enabled = True
-            print(f"SAHIBEX > Idle sleep mode ON ({idle_seconds}s timeout).", flush=True)
-            continue
-        if lowered in {"sleepmode off", "sleep mode off"}:
-            sleep_mode_enabled = False
-            if sleep_controller.state is WakeSleepState.SLEEPING:
-                sleep_controller.wake("sleep_mode_disabled")
-            print("SAHIBEX > Idle sleep mode OFF.", flush=True)
-            continue
-        if lowered == "sleep":
-            if sleep_controller.state is WakeSleepState.AWAKE:
-                sleep_controller.sleep("manual_sleep")
-            print("SAHIBEX > SLEEP MODE. Root brain remains listening; enter 'wake' or a task to resume.", flush=True)
-            continue
-        if lowered == "wake":
-            if sleep_controller.state is WakeSleepState.SLEEPING:
-                sleep_controller.wake("manual_wake")
+            if user_input is None:
+                if sleep_controller.state is WakeSleepState.AWAKE:
+                    sleep_controller.sleep("idle_timeout")
+                    print("\\nSAHIBEX > SLEEP MODE: idle timeout reached. Root brain remains listening; enter a task to wake.", flush=True)
+                continue
+
+            user_input = user_input.strip()
+            if not user_input:
+                if not sys.stdin.isatty():
+                    print("SAHIBEX > Input stream closed; interactive runtime cannot continue. Use a persistent PTY or companion task endpoint.", flush=True)
+                    break
+                continue
+
             last_activity = time.monotonic()
-            print("SAHIBEX > AWAKE. Ready for tasks.", flush=True)
-            continue
+            lowered = user_input.lower()
+            if lowered in {"exit", "quit", "q"}:
+                print("SAHIBEX > Session closed by user.", flush=True)
+                break
+            if lowered in {"status", "/status"}:
+                print_status(brain, execution_loop, knowledge_graph, sleep_controller, sleep_mode_enabled, idle_seconds)
+                continue
+            if lowered in {"sleepmode on", "sleep mode on"}:
+                sleep_mode_enabled = True
+                print(f"SAHIBEX > Idle sleep mode ON ({idle_seconds}s timeout).", flush=True)
+                continue
+            if lowered in {"sleepmode off", "sleep mode off"}:
+                sleep_mode_enabled = False
+                if sleep_controller.state is WakeSleepState.SLEEPING:
+                    sleep_controller.wake("sleep_mode_disabled")
+                print("SAHIBEX > Idle sleep mode OFF.", flush=True)
+                continue
+            if lowered == "sleep":
+                if sleep_controller.state is WakeSleepState.AWAKE:
+                    sleep_controller.sleep("manual_sleep")
+                print("SAHIBEX > SLEEP MODE. Root brain remains listening; enter 'wake' or a task to resume.", flush=True)
+                continue
+            if lowered == "wake":
+                if sleep_controller.state is WakeSleepState.SLEEPING:
+                    sleep_controller.wake("manual_wake")
+                last_activity = time.monotonic()
+                print("SAHIBEX > AWAKE. Ready for tasks.", flush=True)
+                continue
 
-        if sleep_controller.state is WakeSleepState.SLEEPING:
-            sleep_controller.wake("incoming_task")
-            print("SAHIBEX > WAKING for incoming task.", flush=True)
-        try:
-            result = brain.process(user_input)
-            print_result(result)
-        except Exception as exc:
-            reason = str(exc).strip() or exc.__class__.__name__
-            print(f"SAHIBEX > TASK FAILED SAFELY: {reason}", flush=True)
-        last_activity = time.monotonic()
+            if sleep_controller.state is WakeSleepState.SLEEPING:
+                sleep_controller.wake("incoming_task")
+                print("SAHIBEX > WAKING for incoming task.", flush=True)
+            try:
+                result = execution_loop.process(user_input)
+                print_result(result.brain)
+                print(f"Execution Lifecycle   : {result.status}")
+                print(f"Execution Verified    : {result.metadata.get('verified', result.brain.verification_status == 'VERIFIED')}")
+                print(f"Execution Audit       : {result.metadata.get('audit_recorded', 'not_required')}")
+            except Exception as exc:
+                reason = str(exc).strip() or exc.__class__.__name__
+                print(f"SAHIBEX > TASK FAILED SAFELY: {reason}", flush=True)
+            last_activity = time.monotonic()
+
+    finally:
+        knowledge_graph.close()
 
 
 if __name__ == "__main__":
