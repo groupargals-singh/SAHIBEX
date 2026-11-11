@@ -489,3 +489,14 @@ This update records existing evidence and policy only. No code changed, no produ
 - Focused regression: **70 passed**; full repository regression: **2,365 passed in 156.82s**, exit 0. End-to-end manual English and Hinglish runtime checks returned `CONVERSATION_CONTEXT_RECALL` with the expected prior user/assistant turn. Compileall, shell syntax, diff and common secret-pattern checks PASS; GitHub publication follows final commit/push/hash verification.
 - This is not full semantic chat-history reconstruction or autonomous task resumption. P6/P7/P8/P10/P11 remain unchanged.
 - Evidence: `docs/STATUS/SAHIBEX_CONVERSATION_CONTEXT_BRAIN_2026-11-11.md`.
+
+
+## 2026-11-11 — Research Brain ↔ Mother Brain integration audit
+- Research Brain integration was already implemented; no duplicate engine or speculative code patch was added. Traced `MasterBrain` → registered `research` role → gated `InternalBrainTeam` dispatch → `_internal_research_handler` → `ResearchLearningBrain` → `MotherResearchIntegration` → existing acquisition/evidence/answer pipeline.
+- Confirmed shared persistent storage wiring across research, operational retrieval, Memory Brain and Knowledge Brain; explicit split stores and mismatched learning/research integration instances are rejected.
+- Confirmed authorization + request-verification gates precede specialist dispatch; network permission remains with the existing acquisition pipeline. Handler confirmation is type-checked. Both the facade and MainBrain require successful `VERIFIED` results before reporting a successful/persisted answer; unverified inner answer text is not surfaced.
+- Existing prompt-injection, conflict/provenance, knowledge lifecycle and source-rehydration controls remain authoritative. No legacy knowledge candidate was promoted or modified.
+- Focused integration/security regression: **62 passed in 11.59s**. Full repository regression: **2,365 passed in 167.85s**, exit 0, using `.venv/bin/python -m pytest -q`.
+- This is **ALREADY IMPLEMENTED / software integration re-verified PASS**, not proof of live external provider availability or corpus-wide independent corroboration. P6/P7/P8/P10/P11 and knowledge trust-lifecycle status remain unchanged.
+- Evidence: `docs/STATUS/SAHIBEX_RESEARCH_BRAIN_MOTHER_BRAIN_INTEGRATION_2026-11-11.md`.
+- Next task: investigate runtime reachability of the existing `SahibexExecutionLoop` and persistent Knowledge Graph without duplicating existing engines or bypassing Mother Brain authority.
