@@ -480,3 +480,12 @@ This update records existing evidence and policy only. No code changed, no produ
 - Focused router + InternalBrainTeam + KnowledgeBrain runtime regression: **138 passed**; full repository regression: **2,356 passed in 176.95s**, exit 0. Compileall, shell syntax, `git diff --check` and common secret-pattern scan PASS. GitHub publication follows final commit/push/hash verification.
 - This does not migrate/promote legacy knowledge candidates or certify the existing corpus. P6/P7/P8/P10/P11 remain unchanged.
 - Evidence: `docs/STATUS/SAHIBEX_KNOWLEDGE_SPECIALIST_ROUTING_2026-11-11.md`.
+
+
+## 2026-11-11 — Conversation & Context Brain integration
+- Registered the existing `conversation` specialist handler and added conservative English/Hinglish/Hindi routing for explicit recent-conversation recall/resume requests. Generic "continue" prompts remain unrouted.
+- Merged bounded in-memory history with trusted persistent conversation records; deduplicated user turns and capped context at 8 turns / 16 messages. Handler validates message roles, sizes, turn limits and source labels.
+- Explicit recap requests now return a deterministic transcript-grounded answer, including latest user request and assistant reply. Old instructions are never replayed; no action or permission is granted.
+- Focused regression: **70 passed**; full repository regression: **2,365 passed in 156.82s**, exit 0. End-to-end manual English and Hinglish runtime checks returned `CONVERSATION_CONTEXT_RECALL` with the expected prior user/assistant turn. Compileall, shell syntax, diff and common secret-pattern checks PASS; GitHub publication follows final commit/push/hash verification.
+- This is not full semantic chat-history reconstruction or autonomous task resumption. P6/P7/P8/P10/P11 remain unchanged.
+- Evidence: `docs/STATUS/SAHIBEX_CONVERSATION_CONTEXT_BRAIN_2026-11-11.md`.

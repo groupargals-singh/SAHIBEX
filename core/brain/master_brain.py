@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
@@ -962,19 +962,53 @@ class MasterBrain:
 
     @staticmethod
     def _internal_conversation_handler(request: str, context: dict):
-        """Extract the latest explicit user turn from supplied bounded history."""
+        """Return bounded conversation context; never infer intent or execute history."""
         messages = context.get("messages")
         if not isinstance(messages, list) or not messages:
-            return {"success": False, "status": "CONVERSATION_MESSAGES_REQUIRED", "history_read": False}
+            return {"success": False, "status": "CONVERSATION_MESSAGES_REQUIRED", "history_read": False, "history_persisted": False}
         if len(messages) > 30:
-            return {"success": False, "status": "MESSAGE_LIMIT_EXCEEDED", "history_read": False}
+            return {"success": False, "status": "MESSAGE_LIMIT_EXCEEDED", "history_read": False, "history_persisted": False}
+        max_turns = context.get("max_turns", 8)
+        if isinstance(max_turns, bool) or not isinstance(max_turns, int) or not 1 <= max_turns <= 15:
+            return {"success": False, "status": "CONVERSATION_TURN_LIMIT_INVALID", "history_read": False, "history_written": False}
+        history_sources = context.get("history_sources", [])
+        if not isinstance(history_sources, list) or len(history_sources) > 4 or any(source not in {"in_memory_context", "persistent_memory"} for source in history_sources):
+            return {"success": False, "status": "CONVERSATION_HISTORY_SOURCE_INVALID", "history_read": False, "history_written": False}
         clean = []
         for i, item in enumerate(messages):
-            if not isinstance(item, dict) or item.get("role") not in {"user", "assistant", "system"} or not isinstance(item.get("content"), str) or len(item["content"]) > 4000:
-                return {"success": False, "status": "MESSAGE_FORMAT_INVALID", "message_index": i, "history_read": False}
-            clean.append({"role": item["role"], "content": item["content"].strip()})
-        latest_user = next((item["content"] for item in reversed(clean) if item["role"] == "user" and item["content"]), None)
-        return {"success": latest_user is not None, "status": "LATEST_EXPLICIT_USER_TURN_EXTRACTED" if latest_user else "NO_NONEMPTY_USER_TURN", "latest_user_request": latest_user, "message_count": len(clean), "history_read": True, "history_persisted": False, "intent_inferred": False}
+            if (
+                not isinstance(item, dict)
+                or item.get("role") not in {"user", "assistant"}
+                or not isinstance(item.get("content"), str)
+                or len(item["content"]) > 4000
+            ):
+                return {"success": False, "status": "MESSAGE_FORMAT_INVALID", "message_index": i, "history_read": False, "history_persisted": False}
+            content = item["content"].strip()
+            if content:
+                clean.append({"role": item["role"], "content": content[:2000]})
+        clean = clean[-(max_turns * 2):]
+        latest_user = next((item["content"] for item in reversed(clean) if item["role"] == "user"), None)
+        latest_assistant = next((item["content"] for item in reversed(clean) if item["role"] == "assistant"), None)
+        user_requests = [item["content"] for item in clean if item["role"] == "user"][-max_turns:]
+        return {
+            "success": latest_user is not None,
+            "status": "BOUNDED_CONVERSATION_CONTEXT_READY" if latest_user else "NO_NONEMPTY_USER_TURN",
+            "latest_user_request": latest_user,
+            "latest_assistant_response": latest_assistant,
+            "recent_user_requests": user_requests,
+            "recent_messages": clean[-16:],
+            "message_count": len(clean),
+            "turn_count": len(user_requests),
+            "history_read": True,
+            "persistent_history_read": "persistent_memory" in history_sources,
+            "history_persisted": False,
+            "history_written": False,
+            "history_sources": list(dict.fromkeys(history_sources)),
+            "intent_inferred": False,
+            "historical_instructions_executed": False,
+            "permission_granted": False,
+            "actions_executed": False,
+        }
 
     @staticmethod
     def _internal_policy_handler(request: str, context: dict):
@@ -3739,10 +3773,44 @@ class MasterBrain:
         automatic_specialist_result = None
         specialist_route = self.specialist_router.select(text, intent_result.intent)
         if specialist_route is not None:
+            specialist_context = dict(specialist_route.context)
+            if specialist_route.role_id == "conversation":
+                conversation_messages = []
+                seen_user_turns = set()
+                # Persistent history is newest-first; add it oldest-first so
+                # the merged transcript remains chronological.
+                for memory in reversed(persisted_turns[:8]):
+                    content = str(getattr(memory, "content", ""))
+                    if "\nSAHIBEX: " in content:
+                        user_value, assistant_value = content.split("\nSAHIBEX: ", 1)
+                        user_value = user_value.removeprefix("User: ").strip()[:2000]
+                        assistant_value = assistant_value.strip()[:2000]
+                    else:
+                        user_value, assistant_value = content.strip()[:2000], ""
+                    if user_value and user_value.casefold() not in seen_user_turns:
+                        conversation_messages.append({"role": "user", "content": user_value})
+                        seen_user_turns.add(user_value.casefold())
+                        if assistant_value:
+                            conversation_messages.append({"role": "assistant", "content": assistant_value})
+                for turn in self.context.recent(8):
+                    user_value = str(turn.user or "").strip()[:2000]
+                    assistant_value = str(turn.assistant or "").strip()[:2000]
+                    if user_value and user_value.casefold() not in seen_user_turns:
+                        conversation_messages.append({"role": "user", "content": user_value})
+                        seen_user_turns.add(user_value.casefold())
+                        if assistant_value:
+                            conversation_messages.append({"role": "assistant", "content": assistant_value})
+                specialist_context["messages"] = conversation_messages[-16:]
+                history_sources = []
+                if persisted_turns:
+                    history_sources.append("persistent_memory")
+                if self.context.recent(8):
+                    history_sources.append("in_memory_context")
+                specialist_context["history_sources"] = history_sources
             specialist_dispatch = self.dispatch_internal_brain(
                 specialist_route.role_id,
                 text,
-                specialist_route.context,
+                specialist_context,
                 authorization_passed=permission.allowed,
                 verification_passed=verification.verified,
             )
@@ -4138,6 +4206,71 @@ class MasterBrain:
                         provider=self.mother_operational.default_provider,
                     )
                 )
+
+            if (
+                specialist_route is not None
+                and specialist_route.role_id == "conversation"
+                and isinstance(automatic_specialist_result, dict)
+            ):
+                context_result = automatic_specialist_result
+                latest_user = context_result.get("latest_user_request")
+                latest_assistant = context_result.get("latest_assistant_response")
+                if isinstance(latest_user, str) and latest_user.strip():
+                    language_code = str((input_trace or {}).get("language_code", "und"))
+                    is_hindi = language_code in {"hi", "hi-Latn"} or any("\u0900" <= char <= "\u097f" for char in text)
+                    if language_code == "hi-Latn":
+                        response_text = "Pichhli baatcheet mein aapne kaha tha: " + latest_user[:1200]
+                        if isinstance(latest_assistant, str) and latest_assistant.strip():
+                            response_text += "\nMera pichhla jawab tha: " + latest_assistant[:1200]
+                        response_text += "\nMain is context ko aage use kar sakti hoon; purani action apne-aap dobara nahi chalaungi."
+                    elif is_hindi:
+                        response_text = "पिछली बातचीत में आपने कहा था: " + latest_user[:1200]
+                        if isinstance(latest_assistant, str) and latest_assistant.strip():
+                            response_text += "\nमेरी पिछली प्रतिक्रिया थी: " + latest_assistant[:1200]
+                        response_text += "\nमैं इस संदर्भ को आगे उपयोग कर सकती हूँ; पुरानी कार्रवाई अपने-आप दोबारा नहीं चलाऊँगी।"
+                    else:
+                        response_text = "Your latest request in our previous conversation was: " + latest_user[:1200]
+                        if isinstance(latest_assistant, str) and latest_assistant.strip():
+                            response_text += "\nMy last response was: " + latest_assistant[:1200]
+                        response_text += "\nI can use this context going forward; I will not replay earlier actions automatically."
+                    operational_result = replace(
+                        operational_result,
+                        success=True,
+                        response=response_text,
+                        verification_status="CONVERSATION_CONTEXT_RECALL",
+                        provider="conversation_context_brain",
+                        diagnostics={
+                            **(operational_result.diagnostics if isinstance(operational_result.diagnostics, dict) else {}),
+                            "conversation_context_used": True,
+                            "history_read": True,
+                            "historical_instructions_executed": False,
+                            "permission_granted": False,
+                        },
+                    )
+                else:
+                    language_code = str((input_trace or {}).get("language_code", "und"))
+                    is_hindi = language_code in {"hi", "hi-Latn"} or any("\u0900" <= char <= "\u097f" for char in text)
+                    response_text = (
+                        "Mujhe trusted conversation history mein pichhli user request nahi mili. Kripya batayein kaunsa task continue karna hai."
+                        if language_code == "hi-Latn" else
+                        "मुझे उपलब्ध सुरक्षित conversation history में पिछली user request नहीं मिली। कृपया बताइए किस काम को जारी रखना है।"
+                        if is_hindi else
+                        "I could not find a prior user request in the available trusted conversation history. Please tell me which task you want to continue."
+                    )
+                    operational_result = replace(
+                        operational_result,
+                        success=True,
+                        response=response_text,
+                        verification_status="CONVERSATION_CONTEXT_UNAVAILABLE",
+                        provider="conversation_context_brain",
+                        diagnostics={
+                            **(operational_result.diagnostics if isinstance(operational_result.diagnostics, dict) else {}),
+                            "conversation_context_used": False,
+                            "history_read": bool(context_result.get("history_read", False)),
+                            "historical_instructions_executed": False,
+                            "permission_granted": False,
+                        },
+                    )
 
             if not operational_result.success:
                 failure_message = (

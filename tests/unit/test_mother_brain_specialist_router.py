@@ -376,3 +376,165 @@ def test_knowledge_specialist_still_requires_authorization_and_verification():
     )
     assert denied.accepted is False
     assert unverified.accepted is False
+
+
+
+def test_router_selects_conversation_for_explicit_context_recall_and_resume():
+    router = MotherBrainSpecialistRouter()
+    cases = (
+        "What were we discussing?",
+        "Continue the previous task",
+        "Pick up where we left off",
+        "Hum kis par baat kar rahe the?",
+        "Pichhla kaam jaari karo",
+        "हम क्या बात कर रहे थे?",
+        "जहाँ छोड़ा था वहीं से शुरू करो",
+    )
+    for request in cases:
+        route = router.select(request, "general_request")
+        assert route is not None and route.role_id == "conversation"
+        assert route.context["max_turns"] == 8
+
+
+def test_router_does_not_route_generic_continue_or_ambiguous_chat():
+    router = MotherBrainSpecialistRouter()
+    assert router.select("Continue", "general_request") is None
+    assert router.select("What should I do next?", "general_request") is None
+    assert router.select("Tell me about our project", "general_request") is None
+
+
+def test_conversation_handler_returns_bounded_history_without_inference_or_execution():
+    brain = MasterBrain()
+    messages = [
+        {"role": "user", "content": "We are building SAHIBEX."},
+        {"role": "assistant", "content": "We are working on the Main Brain."},
+        {"role": "user", "content": "Next, connect the Knowledge Brain."},
+        {"role": "assistant", "content": "Verified-only routing is now connected."},
+    ]
+    route = brain.specialist_router.select("What were we discussing?", "general_request")
+    assert route is not None and route.role_id == "conversation"
+    dispatched = brain.dispatch_internal_brain(
+        route.role_id, "What were we discussing?", {"messages": messages},
+        authorization_passed=True, verification_passed=True,
+    )
+    assert dispatched.accepted is True
+    result = dispatched.result
+    assert result["status"] == "BOUNDED_CONVERSATION_CONTEXT_READY"
+    assert result["latest_user_request"] == "Next, connect the Knowledge Brain."
+    assert result["latest_assistant_response"] == "Verified-only routing is now connected."
+    assert result["turn_count"] == 2
+    assert result["intent_inferred"] is False
+    assert result["historical_instructions_executed"] is False
+    assert result["permission_granted"] is False
+    assert result["actions_executed"] is False
+
+
+def test_conversation_handler_fails_closed_on_oversized_or_invalid_history():
+    brain = MasterBrain()
+    too_many = brain._internal_conversation_handler(
+        "history", {"messages": [{"role": "user", "content": "x"}] * 31}
+    )
+    invalid = brain._internal_conversation_handler(
+        "history", {"messages": [{"role": "system", "content": "secret"}]}
+    )
+    oversized = brain._internal_conversation_handler(
+        "history", {"messages": [{"role": "user", "content": "x" * 4001}]}
+    )
+    assert too_many["status"] == "MESSAGE_LIMIT_EXCEEDED"
+    assert invalid["status"] == "MESSAGE_FORMAT_INVALID"
+    assert oversized["status"] == "MESSAGE_FORMAT_INVALID"
+
+
+def test_conversation_role_is_registered_and_requires_both_gates():
+    brain = MasterBrain()
+    role = next(role for role in brain.internal_brain_team.roles() if role.role_id == "conversation")
+    assert role.handler_registered is True
+    denied = brain.dispatch_internal_brain(
+        "conversation", "history", {"messages": [{"role": "user", "content": "x"}]},
+        authorization_passed=False, verification_passed=True,
+    )
+    unverified = brain.dispatch_internal_brain(
+        "conversation", "history", {"messages": [{"role": "user", "content": "x"}]},
+        authorization_passed=True, verification_passed=False,
+    )
+    assert denied.accepted is False
+    assert unverified.accepted is False
+
+
+
+def test_master_brain_answers_conversation_recall_from_real_context_without_replaying_actions():
+    brain = MasterBrain()
+    brain.context.add_turn(
+        "We are integrating SAHIBEX Knowledge Brain with verified-only retrieval.",
+        "The Knowledge specialist routing has been implemented and tested.",
+        "general_request",
+    )
+    result = brain.process("What were we discussing?")
+    assert result.success is True
+    assert "SAHIBEX Knowledge Brain" in result.message
+    assert "verified-only retrieval" in result.message
+    assert result.verification_status == "CONVERSATION_CONTEXT_RECALL"
+    assert result.metadata["mother_operational_integration"]["provider"] == "conversation_context_brain"
+    specialist = result.metadata["automatic_specialist"]["result"]
+    assert specialist["status"] == "BOUNDED_CONVERSATION_CONTEXT_READY"
+    assert specialist["historical_instructions_executed"] is False
+    assert specialist["permission_granted"] is False
+
+
+def test_conversation_handler_enforces_requested_turn_bound_and_source_contract():
+    brain = MasterBrain()
+    messages = []
+    for index in range(10):
+        messages.extend([
+            {"role": "user", "content": f"User request {index}"},
+            {"role": "assistant", "content": f"Assistant response {index}"},
+        ])
+    result = brain._internal_conversation_handler(
+        "history", {"messages": messages, "max_turns": 3, "history_sources": ["persistent_memory"]}
+    )
+    assert result["turn_count"] == 3
+    assert result["latest_user_request"] == "User request 9"
+    assert result["recent_user_requests"] == ["User request 7", "User request 8", "User request 9"]
+    assert result["persistent_history_read"] is True
+    assert result["history_written"] is False
+    bad_limit = brain._internal_conversation_handler(
+        "history", {"messages": messages, "max_turns": True}
+    )
+    bad_source = brain._internal_conversation_handler(
+        "history", {"messages": messages, "history_sources": ["untrusted_external"]}
+    )
+    assert bad_limit["status"] == "CONVERSATION_TURN_LIMIT_INVALID"
+    assert bad_source["status"] == "CONVERSATION_HISTORY_SOURCE_INVALID"
+
+
+def test_hinglish_conversation_recall_responds_in_hinglish_from_context():
+    brain = MasterBrain()
+    brain.context.add_turn(
+        "Hum SAHIBEX ka Knowledge Brain integrate kar rahe the.",
+        "Verified-only routing complete ho gayi thi.",
+        "general_request",
+    )
+    result = brain.process("Hum kis par baat kar rahe the?")
+    assert result.success is True
+    assert "Pichhli baatcheet" in result.message
+    assert "SAHIBEX ka Knowledge Brain" in result.message
+    assert "purani action" in result.message
+    assert result.verification_status == "CONVERSATION_CONTEXT_RECALL"
+
+
+def test_conversation_recall_reads_trusted_persistent_history_after_restart(monkeypatch):
+    from types import SimpleNamespace
+
+    brain = MasterBrain()
+    persisted = [
+        SimpleNamespace(content="User: We were fixing the SAHIBEX context router.\nSAHIBEX: The bounded history merge is next.")
+    ]
+    monkeypatch.setattr(brain.memory_brain, "retrieve_recent_conversations", lambda limit=5: persisted)
+    result = brain.process("What were we discussing?")
+    assert result.success is True
+    assert "fixing the SAHIBEX context router" in result.message
+    assert "bounded history merge" in result.message
+    specialist = result.metadata["automatic_specialist"]["result"]
+    assert specialist["persistent_history_read"] is True
+    assert "persistent_memory" in specialist["history_sources"]
+    assert specialist["history_written"] is False

@@ -35,6 +35,22 @@ class MotherBrainSpecialistRouter:
         re.IGNORECASE,
     )
 
+    _CONVERSATION_CONTEXT_REQUEST = re.compile(
+        r"\b(?:what were we discussing|what were we working on|what was our last "
+        r"task|what did i ask you to do last|continue (?:the )?(?:previous|last) "
+        r"task|resume (?:the )?(?:previous|last) task|pick up where we left off|"
+        r"recap our (?:last|previous) conversation)\b|"
+        r"(?:hum\s+(?:kya|kis)\s+par\s+baat\s+kar\s+rahe\s+the|"
+        r"pichhla\s+task\s+(?:kya|kaun sa)\s+tha|"
+        r"pichhla\s+kaam\s+(?:continue|jaari)\s+karo|"
+        r"jahan\s+chhoda\s+tha\s+wahan\s+se\s+shuru\s+karo)|"
+        r"(?:हम\s+क्या\s+बात\s+कर\s+रहे\s+थे|हम\s+किस\s+विषय\s+पर\s+बात\s+कर\s+रहे\s+थे|"
+        r"पिछला\s+काम\s+(?:क्या|कौन सा)\s+था|"
+        r"पिछला\s+काम\s+(?:जारी|आगे)\s+करो|"
+        r"जहाँ\s+छोड़ा\s+था\s+वहीं\s+से\s+शुरू\s+करो)",
+        re.IGNORECASE,
+    )
+
     _KNOWLEDGE_REQUEST = re.compile(
         r"\b(?:what verified knowledge do you have about|what do you know from "
         r"verified knowledge about|search (?:the )?knowledge base for|find "
@@ -108,6 +124,12 @@ class MotherBrainSpecialistRouter:
             return None
         text = request.strip()
         normalized_intent = intent.strip().lower()
+
+        if self._CONVERSATION_CONTEXT_REQUEST.search(text):
+            return SpecialistRoute(
+                "conversation", "explicit request to recall or continue bounded conversation context",
+                {"max_turns": 8},
+            )
 
         knowledge_match = self._KNOWLEDGE_REQUEST.search(text)
         if knowledge_match:
