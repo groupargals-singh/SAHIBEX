@@ -514,3 +514,19 @@ This update records existing evidence and policy only. No code changed, no produ
 - Evidence: `docs/STATUS/SAHIBEX_EXECUTION_LOOP_PERSISTENT_GRAPH_RUNTIME_2026-11-11.md`.
 - Explicit boundary: this provides persistent chronological conversation links, not semantic GraphRAG/entity resolution/fact extraction/corroboration. No legacy knowledge candidates were promoted. P6/P7/P8/P10/P11 remain unchanged.
 - Next: continue with one remaining runtime acceptance edge at a time; the next release blockers remain P6 physical voice, P7 semantic vision, P8 real device pairing/control, knowledge trust lifecycle, and P10 historical requirements provenance.
+
+
+## 2026-11-12 — Cognitive Intelligence integration audit and live CLI smoke
+
+- Audited existing NLP, language/context, confidence verification, reasoning/planning, research/RAG, learning, memory, knowledge graph, tools/actions, voice and vision modules before adding duplicates.
+- Live runtime inspection confirms **61/61 InternalBrainTeam handlers registered**. This is in-process handler registration only; it is not 61 independent models/agents and does not prove every role is automatically selected or accepted end-to-end.
+- Confirmed the existing ConfidenceVerificationBrain is used during input ambiguity/confidence assessment and post-response factual-status assessment.
+- Confirmed existing NLP path and main pipeline dispatches reasoning, orchestration, research, learning and coding; the conservative specialist router handles a limited set of explicit task patterns. Most registered roles are not indiscriminately invoked.
+- Termux CLI smoke passed (exit 0): runtime started; Execution Loop v1.0 ONLINE; persistent graph CONNECTED; 61/61 handlers registered; Hindi greeting and Hinglish arithmetic returned valid responses.
+- General local LLM API at 127.0.0.1:8080 was OFFLINE. Available memory snapshot was approximately 2,276 MiB, below the configured 3 GiB default-model startup guard. No model was started, no low-RAM fallback was selected, and no safety guard was bypassed.
+- ML boundary: verified learning/feedback workflow exists, but online neural-weight training and a Reinforcement Learning training loop are not established.
+- Graph boundary: current persistent associations are chronological conversation links, not semantic GraphRAG/entity resolution/fact corroboration.
+- Voice code exists but physical microphone-to-speaker round-trip is not verified (P6 OPEN). OCR exists but semantic vision accuracy is not accepted (P7 OPEN). Actual Companion/Accessibility pairing and phone control are not accepted (P8 OPEN).
+- Evidence: `docs/STATUS/SAHIBEX_COGNITIVE_INTELLIGENCE_INTEGRATION_AUDIT_2026-11-12.md`.
+- Decision: existing components are audited; deterministic CLI subset SMOKE PASS; general LLM inference BLOCKED pending safe RAM availability; P6/P7/P8/P10/P11 remain OPEN. No release gate promoted.
+- Next engineering priority: add explicit, tested result-consumption adapters for task-specific specialist outputs without broad fan-out, while preserving Mother Brain authority, permissions and verification. Then restore the configured local LLM only when the existing memory guard is satisfied.
