@@ -1313,13 +1313,64 @@ def test_vision_brain_fails_closed_when_backend_or_image_missing(monkeypatch, tm
     monkeypatch.delenv("SAHIBEX_OCR_CAPTURE_DIR", raising=False)
     brain = MasterBrain()
     missing_backend = brain.dispatch_internal_brain("vision", "read image", {}, authorization_passed=True, verification_passed=True)
-    assert missing_backend.result["status"] == "VISION_OCR_NOT_CONFIGURED"
+    assert missing_backend.result["status"] == "VISION_PRIVATE_CAPTURE_DIR_NOT_CONFIGURED"
     capture = tmp_path / "captures"
     capture.mkdir()
     monkeypatch.setenv("SAHIBEX_OCR_CAPTURE_DIR", str(capture))
     monkeypatch.setenv("SAHIBEX_TESSERACT_EXECUTABLE", "/no/such/tesseract")
     unavailable = brain.dispatch_internal_brain("vision", "read image", {}, authorization_passed=True, verification_passed=True)
     assert unavailable.result["status"] == "VISION_OCR_BACKEND_UNAVAILABLE"
+
+
+def test_vision_brain_requires_explicit_semantic_processing_consent(monkeypatch, tmp_path):
+    capture = tmp_path / "captures"
+    capture.mkdir()
+    image = capture / "sample.png"
+    image.write_bytes(b"placeholder image bytes")
+    monkeypatch.setenv("SAHIBEX_OCR_CAPTURE_DIR", str(capture))
+    brain = MasterBrain()
+    result = brain.dispatch_internal_brain(
+        "vision", "describe image",
+        {"image_path": str(image), "semantic_vision_requested": True},
+        authorization_passed=True, verification_passed=True,
+    )
+    assert result.result["status"] == "SEMANTIC_VISION_CONSENT_REQUIRED"
+    assert result.result["network_upload_performed"] is False
+
+
+def test_vision_brain_semantic_provider_reports_unverified_description(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from core.brain import semantic_vision_provider
+    capture = tmp_path / "captures"
+    capture.mkdir()
+    image = capture / "sample.png"
+    image.write_bytes(b"placeholder image bytes")
+    monkeypatch.setenv("SAHIBEX_OCR_CAPTURE_DIR", str(capture))
+    monkeypatch.setenv("SAHIBEX_VISION_ENDPOINT", "http://127.0.0.1:8080/v1/chat/completions")
+    monkeypatch.setenv("SAHIBEX_VISION_MODEL", "local-vlm")
+
+    class FakeProvider:
+        def __init__(self, **kwargs):
+            pass
+        def analyze(self, path, **kwargs):
+            assert kwargs["consent"] is True
+            return SimpleNamespace(
+                description="A red car is visible.", provider="test-vlm",
+                model="local-vlm", source_sha256="a" * 64,
+                source_bytes=128, remote_transfer=False,
+                trust_notice="Untrusted visual evidence",
+            )
+
+    monkeypatch.setattr(semantic_vision_provider, "SemanticVisionProvider", FakeProvider)
+    result = MasterBrain().dispatch_internal_brain(
+        "vision", "describe image",
+        {"image_path": str(image), "semantic_vision_requested": True, "image_processing_consent": True},
+        authorization_passed=True, verification_passed=True,
+    )
+    assert result.result["status"] == "SEMANTIC_VISION_DESCRIPTION_UNVERIFIED"
+    assert result.result["description"] == "A red car is visible."
+    assert result.result["image_interpretation_verified"] is False
+    assert result.result["network_upload_performed"] is False
 
 
 def test_audio_brain_transcribes_only_private_local_wav(monkeypatch, tmp_path):

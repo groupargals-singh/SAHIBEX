@@ -1998,13 +1998,82 @@ class MasterBrain:
 
     @staticmethod
     def _internal_vision_handler(request: str, context: dict):
-        """Perform local OCR only on an explicitly supplied image in the private capture directory."""
+        """Run consent-gated semantic VLM or local OCR on a supplied private image."""
         import os
         from pathlib import Path
+
         capture_dir = os.getenv("SAHIBEX_OCR_CAPTURE_DIR", "").strip()
         image_path = context.get("image_path")
         if not capture_dir:
-            return {"success": False, "status": "VISION_OCR_NOT_CONFIGURED", "text": None, "image_interpretation_verified": False}
+            return {"success": False, "status": "VISION_PRIVATE_CAPTURE_DIR_NOT_CONFIGURED", "image_interpretation_verified": False}
+        if image_path is None:
+            try:
+                from core.brain.ocr_runtime import OCRRuntime
+                readiness_runtime = OCRRuntime(
+                    capture_dir,
+                    tesseract_cmd=os.getenv("SAHIBEX_TESSERACT_EXECUTABLE", "tesseract"),
+                    timeout_seconds=20.0,
+                )
+                installed_languages = list(readiness_runtime.installed_languages())
+            except (OSError, ValueError, RuntimeError, TimeoutError) as exc:
+                return {"success": False, "status": "VISION_OCR_BACKEND_UNAVAILABLE", "reason": str(exc)[:200], "image_interpretation_verified": False}
+            return {
+                "success": True,
+                "status": "VISION_READY_IMAGE_REQUIRED",
+                "ocr_backend": "tesseract",
+                "installed_languages": installed_languages,
+                "semantic_backend_configured": bool(os.getenv("SAHIBEX_VISION_ENDPOINT") and os.getenv("SAHIBEX_VISION_MODEL")),
+                "camera_capture_performed": False,
+                "network_upload_performed": False,
+                "image_interpretation_verified": False,
+            }
+        if not isinstance(image_path, str) or not image_path.strip() or len(image_path) > 2048:
+            return {"success": False, "status": "VISION_IMAGE_PATH_INVALID", "image_interpretation_verified": False}
+        try:
+            candidate = Path(image_path)
+            if candidate.is_symlink() or candidate.resolve(strict=True).parent != Path(capture_dir).resolve():
+                return {"success": False, "status": "VISION_IMAGE_OUTSIDE_PRIVATE_CAPTURE_DIR", "image_interpretation_verified": False}
+        except OSError:
+            return {"success": False, "status": "VISION_IMAGE_PATH_INVALID", "image_interpretation_verified": False}
+
+        if context.get("semantic_vision_requested") is True:
+            if context.get("image_processing_consent") is not True:
+                return {"success": False, "status": "SEMANTIC_VISION_CONSENT_REQUIRED", "image_interpretation_verified": False, "network_upload_performed": False}
+            allow_remote = context.get("allow_remote_image_transfer", False)
+            if not isinstance(allow_remote, bool):
+                return {"success": False, "status": "REMOTE_IMAGE_CONSENT_INVALID", "image_interpretation_verified": False}
+            try:
+                from core.brain.semantic_vision_provider import SemanticVisionProvider
+                provider = SemanticVisionProvider(
+                    endpoint=os.getenv("SAHIBEX_VISION_ENDPOINT"),
+                    model=os.getenv("SAHIBEX_VISION_MODEL"),
+                    api_key=os.getenv("SAHIBEX_VISION_API_KEY"),
+                )
+                result = provider.analyze(
+                    candidate,
+                    prompt=context.get("vision_prompt", "Describe the visible scene. Separate observations from uncertainty."),
+                    consent=True,
+                    allow_remote_transfer=allow_remote,
+                )
+            except PermissionError:
+                return {"success": False, "status": "SEMANTIC_VISION_REMOTE_CONSENT_REQUIRED", "image_interpretation_verified": False, "network_upload_performed": False}
+            except (OSError, ValueError, RuntimeError) as exc:
+                return {"success": False, "status": "SEMANTIC_VISION_UNAVAILABLE_OR_REJECTED", "reason": str(exc)[:200], "image_interpretation_verified": False}
+            return {
+                "success": True,
+                "status": "SEMANTIC_VISION_DESCRIPTION_UNVERIFIED",
+                "description": result.description,
+                "provider": result.provider,
+                "model": result.model,
+                "source_sha256": result.source_sha256,
+                "source_bytes": result.source_bytes,
+                "remote_transfer": result.remote_transfer,
+                "network_upload_performed": result.remote_transfer,
+                "trust_notice": result.trust_notice,
+                "image_interpretation_verified": False,
+                "camera_capture_performed": False,
+            }
+
         try:
             from core.brain.ocr_runtime import OCRRuntime
             runtime = OCRRuntime(
@@ -2014,23 +2083,11 @@ class MasterBrain:
             )
         except (OSError, ValueError) as exc:
             return {"success": False, "status": "VISION_OCR_BACKEND_UNAVAILABLE", "reason": str(exc)[:200], "text": None, "image_interpretation_verified": False}
-        if image_path is None:
-            return {
-                "success": True,
-                "status": "VISION_OCR_READY_IMAGE_REQUIRED",
-                "ocr_backend": "tesseract",
-                "installed_languages": list(runtime.installed_languages()),
-                "image_interpretation_verified": False,
-                "camera_capture_performed": False,
-                "network_upload_performed": False,
-            }
-        if not isinstance(image_path, str) or not image_path.strip() or len(image_path) > 2048:
-            return {"success": False, "status": "VISION_IMAGE_PATH_INVALID", "text": None, "image_interpretation_verified": False}
         languages = context.get("languages", "eng")
         if not isinstance(languages, str) or len(languages) > 80:
             return {"success": False, "status": "VISION_LANGUAGE_SETTING_INVALID", "text": None, "image_interpretation_verified": False}
         try:
-            observation = runtime.extract(Path(image_path), languages=languages)
+            observation = runtime.extract(candidate, languages=languages)
         except (OSError, ValueError, RuntimeError, TimeoutError) as exc:
             return {"success": False, "status": "VISION_OCR_REJECTED", "reason": str(exc)[:200], "text": None, "image_interpretation_verified": False}
         return {

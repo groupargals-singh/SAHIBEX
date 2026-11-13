@@ -540,3 +540,14 @@ This update records existing evidence and policy only. No code changed, no produ
 - Focused voice/internal-brain regression: **116 passed**.
 - P6 remains OPEN: physical microphone capture, user transcript review, Main Brain request processing and speaker playback round-trip still require an explicit on-device test. This change does not claim P6 acceptance.
 - Evidence: `docs/STATUS/SAHIBEX_VOICE_BACKEND_READINESS_CORRECTION_2026-11-13.md`.
+
+
+## 2026-11-14 — Semantic Vision provider and Mother Brain wiring
+- Added a bounded OpenAI-compatible multimodal vision provider for local VLM endpoints or explicitly approved remote endpoints.
+- Integrated the provider with Mother Brain's existing Vision handler while preserving the OCR-only default.
+- Image processing requires explicit consent; remote image transfer requires a separate explicit consent flag. Only user-supplied images already in the private capture directory are accepted; camera capture is not performed.
+- Added PNG/JPEG/WebP signature checks, 12 MB input cap, 4,000-char prompt cap, 64 KB response cap, bounded timeout and SHA-256 provenance.
+- Semantic output remains explicitly UNVERIFIED; no accuracy or confidence claims are made.
+- Focused semantic vision/Vision Brain/OCR regression: **114 passed**.
+- P7 remains PARTIAL/BLOCKED until a compatible local VLM is configured and safely run, or remote use is separately approved, and representative accuracy evaluation is accepted. No P-series release gate promoted.
+- Evidence: `docs/STATUS/SAHIBEX_SEMANTIC_VISION_PROVIDER_INTEGRATION_2026-11-14.md`.
