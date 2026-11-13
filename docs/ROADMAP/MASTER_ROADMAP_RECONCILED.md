@@ -530,3 +530,13 @@ This update records existing evidence and policy only. No code changed, no produ
 - Evidence: `docs/STATUS/SAHIBEX_COGNITIVE_INTELLIGENCE_INTEGRATION_AUDIT_2026-11-12.md`.
 - Decision: existing components are audited; deterministic CLI subset SMOKE PASS; general LLM inference BLOCKED pending safe RAM availability; P6/P7/P8/P10/P11 remain OPEN. No release gate promoted.
 - Next engineering priority: add explicit, tested result-consumption adapters for task-specific specialist outputs without broad fan-out, while preserving Mother Brain authority, permissions and verification. Then restore the configured local LLM only when the existing memory guard is satisfied.
+
+
+## 2026-11-13 — Voice backend readiness correction and local TTS synthesis
+- Fixed a false-negative Voice Brain readiness check: the configured default backend is sherpa-onnx Supertonic-3, but the previous handler checked Piper only.
+- Readiness now validates the selected backend, the sherpa-onnx runtime, all seven required Supertonic model/config files, or the explicitly selected Piper executable/models. Unknown backends fail closed.
+- Actual Termux inspection: Whisper CLI wrapper and tiny-q5_1 model are present; sherpa-onnx is installed; all seven Supertonic model files are present. Voice Brain now correctly reports ASR ready + TTS ready for Hindi and English with status `LOCAL_VOICE_COMPONENTS_CONFIGURED_ROUND_TRIP_UNVERIFIED`.
+- Local TTS synthesis smoke passed for Hindi and English; both generated valid RIFF/WAV output at 44.1 kHz. No audio was played and no microphone was activated.
+- Focused voice/internal-brain regression: **116 passed**.
+- P6 remains OPEN: physical microphone capture, user transcript review, Main Brain request processing and speaker playback round-trip still require an explicit on-device test. This change does not claim P6 acceptance.
+- Evidence: `docs/STATUS/SAHIBEX_VOICE_BACKEND_READINESS_CORRECTION_2026-11-13.md`.

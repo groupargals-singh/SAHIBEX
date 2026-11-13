@@ -2096,25 +2096,49 @@ class MasterBrain:
 
     @staticmethod
     def _internal_voice_handler(request: str, context: dict):
-        """Inspect configured local voice components only; do not record/play audio."""
+        """Inspect the explicitly configured local ASR/TTS backend without recording or playback."""
+        import importlib.util
         import os
         import shutil
         from pathlib import Path
         from core.brain.speech_recognition import LocalWhisperCppRecognizer
+
         asr = LocalWhisperCppRecognizer()
         asr_ready = asr.is_ready()
-        tts_executable = os.getenv("SAHIBEX_PIPER_EXECUTABLE", "piper")
-        tts_resolved = shutil.which(tts_executable) if not os.path.isabs(tts_executable) else tts_executable
-        if not tts_resolved or not Path(tts_resolved).is_file():
-            tts_engine_ready = False
+        backend = os.getenv("SAHIBEX_TTS_BACKEND", "sherpa-supertonic").strip().lower()
+        model_ready = {"hi": False, "en": False}
+        tts_engine_ready = False
+        if backend in {"sherpa", "sherpa-supertonic", "supertonic"}:
+            model_dir = Path(os.getenv(
+                "SAHIBEX_SUPERTONIC_MODEL_DIR",
+                str(Path.home() / ".local/share/sahibex/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11"),
+            )).expanduser()
+            required_files = (
+                "duration_predictor.int8.onnx", "text_encoder.int8.onnx",
+                "vector_estimator.int8.onnx", "vocoder.int8.onnx",
+                "tts.json", "unicode_indexer.bin", "voice.bin",
+            )
+            files_ready = all((model_dir / name).is_file() and (model_dir / name).stat().st_size > 0 for name in required_files)
+            try:
+                runtime_ready = importlib.util.find_spec("sherpa_onnx") is not None
+            except (ImportError, ValueError):
+                runtime_ready = False
+            tts_engine_ready = runtime_ready
+            model_ready = {"hi": files_ready, "en": files_ready}
+            tts_ready = runtime_ready and files_ready
+        elif backend == "piper":
+            tts_executable = os.getenv("SAHIBEX_PIPER_EXECUTABLE", "piper")
+            tts_resolved = shutil.which(tts_executable) if not os.path.isabs(tts_executable) else tts_executable
+            tts_engine_ready = bool(tts_resolved and Path(tts_resolved).is_file())
+            models = {
+                "hi": os.getenv("SAHIBEX_PIPER_HI_MODEL", ""),
+                "en": os.getenv("SAHIBEX_PIPER_EN_MODEL", ""),
+            }
+            model_ready = {lang: bool(path and Path(path).expanduser().is_file()) for lang, path in models.items()}
+            tts_ready = tts_engine_ready and any(model_ready.values())
         else:
-            tts_engine_ready = True
-        models = {
-            "hi": os.getenv("SAHIBEX_PIPER_HI_MODEL", ""),
-            "en": os.getenv("SAHIBEX_PIPER_EN_MODEL", ""),
-        }
-        model_ready = {lang: bool(path and Path(path).expanduser().is_file()) for lang, path in models.items()}
-        tts_ready = tts_engine_ready and any(model_ready.values())
+            tts_ready = False
+
         if asr_ready and tts_ready:
             status = "LOCAL_VOICE_COMPONENTS_CONFIGURED_ROUND_TRIP_UNVERIFIED"
         elif not asr_ready and not tts_ready:
@@ -2129,8 +2153,10 @@ class MasterBrain:
             "local_asr_ready": asr_ready,
             "local_asr_engine_path": str(asr.executable),
             "local_asr_model_path_configured": bool(asr.model_path.is_file()),
+            "local_tts_backend": backend,
             "local_tts_engine_ready": tts_engine_ready,
             "local_tts_model_ready": model_ready,
+            "local_tts_ready": tts_ready,
             "live_microphone_test_performed": False,
             "speaker_playback_test_performed": False,
             "end_to_end_round_trip_verified": False,

@@ -1202,6 +1202,7 @@ def test_language_brain_fails_closed_on_empty_or_oversized_text():
 def test_voice_brain_reports_local_component_readiness_without_claiming_round_trip(monkeypatch, tmp_path):
     monkeypatch.setenv("SAHIBEX_WHISPER_CLI", str(tmp_path / "missing-whisper"))
     monkeypatch.setenv("SAHIBEX_ASR_MODEL", str(tmp_path / "missing-asr-model"))
+    monkeypatch.setenv("SAHIBEX_TTS_BACKEND", "piper")
     monkeypatch.setenv("SAHIBEX_PIPER_EXECUTABLE", str(tmp_path / "missing-piper"))
     monkeypatch.setenv("SAHIBEX_PIPER_HI_MODEL", str(tmp_path / "missing-hi-model"))
     monkeypatch.setenv("SAHIBEX_PIPER_EN_MODEL", str(tmp_path / "missing-en-model"))
@@ -1215,6 +1216,36 @@ def test_voice_brain_reports_local_component_readiness_without_claiming_round_tr
     assert result.result["live_microphone_test_performed"] is False
     assert result.result["speaker_playback_test_performed"] is False
     assert result.result["network_audio_upload_performed"] is False
+
+
+def test_voice_brain_detects_configured_supertonic_backend(monkeypatch, tmp_path):
+    model_dir = tmp_path / "supertonic"
+    model_dir.mkdir()
+    required = (
+        "duration_predictor.int8.onnx", "text_encoder.int8.onnx",
+        "vector_estimator.int8.onnx", "vocoder.int8.onnx",
+        "tts.json", "unicode_indexer.bin", "voice.bin",
+    )
+    for name in required:
+        (model_dir / name).write_bytes(b"model")
+    monkeypatch.setenv("SAHIBEX_WHISPER_CLI", str(tmp_path / "missing-whisper"))
+    monkeypatch.setenv("SAHIBEX_ASR_MODEL", str(tmp_path / "missing-asr-model"))
+    monkeypatch.setenv("SAHIBEX_TTS_BACKEND", "sherpa-supertonic")
+    monkeypatch.setenv("SAHIBEX_SUPERTONIC_MODEL_DIR", str(model_dir))
+    monkeypatch.setattr("importlib.util.find_spec", lambda name: object() if name == "sherpa_onnx" else None)
+
+    brain = MasterBrain()
+    result = brain.dispatch_internal_brain(
+        "voice", "check local voice readiness", {},
+        authorization_passed=True, verification_passed=True,
+    )
+    assert result.accepted is True
+    assert result.result["status"] == "LOCAL_ASR_NOT_READY"
+    assert result.result["local_tts_backend"] == "sherpa-supertonic"
+    assert result.result["local_tts_engine_ready"] is True
+    assert result.result["local_tts_model_ready"] == {"hi": True, "en": True}
+    assert result.result["local_tts_ready"] is True
+    assert result.result["end_to_end_round_trip_verified"] is False
 
 
 def test_knowledge_brain_handler_uses_existing_trust_filtered_retrieval(monkeypatch):
