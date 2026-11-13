@@ -551,3 +551,12 @@ This update records existing evidence and policy only. No code changed, no produ
 - Focused semantic vision/Vision Brain/OCR regression: **114 passed**.
 - P7 remains PARTIAL/BLOCKED until a compatible local VLM is configured and safely run, or remote use is separately approved, and representative accuracy evaluation is accepted. No P-series release gate promoted.
 - Evidence: `docs/STATUS/SAHIBEX_SEMANTIC_VISION_PROVIDER_INTEGRATION_2026-11-14.md`.
+
+
+## 2026-11-14 — Android Companion build and physical device gate check
+- Rebuilt/revalidated Android Companion 0.3.6: Gradle BUILD SUCCESSFUL, 33 tasks; APK v2 signature PASS.
+- APK copied to `$HOME/storage/downloads/SAHIBEX-Master-Brain-0.3.6-debug.apk`; SHA-256 `055dd0f0e434b14f413682172a1c74e56717ba834e4f51444a0af9de9293bdca`.
+- Termux:API mic, speech-to-text, TTS and media-player commands are installed.
+- ADB lists no attached/authorized device; ports 38741/38742 have no listener. Companion and Accessibility source exists, including local Emergency Stop, but actual installed-state, pairing, UI-tree/action and Emergency Stop acceptance cannot be proven without device UI interaction.
+- P6 and P8 remain OPEN/PARTIAL; no physical device acceptance claimed.
+- Evidence: `docs/STATUS/SAHIBEX_ANDROID_COMPANION_BUILD_DEVICE_GATE_2026-11-14.md`.
