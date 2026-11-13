@@ -560,3 +560,14 @@ This update records existing evidence and policy only. No code changed, no produ
 - ADB lists no attached/authorized device; ports 38741/38742 have no listener. Companion and Accessibility source exists, including local Emergency Stop, but actual installed-state, pairing, UI-tree/action and Emergency Stop acceptance cannot be proven without device UI interaction.
 - P6 and P8 remain OPEN/PARTIAL; no physical device acceptance claimed.
 - Evidence: `docs/STATUS/SAHIBEX_ANDROID_COMPANION_BUILD_DEVICE_GATE_2026-11-14.md`.
+
+
+## 2026-11-14 — Autonomous Engineering Controller v1 (bounded local operations)
+
+- Audited existing automation before implementation: AutonomousWorkBrain, decomposition/planning, long-running job lifecycle, checkpoint/resume and failure recovery already exist; no duplicate planning/job engine was created.
+- Added `core/agent/engineering_controller.py` as a pinned-root, allowlisted engineering adapter using fixed argv, `shell=False`, bounded timeouts/output and common secret redaction.
+- Wired read-only engineering commands into the Termux CLI: `engineering status`, `engineering diff-check`, `engineering compile` and `engineering test tests/unit/<file>.py`.
+- Test-file execution is restricted to existing Python files under `tests/`. Controller explicitly does not grant arbitrary shell, file writes/deletes, package installation, credential access, GitHub commit/push, cloud deployment, Android UI control or permission grants.
+- Focused controller tests: **7 passed**; full repository regression: **2,386 passed in 210.63s**, exit 0. Live CLI smoke for `engineering status` and `engineering compile`, compile check and `git diff --check` PASS.
+- This is the first local engineering operations layer, not yet a self-modifying code agent. Patch generation/application, GitHub publication, browser/cloud and Android control remain separate gated work. No P6/P7/P8/P10/P11 release gate promoted.
+- Evidence: `docs/STATUS/SAHIBEX_AUTONOMOUS_ENGINEERING_CONTROLLER_V1_2026-11-14.md`.

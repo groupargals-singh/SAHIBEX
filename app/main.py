@@ -8,6 +8,7 @@ from datetime import datetime, time as datetime_time, timedelta
 from pathlib import Path
 
 from core.brain.master_brain import MasterBrain
+from core.agent.engineering_controller import AutonomousEngineeringController, EngineeringAction
 from core.brain.sahibex_execution_loop import SahibexExecutionLoop
 from core.brain.wake_sleep_state import WakeSleepController, WakeSleepState
 from core.research.persistent_memory_knowledge_graph import PersistentMemoryKnowledgeGraph
@@ -64,7 +65,7 @@ BANNER = """
  Intent + Planning + Authority + Permission + Verification
  Idle Sleep Mode: enabled by default (configurable)
 ============================================================
-Commands: status | sleep | wake | sleepmode on | sleepmode off | exit
+Commands: status | engineering status/diff-check/compile/test | sleep | wake | sleepmode on/off | exit
 ============================================================
 """
 
@@ -163,6 +164,7 @@ def main() -> None:
     sleep_mode_enabled = os.getenv("SAHIBEX_IDLE_SLEEP_ENABLED", "1").strip().lower() not in {"0", "false", "no", "off"}
 
     brain, execution_loop, knowledge_graph = build_runtime_components()
+    engineering_controller = AutonomousEngineeringController(Path(__file__).resolve().parents[1])
     sleep_controller = WakeSleepController()
     sleep_controller.wake("main_runtime_start")
     last_activity = time.monotonic()
@@ -226,6 +228,34 @@ def main() -> None:
             if sleep_controller.state is WakeSleepState.SLEEPING:
                 sleep_controller.wake("incoming_task")
                 print("SAHIBEX > WAKING for incoming task.", flush=True)
+            if lowered.startswith("engineering "):
+                parts = user_input.split(maxsplit=2)
+                subcommand = parts[1].lower() if len(parts) > 1 else ""
+                try:
+                    if subcommand == "status":
+                        action = EngineeringAction.REPOSITORY_STATUS
+                    elif subcommand == "diff-check":
+                        action = EngineeringAction.DIFF_CHECK
+                    elif subcommand == "compile":
+                        action = EngineeringAction.COMPILE_CHECK
+                    elif subcommand == "test" and len(parts) == 3:
+                        action = EngineeringAction.TEST_FILE
+                    else:
+                        print("SAHIBEX > Engineering commands: engineering status | engineering diff-check | engineering compile | engineering test tests/unit/<file>.py", flush=True)
+                        continue
+                    report = engineering_controller.run(
+                        action, test_file=parts[2] if subcommand == "test" else None
+                    )
+                    print(f"ENGINEERING {report.action}: {'PASS' if report.success else 'FAIL'}", flush=True)
+                    if report.output:
+                        print(report.output, flush=True)
+                    if report.error:
+                        print(f"ENGINEERING ERROR: {report.error}", flush=True)
+                    print("Engineering v1 is read-only: no file writes, arbitrary shell, credentials, GitHub push, cloud deploy, or Android UI control.", flush=True)
+                except Exception as exc:
+                    print(f"ENGINEERING REQUEST REJECTED: {exc}", flush=True)
+                continue
+
             try:
                 result = execution_loop.process(user_input)
                 print_result(result.brain)
