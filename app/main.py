@@ -9,6 +9,7 @@ from pathlib import Path
 
 from core.brain.master_brain import MasterBrain
 from core.agent.engineering_controller import AutonomousEngineeringController, EngineeringAction
+from core.agent.engineering_patch_engine import EngineeringPatchEngine, PatchPolicyError
 from core.brain.sahibex_execution_loop import SahibexExecutionLoop
 from core.brain.wake_sleep_state import WakeSleepController, WakeSleepState
 from core.research.persistent_memory_knowledge_graph import PersistentMemoryKnowledgeGraph
@@ -65,7 +66,7 @@ BANNER = """
  Intent + Planning + Authority + Permission + Verification
  Idle Sleep Mode: enabled by default (configurable)
 ============================================================
-Commands: status | engineering status/diff-check/compile/test | sleep | wake | sleepmode on/off | exit
+Commands: status | engineering status/diff-check/compile/test/patch-check/patch-apply/patch-rollback | sleep | wake | sleepmode on/off | exit
 ============================================================
 """
 
@@ -164,7 +165,9 @@ def main() -> None:
     sleep_mode_enabled = os.getenv("SAHIBEX_IDLE_SLEEP_ENABLED", "1").strip().lower() not in {"0", "false", "no", "off"}
 
     brain, execution_loop, knowledge_graph = build_runtime_components()
-    engineering_controller = AutonomousEngineeringController(Path(__file__).resolve().parents[1])
+    project_root = Path(__file__).resolve().parents[1]
+    engineering_controller = AutonomousEngineeringController(project_root)
+    engineering_patch_engine = EngineeringPatchEngine(project_root)
     sleep_controller = WakeSleepController()
     sleep_controller.wake("main_runtime_start")
     last_activity = time.monotonic()
@@ -232,26 +235,40 @@ def main() -> None:
                 parts = user_input.split(maxsplit=2)
                 subcommand = parts[1].lower() if len(parts) > 1 else ""
                 try:
-                    if subcommand == "status":
-                        action = EngineeringAction.REPOSITORY_STATUS
-                    elif subcommand == "diff-check":
-                        action = EngineeringAction.DIFF_CHECK
-                    elif subcommand == "compile":
-                        action = EngineeringAction.COMPILE_CHECK
-                    elif subcommand == "test" and len(parts) == 3:
-                        action = EngineeringAction.TEST_FILE
+                    if subcommand in {"patch-check", "patch-apply"} and len(parts) == 3:
+                        patch_path = Path(parts[2]).expanduser()
+                        if patch_path.is_symlink() or not patch_path.is_file() or patch_path.stat().st_size > engineering_patch_engine.MAX_PATCH_BYTES:
+                            raise PatchPolicyError("Patch file must be a regular non-symlink file no larger than 256 KiB.")
+                        patch_text = patch_path.read_text(encoding="utf-8")
+                        report = engineering_patch_engine.apply(patch_text, dry_run=(subcommand == "patch-check"))
+                        print(f"ENGINEERING PATCH: {'PASS' if report.success else 'FAIL'} | applied={report.applied} | backup={report.backup_id or 'none'}", flush=True)
+                        print(report.message, flush=True)
+                        print("Files: " + ", ".join(report.files), flush=True)
+                        if report.diff_check:
+                            print(report.diff_check, flush=True)
+                    elif subcommand == "patch-rollback" and len(parts) == 3:
+                        report = engineering_patch_engine.rollback(parts[2].strip())
+                        print(f"ENGINEERING ROLLBACK: PASS | backup={report['backup_id']}", flush=True)
+                        print("Restored: " + ", ".join(report["restored_files"]), flush=True)
                     else:
-                        print("SAHIBEX > Engineering commands: engineering status | engineering diff-check | engineering compile | engineering test tests/unit/<file>.py", flush=True)
-                        continue
-                    report = engineering_controller.run(
-                        action, test_file=parts[2] if subcommand == "test" else None
-                    )
-                    print(f"ENGINEERING {report.action}: {'PASS' if report.success else 'FAIL'}", flush=True)
-                    if report.output:
-                        print(report.output, flush=True)
-                    if report.error:
-                        print(f"ENGINEERING ERROR: {report.error}", flush=True)
-                    print("Engineering v1 is read-only: no file writes, arbitrary shell, credentials, GitHub push, cloud deploy, or Android UI control.", flush=True)
+                        if subcommand == "status":
+                            action = EngineeringAction.REPOSITORY_STATUS
+                        elif subcommand == "diff-check":
+                            action = EngineeringAction.DIFF_CHECK
+                        elif subcommand == "compile":
+                            action = EngineeringAction.COMPILE_CHECK
+                        elif subcommand == "test" and len(parts) == 3:
+                            action = EngineeringAction.TEST_FILE
+                        else:
+                            print("SAHIBEX > Engineering commands: engineering status | engineering diff-check | engineering compile | engineering test tests/unit/<file>.py | engineering patch-check <patch-file> | engineering patch-apply <patch-file> | engineering patch-rollback <backup-id>", flush=True)
+                            continue
+                        report = engineering_controller.run(action, test_file=parts[2] if subcommand == "test" else None)
+                        print(f"ENGINEERING {report.action}: {'PASS' if report.success else 'FAIL'}", flush=True)
+                        if report.output:
+                            print(report.output, flush=True)
+                        if report.error:
+                            print(f"ENGINEERING ERROR: {report.error}", flush=True)
+                    print("Engineering patch policy: existing tracked clean files only; no add/delete/rename/binary/mode changes; external SHA-256 backups; rollback refuses later edits.", flush=True)
                 except Exception as exc:
                     print(f"ENGINEERING REQUEST REJECTED: {exc}", flush=True)
                 continue

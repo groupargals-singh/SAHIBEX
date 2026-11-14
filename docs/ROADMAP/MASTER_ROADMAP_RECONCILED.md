@@ -571,3 +571,17 @@ This update records existing evidence and policy only. No code changed, no produ
 - Focused controller tests: **7 passed**; full repository regression: **2,386 passed in 210.63s**, exit 0. Live CLI smoke for `engineering status` and `engineering compile`, compile check and `git diff --check` PASS.
 - This is the first local engineering operations layer, not yet a self-modifying code agent. Patch generation/application, GitHub publication, browser/cloud and Android control remain separate gated work. No P6/P7/P8/P10/P11 release gate promoted.
 - Evidence: `docs/STATUS/SAHIBEX_AUTONOMOUS_ENGINEERING_CONTROLLER_V1_2026-11-14.md`.
+
+
+## 2026-11-14 — Autonomous Engineering Controller v2 (controlled patch lifecycle)
+
+- Added `core/agent/engineering_patch_engine.py`: strict unified-diff validation, clean tracked-file preconditions, Git preflight, external SHA-256 backups, controlled apply and guarded atomic rollback.
+- Added Termux commands `engineering patch-check <patch-file>`, `engineering patch-apply <patch-file>` and `engineering patch-rollback <backup-id>`. Applying requires the explicit patch-apply command; patch generation remains user/model supplied, not autonomous.
+- Policy rejects path traversal/absolute paths, symlinks, binary patches, file additions/deletions/renames/copies/mode changes, duplicate targets, untracked files and any target with existing local modifications.
+- Backups live outside the repository; rollback verifies both original and post-apply hashes and refuses to overwrite later edits.
+- Focused controller + patch-engine tests: **14 passed**; Python compile check PASS.
+- Full repository regression: **2,393 passed in 208.38s**, exit 0.
+- This is a controlled patch lifecycle, not yet a self-directed code-generation or unattended build-fix-test-publish agent. GitHub publishing, model-generated patch review, browser/cloud and Android device control remain separate layers.
+- Existing AutonomousWorkBrain/planner/job lifecycle remain the source of task planning; no duplicate planning engine was added.
+- No P6/P7/P8/P10/P11 release gate promoted.
+- Evidence: `docs/STATUS/SAHIBEX_AUTONOMOUS_ENGINEERING_CONTROLLER_V2_2026-11-14.md`.
